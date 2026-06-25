@@ -144,26 +144,68 @@ Target: **100% of this spec's behavior.** Every `REQ-SYM-NN` maps to at least on
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Each construct maps to the right `SymbolKind` with detail | integration | starlette-blog | REQ-SYM-01 |
-| Nested block/macro nests under its enclosing symbol | integration | starlette-blog | REQ-SYM-02 |
-| Workspace search returns every macro & block with `containerName` | integration | starlette-blog | REQ-SYM-03 |
-| Subsequence query (`pu` → `post_url`); ranking is stable | integration | starlette-blog | REQ-SYM-04 |
-| Broken template yields a partial outline, no error | integration | syntax-errors | REQ-SYM-01 |
+Each row names the construct or condition, the fixture (or `synthetic doc` — an in-memory `didOpen` for an edge not in a fixture), and the exact expected outcome. Happy rows establish each behavior; negative/edge rows cover the §10 edges and §6 states.
+
+**Document outline — `SymbolKind` mapping (REQ-SYM-01)**
+
+| Behavior / scenario | Type | Fixtures | Expected outcome | Verifies |
+|---|---|---|---|---|
+| `{% block content %}` → `Module`, no detail | integration | starlette-blog (`blog/post.html`) | symbol `content`, kind `Module`, detail empty | REQ-SYM-01 |
+| `{% macro post_url(post) %}` → `Function`, param-list detail | integration | starlette-blog (`blog/macros.html`) | symbol `post_url`, kind `Function`, detail `(post)` | REQ-SYM-01 |
+| `{% macro comment_card(comment, show_actions=true) %}` → `Function`, detail shows keyword default | integration | starlette-blog (`blog/macros.html`) | detail `(comment, show_actions=true)` | REQ-SYM-01 |
+| top-level `{% set page_title = … %}` → `Variable` | integration | synthetic doc (top-level `set` in a template) | symbol `page_title`, kind `Variable`, no detail | REQ-SYM-01 |
+| `{% from "blog/macros.html" import post_url %}` → `Namespace`, source-path detail | integration | starlette-blog (`email/digest.html`) | symbol for the import, kind `Namespace`, detail `blog/macros.html` | REQ-SYM-01 |
+| `{% import "blog/macros.html" as macros %}` (alias slot) → `Namespace`, source-path detail | integration | synthetic doc (alias `import`) | symbol `macros`, kind `Namespace`, detail `blog/macros.html` | REQ-SYM-01 |
+| Each symbol carries full range (whole construct) and selection range (the name) | integration | starlette-blog (`blog/macros.html`) | `range` spans the tag; `selectionRange` spans the name only | REQ-SYM-01 |
+| **Negative:** loop variable (`{% for c in … %}`) is **not** an outline symbol | integration | starlette-blog (`blog/post.html`) | no symbol named `c` | REQ-SYM-01 |
+| **Negative:** macro parameter is **not** a top-level symbol | integration | starlette-blog (`blog/macros.html`) | `post`/`comment` appear only as detail, not as sibling symbols | REQ-SYM-01 |
+| **Negative:** `{% set %}` inside a block is **not** outline-worthy | integration | synthetic doc (`set` nested in a block) | no `Variable` symbol for the in-block `set` | REQ-SYM-01 |
+| **Edge (§10):** syntactically broken template yields a partial outline, never an error (P3) | integration | syntax-errors | symbols Pass 1 extracted are returned; missing constructs simply absent; no error response | REQ-SYM-01 |
+| **Edge (§10, E31):** inline-template symbols appear with ranges in host-file coordinates | integration | call-and-paths (inline/E31 case) | inline macro/block symbols present, ranges in host file | REQ-SYM-01 |
+
+**Document outline — nesting (REQ-SYM-02)**
+
+| Behavior / scenario | Type | Fixtures | Expected outcome | Verifies |
+|---|---|---|---|---|
+| Macro defined inside a block nests as that block's child | integration | starlette-blog (`blog/post.html`) | macro symbol is a `children` entry of the `content` `Module` | REQ-SYM-02 |
+| **Edge (§10):** deeply nested block-in-macro-in-block nests to match | integration | synthetic doc (block ▸ macro ▸ block) | three-level `children` chain mirrors span containment | REQ-SYM-02 |
+| **Edge (§10, W302):** duplicate macro name in one file lists both definitions in the outline | integration | duplicates | two sibling symbols with the same name; the `W302` diagnostic is separate (F01) | REQ-SYM-02 |
+| **Negative:** sibling (non-contained) constructs do **not** nest | integration | starlette-blog (`blog/macros.html`) | `post_url` and `comment_card` are siblings, neither a child of the other | REQ-SYM-02 |
+
+**Workspace symbol search (REQ-SYM-03)**
+
+| Behavior / scenario | Type | Fixtures | Expected outcome | Verifies |
+|---|---|---|---|---|
+| Search returns every macro **and** block across files, each with kind and `containerName` | integration | starlette-blog | results include `post_url`/`comment_card` (`Function`) and `content`/`head`/`body`/`footer` (`Module`); each `containerName` is its template path; each `Location` at the definition | REQ-SYM-03 |
+| **Edge (§10):** empty query returns all macros and blocks | integration | starlette-blog | every macro and block in the workspace returned | REQ-SYM-03 |
+| **Edge (§10):** same name as a macro in one file and a block in another — both appear, disambiguated by `containerName` | integration | synthetic doc + starlette-blog | two results sharing the name, different `containerName`/kind | REQ-SYM-03 |
+| **Edge (§10, E31):** inline-template macro/block appears in workspace search with host-file `Location` | integration | call-and-paths (inline/E31 case) | inline symbol present, `Location` in host file | REQ-SYM-03 |
+| **Negative:** top-level variables are **not** in workspace results | integration | synthetic doc (top-level `set`) | the `set` variable name is absent from results | REQ-SYM-03 |
+| **Negative:** imports are **not** in workspace results | integration | starlette-blog (`email/digest.html`) | the `from`-import is absent from results | REQ-SYM-03 |
+| **Edge (§10):** large workspace stays within latency budget by reading the prebuilt index | integration | large-workspace | empty-query result returns within the budget (< 100 ms, P6) | REQ-SYM-03 |
+
+**Fuzzy matching & ranking (REQ-SYM-04)**
+
+| Behavior / scenario | Type | Fixtures | Expected outcome | Verifies |
+|---|---|---|---|---|
+| Subsequence match: `pu` matches `post_url` | integration | starlette-blog | `post_url` is among the results for `pu` | REQ-SYM-04 |
+| Case-insensitive: `PU` / `Post` match `post_url` | integration | starlette-blog | `post_url` present for the differing-case query | REQ-SYM-04 |
+| Ranking: tighter matches (contiguous / prefix / exact-case) sort before looser ones | integration | starlette-blog | for `pu`, a prefix/contiguous match ranks above a scattered subsequence match | REQ-SYM-04 |
+| Ranking is stable: equal scores keep workspace order (deterministic) | integration | starlette-blog | repeated runs return identical order for equal-scored results | REQ-SYM-04 |
+| **Negative:** a query that is not a subsequence of any name returns no matches | integration | starlette-blog | query `zzz` returns an empty result set | REQ-SYM-04 |
 
 ### 11.3 Fixtures
 
-- `starlette-blog` for the outline and workspace search; `syntax-errors` for partial extraction. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- `starlette-blog` for the outline, mapping, workspace search, and fuzzy ranking; `syntax-errors` for the partial-outline edge; `duplicates` for the same-name-in-one-file outline edge; `call-and-paths` for the inline/E31 cases; `large-workspace` for the empty-query latency budget. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry). Edge constructs with no fixture (top-level/in-block `set`, alias `import`, deep block▸macro▸block nesting, cross-file same-name) use synthetic in-memory `didOpen` documents.
 
 ### 11.4 Requirement coverage
 
 | Requirement | Covered by |
 |---|---|
-| REQ-SYM-01 | symbol-kind mapping test |
-| REQ-SYM-02 | nesting test |
-| REQ-SYM-03 | workspace-search test |
-| REQ-SYM-04 | fuzzy-match + ranking test |
+| REQ-SYM-01 | §11.2 *Document outline — `SymbolKind` mapping* rows (block/macro/macro-with-default/set/from-import/alias-import kinds, range + selectionRange, the three negative excludes, and the broken-template and inline/E31 edges) |
+| REQ-SYM-02 | §11.2 *Document outline — nesting* rows (child nesting, deep block▸macro▸block, duplicate-name-in-file, non-contained-sibling negative) |
+| REQ-SYM-03 | §11.2 *Workspace symbol search* rows (all macros + blocks with `containerName`, empty query, cross-file same-name, inline/E31, variable & import negatives, large-workspace latency) |
+| REQ-SYM-04 | §11.2 *Fuzzy matching & ranking* rows (subsequence, case-insensitive, ranking order, stable order, no-match negative) |
 
 ## 12. End-to-End Test Plan
 
@@ -175,10 +217,15 @@ Target: **100% of this spec's behavior.** Every `REQ-SYM-NN` maps to at least on
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `documentSymbol` on `post.html` | happy | the nested outline with correct kinds |
-| E2E-02 | `workspace/symbol` with `"pu"` | happy | `post_url` among the fuzzy matches |
-| E2E-03 | `workspace/symbol` with an empty query | happy | all macros and blocks returned |
-| E2E-04 | `documentSymbol` on a broken file | error path | a partial outline, no crash |
+| E2E-01 | `documentSymbol` on `blog/post.html` | happy | the `content` `Module` with its nested macro child and correct kinds/details |
+| E2E-02 | `documentSymbol` on `blog/macros.html` — macro kinds & details | happy | `post_url` and `comment_card` as sibling `Function`s with param-list details, neither nested under the other |
+| E2E-03 | `documentSymbol` on `email/digest.html` — import as `Namespace` | happy | the `from "blog/macros.html"` import appears as a `Namespace` with the source-path detail |
+| E2E-04 | `documentSymbol` outline excludes locals | happy | no symbol for the `{% for c … %}` loop variable or macro parameters |
+| E2E-05 | `workspace/symbol` with `"pu"` | happy | `post_url` among the fuzzy matches, tagged `Function` with its `containerName` |
+| E2E-06 | `workspace/symbol` with an empty query | happy | every macro and block (`post_url`, `comment_card`, `content`, `head`, `body`, `footer`) returned, none of the variables or imports |
+| E2E-07 | `workspace/symbol` ranking — `"pu"` orders tighter matches first | happy | results come back in stable, score-ranked order |
+| E2E-08 | `documentSymbol` on a broken file | error path | a partial outline from what Pass 1 extracted, no crash |
+| E2E-09 | `workspace/symbol` with a non-matching query (`"zzz"`) | error path | an empty result set, no error |
 
 ## 13. Non-Functional Requirements
 
@@ -204,3 +251,4 @@ Target: **100% of this spec's behavior.** Every `REQ-SYM-NN` maps to at least on
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outline example names the `blog/macros.html` import (a `from`-import shown as a `Namespace`, §5.1), not an alias namespace, matching how `post.html` imports.
+- **2026-06-25** — Expanded §11.2 test plan to cover every REQ sub-case, §10 edge, and §6 state in both happy and negative polarities (per-construct `SymbolKind` rows incl. keyword-default detail and alias-import slot, range/selectionRange, the three local-exclusion negatives, deep block▸macro▸block nesting, duplicate-name-in-file, cross-file same-name, inline/E31 in both views, variable/import workspace negatives, fuzzy ranking + stability + no-match); rewrote §11.4 to map each REQ to its grouped rows; expanded §12.2 E2E scenarios to 9 covering both requests, all symbol kinds, ranking, empties, and the broken-file and no-match paths.

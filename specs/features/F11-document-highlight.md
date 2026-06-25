@@ -131,26 +131,49 @@ Target: **100% of this spec's behavior.** Every `REQ-HL-NN` maps to at least one
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Variable, macro, block, import each highlight their occurrences | integration | starlette-blog | REQ-HL-01 |
-| Occurrences collected from current file only, scope-aware | integration | starlette-blog | REQ-HL-02 |
-| Definition marked `Write`, usages `Read` | integration | starlette-blog | REQ-HL-03 |
-| Imported macro (no local def) → all `Read` | integration | starlette-blog | REQ-HL-03 |
-| Non-symbol cursor position returns empty | integration | starlette-blog | REQ-HL-04 |
+Each row is a concrete cursor position over a named construct, with the exact expected highlight set. "Synthetic doc" = an in-memory `didOpen` document for a construct not present in the `starlette-blog` baseline ([E17 §5](../foundations/E17-testing.md#starlette-blog)).
+
+| # | Construct / cursor · fixture | Type | Expected outcome | Verifies |
+|---|---|---|---|---|
+| **REQ-HL-01 — which symbols highlight** | | | | |
+| 1 | Cursor on `post` loop variable in `{% for post … %}` · `email/digest.html` | integration | a `DocumentHighlight[]` covering the `for` target + each in-loop `post` | REQ-HL-01 |
+| 2 | Cursor on `{% set %}` target name · synthetic doc (`{% set total = 0 %}…{{ total }}`) | integration | highlights at the `set` target + each `total` read | REQ-HL-01 |
+| 3 | Cursor on a macro parameter inside its body · synthetic doc (`{% macro m(words) %}{{ words }}{% endmacro %}`) | integration | highlights at the parameter decl + each `words` use in the body | REQ-HL-01 |
+| 4 | Cursor on a locally-defined macro name `post_url` · `blog/macros.html` | integration | highlights at the `{% macro %}` name + any same-file call | REQ-HL-01 |
+| 5 | Cursor on a block name `content` · `base.html` | integration | highlights at the `{% block content %}` name (+ `endblock` label / overrides per Pass 1 facts) | REQ-HL-01 |
+| 6 | Cursor on an import alias `y` · synthetic doc (`{% import "x" as y %}{{ y.z }}`) | integration | highlights at the alias slot + each `y` use | REQ-HL-01 |
+| **REQ-HL-02 — file-local, scope-aware collection** | | | | |
+| 7 | Cursor on `post_url` call in `blog/post.html` (defined in `blog/macros.html`) | integration | only the same-file occurrence highlights; the def in `macros.html` is **not** included | REQ-HL-02 |
+| 8 | Cursor on inner-scope `post` loop var when an outer `post` of the same name exists · synthetic doc (`{% for post in xs %}{{ post }}{% endfor %}{{ post }}`) | integration | only the in-loop occurrences highlight; the outer-scope `post` stays dark (distinct symbol) | REQ-HL-02 |
+| 9 | Cursor on `post` in `email/digest.html` loop; unrelated `request` global present | integration | `post` occurrences highlight; `request` is untouched (§6.1) | REQ-HL-02 |
+| **REQ-HL-03 — write vs read kinds** | | | | |
+| 10 | Cursor on the `for` target `post` · `email/digest.html` | integration | the `for` target is `kind = Write`; every in-loop `post` is `kind = Read` (§6.1) | REQ-HL-03 |
+| 11 | Cursor on a locally-defined macro `m` with one call · synthetic doc | integration | the `{% macro %}` name is `Write`; the call is `Read` (§6.2) | REQ-HL-03 |
+| 12 | Cursor on imported macro `post_url`'s call · `email/digest.html` (def lives in `blog/macros.html`) | integration | all occurrences are `Read`; no `Write` in this file | REQ-HL-03 |
+| 13 | Cursor on a symbol with a single occurrence: a never-read `{% set x = 1 %}` · synthetic doc | integration | one highlight, `kind = Write` (the lone definition) | REQ-HL-03 |
+| 14 | Cursor on a symbol used exactly once with no local def (imported, single call) · synthetic doc | integration | one highlight, `kind = Read` (the sole usage) | REQ-HL-03 |
+| **REQ-HL-04 — non-symbol positions** | | | | |
+| 15 | Cursor on host-language HTML text (e.g. `<h2>`) · `email/digest.html` | integration | empty result, no error | REQ-HL-04 |
+| 16 | Cursor on a delimiter (`{{`, `{%`) · synthetic doc | integration | empty result, no error | REQ-HL-04 |
+| 17 | Cursor on whitespace inside an expression · synthetic doc | integration | empty result, no error | REQ-HL-04 |
+| **§10 edges** | | | | |
+| 18 | Cursor on a symbol in a broken template (unclosed tag) where Pass 1 extracted only some occurrences · `syntax-errors` | integration | highlights whatever Pass 1 extracted; missing occurrences simply absent, no error (P3) | REQ-HL-02 |
+| 19 | Cursor on a symbol inside an inline/embedded template region · `call-and-paths` ([E31](../foundations/E31-inline-templates.md)) | integration | highlights stay within the inline region, returned in host-file coordinates | REQ-HL-02 |
 
 ### 11.3 Fixtures
 
-- `starlette-blog`, reusing `email/digest.html` for the loop-variable case. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- `starlette-blog`, reusing `email/digest.html` for the loop-variable case, `blog/macros.html` for the locally-defined macro, `blog/post.html` for the cross-file import call, and `base.html` for the block. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- `syntax-errors` for the broken-template edge (row 18) and `call-and-paths` for the inline/embedded edge (row 19), both registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- Synthetic in-memory `didOpen` documents for constructs absent from the baseline: `{% set %}` target, macro parameter, `{% import … as %}` alias, single-occurrence symbols, and delimiter/whitespace cursor positions (per [E17 §5](../foundations/E17-testing.md#starlette-blog)).
 
 ### 11.4 Requirement coverage
 
 | Requirement | Covered by |
 |---|---|
-| REQ-HL-01 | per-symbol-kind highlight test |
-| REQ-HL-02 | file-local + scope test |
-| REQ-HL-03 | write/read kind test |
-| REQ-HL-04 | empty-position test |
+| REQ-HL-01 | rows 1–6 — loop var, `set` target, macro param, local macro, block, import alias |
+| REQ-HL-02 | rows 7–9, 18, 19 — file-local only, scope-aware, broken-template, inline |
+| REQ-HL-03 | rows 10–14 — write/read kinds, imported-elsewhere all-`Read`, single-occurrence write & read |
+| REQ-HL-04 | rows 15–17 — host text, delimiter, whitespace |
 
 ## 12. End-to-End Test Plan
 
@@ -162,10 +185,18 @@ Target: **100% of this spec's behavior.** Every `REQ-HL-NN` maps to at least one
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | Cursor on a loop variable | happy | write on the `for` target, reads on each usage |
-| E2E-02 | Cursor on a locally-defined macro | happy | write on the `{% macro %}`, read on the call |
-| E2E-03 | Cursor on an imported macro's call | happy | a single `Read`, no write |
-| E2E-04 | Cursor on host-language text | negative | empty result, no error |
+| E2E-01 | Cursor on a loop variable (`post` in `email/digest.html`) | happy | `Write` on the `for` target, `Read` on each in-loop usage |
+| E2E-02 | Cursor on a `{% set %}` target (synthetic doc) | happy | `Write` on the `set` target, `Read` on each subsequent use |
+| E2E-03 | Cursor on a locally-defined macro (`post_url` in `blog/macros.html`) | happy | `Write` on the `{% macro %}` name, `Read` on its same-file call |
+| E2E-04 | Cursor on a block name (`content` in `base.html`) | happy | `Write` on the `{% block %}` name; only same-file occurrences |
+| E2E-05 | Cursor on an import alias (synthetic `{% import "x" as y %}`) | happy | `Write` on the alias slot, `Read` on each `y` use |
+| E2E-06 | Cursor on an imported macro's call (`post_url` in `email/digest.html`, defined elsewhere) | happy | all occurrences `Read`, no `Write` |
+| E2E-07 | Cursor on an inner-scope `post` while an outer `post` exists (synthetic doc) | happy | only the in-loop occurrences highlight; the outer `post` stays dark |
+| E2E-08 | Cursor on a single-occurrence definition (`{% set x = 1 %}`, never read) | happy | one highlight, `kind = Write` |
+| E2E-09 | Cursor on host-language HTML text | negative | empty result, no error |
+| E2E-10 | Cursor on a delimiter (`{{` / `{%`) | negative | empty result, no error |
+| E2E-11 | Cursor on whitespace inside an expression | negative | empty result, no error |
+| E2E-12 | Cursor on a symbol in a broken template (`syntax-errors`) | negative | highlights only what Pass 1 extracted; no error (P3) |
 
 ## 13. Non-Functional Requirements
 
@@ -190,3 +221,4 @@ Target: **100% of this spec's behavior.** Every `REQ-HL-NN` maps to at least one
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 to 19 concrete rows and §12.2 to 12 E2E scenarios for full combinatorial coverage (Write/Read kinds; loop var / set target / macro param / local macro / block / import alias; defined-in-file vs imported-elsewhere; scope-distinct names; single-occurrence write & read; host-text / delimiter / whitespace negatives; broken-template and inline §10 edges). Rebuilt §11.4 as a one-row-per-REQ bijection.

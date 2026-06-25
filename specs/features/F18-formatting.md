@@ -232,21 +232,96 @@ Target: **100% of this feature's behavior.** Every `REQ-FMT-NN` maps to a test; 
 
 ### 11.2 Test plan
 
-Golden fixtures live as `<name>.in` / `<name>.out` pairs under the formatter fixture set; each test asserts `format(.in) == .out`, **and** `format(.out) == .out` (idempotence), **and** that the parse trees of `.in` and `.out` are equivalent (tree preservation).
+Golden fixtures live as `<name>.in` / `<name>.out` pairs under the formatter fixture set; each test asserts `format(.in) == .out`, **and** `format(.out) == .out` (idempotence), **and** that the parse trees of `.in` and `.out` are equivalent (tree preservation). Constructs absent from a registered fixture (e.g. a list-form `{% include %}`, an `{% import … as %}` alias, a `{% raw %}` body) are exercised with synthetic inline source strings / `didOpen` documents per [E17 §5](../foundations/E17-testing.md#starlette-blog).
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Delimiter inner spacing normalized to one space | golden | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-01 |
-| Block bodies re-indented relative to the opening tag | golden | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-02 |
-| Whitespace-control spacing normalized; markers preserved | golden | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-03 |
-| Filter-pipe / `is`-test / call-arg spacing normalized | golden | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-04 |
-| Host bytes (HTML/SQL/text) emitted unchanged | golden | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-05 |
-| **Idempotence**: `format(format(x)) == format(x)` for every golden `.out` | golden (property) | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-06 |
-| **Tree equivalence**: trees of `.in` and `.out` match | golden (property) | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-06 |
-| Syntax-error file is skipped unchanged | golden | [syntax-errors](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-06 |
-| `formatting` and `rangeFormatting` produce the golden edits; range snaps outward | unit + e2e | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-07 |
-| CLI in-place / `--check` / `--diff` modes behave correctly | integration | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-08 |
-| CLI exit codes 0/1/2 | integration | [format-goldens](../foundations/E17-testing.md#5-fixtures-registry) | REQ-FMT-09 |
+Each row is one concrete `input → expected output` rule. Type is `unit-snapshot` (a single `insta` golden over the engine), `integration` (the real CLI binary against a fixture), or `e2e` (the protocol/binary journey in §12.2).
+
+**Delimiter spacing (§5.1, REQ-FMT-01)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-01 | `{{x}}` → `{{ x }}` (expression) | unit-snapshot | format-goldens / starlette-blog `post.html` `{{post.title}}` | REQ-FMT-01 |
+| T-02 | `{%if x%}` → `{% if x %}` (statement) | unit-snapshot | format-goldens | REQ-FMT-01 |
+| T-03 | `{#note#}` → `{# note #}` (comment) | unit-snapshot | format-goldens | REQ-FMT-01 |
+| T-04 | `{{  x  }}` (multi-space padding) → `{{ x }}` (collapse to one) | unit-snapshot | format-goldens | REQ-FMT-01 |
+| T-05 | Interior expression spacing left alone where §5.4 doesn't own it: `{{ a+b }}` → `{{ a+b }}` (only delimiter padding touched) | unit-snapshot | format-goldens | REQ-FMT-01 |
+
+**Block-body indentation (§5.2, REQ-FMT-02)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-06 | Flush `{% if %}`/`{% endif %}` body re-indented one unit; `{% end %}` re-aligns with opener | unit-snapshot | format-goldens (matches §6.1) | REQ-FMT-02 |
+| T-07 | Nested blocks compound one level each (`{% if %}` > `{% for %}` > body) | unit-snapshot | starlette-blog `post.html` loop | REQ-FMT-02 |
+| T-08 | Indent unit honors config: default 2 spaces; `tabSize=4` yields 4-space body indent | unit-snapshot | format-goldens (two snapshots) | REQ-FMT-02, REQ-FMT-07 |
+| T-09 | Host-language lines between Jinja tags keep their own indentation; only Jinja tag lines move (P5) | unit-snapshot | format-goldens (matches §6.1 `<ul>`/`<li>`) | REQ-FMT-02, REQ-FMT-05 |
+| T-10 | Opener offset from host column: body indents relative to the tag's column, never the host markup | unit-snapshot | format-goldens | REQ-FMT-02 |
+
+**Whitespace-control markers (§5.3, REQ-FMT-03, §6.2, §10)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-11 | `{%-if x-%}` → `{%- if x -%}` (statement marker spacing; matches §6.2) | unit-snapshot | format-goldens | REQ-FMT-03 |
+| T-12 | `{{- name|trim -}}` → `{{- name | trim -}}` (expression marker + pipe; matches §6.2) | unit-snapshot | format-goldens | REQ-FMT-03, REQ-FMT-04 |
+| T-13 | One-sided marker `{%- if x %}` preserved one-sided; spacing normalized, no marker added | unit-snapshot | format-goldens | REQ-FMT-03 |
+| T-14 | Negative: author-written markers never added or dropped — `{% if x %}` stays markerless (no `-` invented) | unit-snapshot | format-goldens | REQ-FMT-03, REQ-FMT-06 |
+
+**Filter-pipe / test / call-arg spacing (§5.4, REQ-FMT-04)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-15 | `x|e` → `x | e` (single pipe) | unit-snapshot | starlette-blog `post.html` `{{ post.title \| e }}` | REQ-FMT-04 |
+| T-16 | `name|upper|trim` → `name | upper | trim` (chained pipes) | unit-snapshot | format-goldens | REQ-FMT-04 |
+| T-17 | `post is  defined` → `post is defined` (`is`-test spacing) | unit-snapshot | format-goldens | REQ-FMT-04 |
+| T-18 | `truncate( 20,true )` → `truncate(20, true)` (call-arg commas: space after, none before) | unit-snapshot | starlette-blog `post.html` `truncate(60)` | REQ-FMT-04 |
+| T-19 | Negative: non-pipe/test operators left alone — `{{ a==b }}` unchanged (formatter, not beautifier) | unit-snapshot | format-goldens | REQ-FMT-04 |
+
+**Host-language untouchability (§5.5, REQ-FMT-05, §10)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-20 | HTML/SQL/text bytes around delimiters emitted byte-for-byte | unit-snapshot | format-goldens (HTML + SQL pair) | REQ-FMT-05 |
+| T-21 | Attribute values inside host tags never trimmed/rewritten (`<a href="  x  ">` preserved) | unit-snapshot | format-goldens | REQ-FMT-05 |
+| T-22 | Blank line of host text inside a block preserved exactly; host whitespace not collapsed (§10) | unit-snapshot | format-goldens | REQ-FMT-05 |
+| T-23 | Inline template region (E31): only the Jinja span formatted, edits mapped back to host coords, surrounding host code untouched (§10) | integration | call-and-paths (inline) | REQ-FMT-05, REQ-FMT-07 |
+
+**Round-trip safety (§5.6, REQ-FMT-06, §10)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-24 | Idempotence property: `format(.out) == .out` for every golden `.out` | unit-snapshot (property) | format-goldens (all pairs) | REQ-FMT-06 |
+| T-25 | Tree equivalence: parse trees of `.in` and `.out` equal modulo normalized whitespace, for every pair | unit-snapshot (property) | format-goldens (all pairs) | REQ-FMT-06 |
+| T-26 | Already-formatted input → zero edits (LSP) / "unchanged" (CLI), exit 0 (§10 idempotence) | integration | format-goldens (`.out` as input) | REQ-FMT-06 |
+| T-27 | Syntax-error file (`ERROR` node) → no change, byte-for-byte identical, reported skipped, does not force exit 2 (§10) | integration | syntax-errors | REQ-FMT-06, REQ-FMT-09 |
+
+**LSP front-end (§5.7, REQ-FMT-07, §10)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-28 | `textDocument/formatting` over whole doc returns minimal `TextEdit[]` matching the golden | e2e | format-goldens / starlette-blog `post.html` | REQ-FMT-07 |
+| T-29 | `textDocument/rangeFormatting` over one `{% for %}` reformats only that construct | e2e | starlette-blog `post.html` | REQ-FMT-07 |
+| T-30 | Range bisecting a tag snapped outward to the whole tag — no partial-tag edit produced (§10) | unit-snapshot | format-goldens | REQ-FMT-07 |
+| T-31 | `FormattingOptions` honored: `insertSpaces`/`tabSize` set indent unit; falls back to configured default when absent | unit-snapshot | format-goldens | REQ-FMT-07 |
+
+**CLI front-end (§5.8, REQ-FMT-08, §6.3, §6.4, §10)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-32 | Default in-place: changed file rewritten with formatted bytes | integration | format-goldens | REQ-FMT-08 |
+| T-33 | `PATH` omitted → formats every template under discovered templates dirs (same discovery as `check`) | integration | starlette-blog | REQ-FMT-08 |
+| T-34 | `PATH` is a file vs a directory — formats just that file / recurses the dir | integration | format-goldens | REQ-FMT-08 |
+| T-35 | `-c/--config FILE` uses the explicit config instead of discovery | integration | format-goldens + config | REQ-FMT-08 |
+| T-36 | `--check` writes nothing; lists files that would change (matches §6.4 output) | integration | starlette-blog `post.html`, `email/digest.html` | REQ-FMT-08 |
+| T-37 | `--diff` writes nothing; prints unified diff per file to stdout (matches §6.3 output) | integration | starlette-blog `post.html` | REQ-FMT-08 |
+| T-38 | `--check --diff` together → diff printed, nothing written, non-zero exit if any file would change (§10) | integration | starlette-blog `post.html` | REQ-FMT-08, REQ-FMT-09 |
+
+**CLI exit codes (§5.8, REQ-FMT-09)**
+
+| # | Input → expected output | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| T-39 | Exit 0 — every file already formatted (nothing to do), in-place and under `--check` | integration | format-goldens (`.out` corpus) | REQ-FMT-09 |
+| T-40 | Exit 1 — files changed in place / would change under `--check`/`--diff` | integration | starlette-blog | REQ-FMT-09 |
+| T-41 | Exit 2 — config or I/O error (unreadable config / path escape) | integration | config (invalid) | REQ-FMT-09 |
+| T-42 | A per-file parse-error skip alone does NOT force exit 2 (exit reflects only changed/unchanged) | integration | syntax-errors + format-goldens mix | REQ-FMT-09, REQ-FMT-06 |
 
 ### 11.3 Fixtures
 
@@ -257,15 +332,15 @@ Golden fixtures live as `<name>.in` / `<name>.out` pairs under the formatter fix
 
 | Requirement | Covered by |
 |---|---|
-| REQ-FMT-01 | delimiter-spacing golden |
-| REQ-FMT-02 | indentation golden |
-| REQ-FMT-03 | whitespace-control golden |
-| REQ-FMT-04 | filter-pipe golden |
-| REQ-FMT-05 | host-untouchability golden |
-| REQ-FMT-06 | idempotence + tree-equivalence property goldens + skip-on-error |
-| REQ-FMT-07 | LSP formatting/rangeFormatting unit + e2e |
-| REQ-FMT-08 | CLI mode integration tests |
-| REQ-FMT-09 | CLI exit-code integration tests |
+| REQ-FMT-01 | T-01–T-05 (delimiter spacing) |
+| REQ-FMT-02 | T-06–T-10 (block-body indentation) |
+| REQ-FMT-03 | T-11–T-14 (whitespace-control markers) |
+| REQ-FMT-04 | T-12, T-15–T-19 (filter-pipe / test / call-arg spacing) |
+| REQ-FMT-05 | T-09, T-20–T-23 (host untouchability) |
+| REQ-FMT-06 | T-14, T-24–T-27, T-42 (idempotence + tree-equivalence + skip-on-error); E2E-03, E2E-05 |
+| REQ-FMT-07 | T-08, T-23, T-28–T-31 (LSP formatting/rangeFormatting + range snap + options); E2E-01, E2E-02 |
+| REQ-FMT-08 | T-32–T-38 (CLI in-place / PATH / config / --check / --diff / combined); E2E-03, E2E-04 |
+| REQ-FMT-09 | T-27, T-38, T-39–T-42 (exit codes 0/1/2 + skip-doesn't-force-2); E2E-03, E2E-04, E2E-05 |
 
 ## 12. End-to-End Test Plan
 
@@ -275,13 +350,20 @@ Golden fixtures live as `<name>.in` / `<name>.out` pairs under the formatter fix
 
 ### 12.2 Scenarios
 
-| # | Journey | Path | Expected outcome |
-|---|---|---|---|
-| E2E-01 | `textDocument/formatting` on an unformatted `post.html` | happy | returned edits transform it to the golden `.out`; host bytes unchanged |
-| E2E-02 | `textDocument/rangeFormatting` over a single `{% for %}` | happy | only that construct is reformatted; range snapped to whole tags |
-| E2E-03 | `jinja-lsp format` (in place) over the corpus, run twice | happy | first run writes formatted bytes (exit 1); second run is a no-op (exit 0) — idempotence |
-| E2E-04 | `jinja-lsp format --check` over a corpus with one unformatted file | error | lists the file, writes nothing, exits 1 |
-| E2E-05 | `jinja-lsp format` over a file with a syntax error | error | file left unchanged, reported skipped, no exit-2 from the skip alone |
+Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercised, happy and negative, with the host-byte safety (P5) and round-trip (REQ-FMT-06) guarantees asserted end to end.
+
+| # | Journey | Path | Expected outcome | Verifies |
+|---|---|---|---|---|
+| E2E-01 | LSP `textDocument/formatting` on an unformatted `post.html` | happy | returned edits transform it to the golden `.out`; host `<ul>`/`<li>`/`<a>` bytes byte-for-byte unchanged (P5) | REQ-FMT-01, -02, -04, -05, -07 |
+| E2E-02 | LSP `textDocument/rangeFormatting` over a range bisecting a single `{% for %}` | happy | only that construct reformatted; range snapped outward to whole tags, no partial-tag edit | REQ-FMT-07 |
+| E2E-03 | CLI `jinja-lsp format` (in place) over the corpus, run twice | happy | first run writes formatted bytes (exit 1); second run a no-op (exit 0) — idempotence | REQ-FMT-06, -08, -09 |
+| E2E-04 | CLI `jinja-lsp format --check` over a corpus with one unformatted file | error | lists the file (§6.4), writes nothing, exits 1 | REQ-FMT-08, -09 |
+| E2E-05 | CLI `jinja-lsp format` over a file with a syntax error | error | file left byte-for-byte unchanged, reported skipped, no exit-2 from the skip alone | REQ-FMT-06, -09 |
+| E2E-06 | CLI `jinja-lsp format --diff` over an unformatted `post.html` | happy | prints the unified diff to stdout (§6.3), writes nothing, exits 1 | REQ-FMT-08, -09 |
+| E2E-07 | CLI `jinja-lsp format --check --diff` over a mixed corpus | error | diff printed AND nothing written; exits 1 because a file would change (§10) | REQ-FMT-08, -09 |
+| E2E-08 | CLI `jinja-lsp format --check` over an already-formatted corpus | happy | nothing listed, nothing written, exits 0 | REQ-FMT-06, -09 |
+| E2E-09 | CLI `jinja-lsp format` with an unreadable/invalid config | error | reports config/IO error, writes nothing, exits 2 | REQ-FMT-09 |
+| E2E-10 | LSP `textDocument/formatting` on an inline template region (E31) | happy | only the Jinja span reformatted; edits mapped to host coords; surrounding host code untouched (P5) | REQ-FMT-05, -07 |
 
 ## 13. Non-Functional Requirements
 
@@ -319,3 +401,4 @@ Golden fixtures live as `<name>.in` / `<name>.out` pairs under the formatter fix
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 test plan to concrete per-rule `input → expected output` rows (T-01–T-42) covering every formatting rule, idempotence + tree equivalence, syntax-error skip, range vs whole-document, FormattingOptions/indent-unit, CLI vs LSP paths, all CLI modes (`--check`/`--diff`/combined), exit codes 0/1/2, and host-byte safety; rebuilt §11.4 traceability and expanded §12.2 to E2E-01–E2E-10 (both front-ends, happy + negative, with explicit Path and Verifies).

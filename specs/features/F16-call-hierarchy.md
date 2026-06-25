@@ -153,14 +153,27 @@ Target: **100% of this feature's behavior.** Every `REQ-CALL-NN` maps to a test;
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Prepare on definition/call/import-name all anchor to the definition | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-01 |
-| Prepare on a non-macro returns nothing | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-01 |
-| Incoming groups callers by template with all ranges | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-02 |
-| Outgoing lists called macros + include/import edges | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-03 |
-| Dynamic / `ignore missing` edges are omitted | unit | [call-and-paths](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-03 |
-| Import cycle expands one level without recursion | unit | [inheritance](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CALL-04 |
+Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarities. Cursor positions are given as `template:line` against the `starlette-blog` layout (`blog/macros.html` defines `post_url` at line 6 and `comment_card` at line ~12; `blog/post.html` calls `post_url(post)` at line 4 and `post_url(related)` at line 9 and `comment_card(c, ...)` in its comment loop; `email/digest.html` imports `post_url` via `{% from "blog/macros.html" import post_url %}` and calls it at line 12; `post_url`'s body calls the `url_for` global at line 7). Synthetic rows use an in-memory `didOpen` document where the baseline lacks the construct.
+
+| # | Behavior / scenario | Type | Cursor · fixture/synthetic | Expected item / edges | Verifies |
+|---|---|---|---|---|---|
+| T01 | Prepare **at definition** anchors to the definition | unit | `blog/macros.html:6` on `{% macro post_url(post) %}` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | one item: `kind=Function`, `name="post_url"`, `detail="blog/macros.html"`, ranges spanning the def at line 6 | REQ-CALL-01 |
+| T02 | Prepare **at a call site** anchors to the definition (not the call) | unit | `blog/post.html:4` on `{{ post_url(post) }}` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | same item as T01, anchored to `blog/macros.html:6` — never to the call line | REQ-CALL-01 |
+| T03 | Prepare **at an import-name usage** anchors to the definition (§10 import-name edge) | unit | `email/digest.html:12` on `post_url` in `{{ post_url(post) }}` (imported via `from … import post_url`) · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | same item as T01, anchored to `blog/macros.html:6`, not to the `from … import` line | REQ-CALL-01 |
+| T04 | Prepare **over a non-macro** returns nothing (negative; §10 non-macro edge; 6.x suppressed) | unit | `blog/post.html` on the `post` variable inside `{{ post.title \| truncate(60) }}` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | empty result (no item) | REQ-CALL-01 |
+| T05 | Prepare **over a block / host text** returns nothing (negative; §10 non-macro edge, second branch) | unit | `base.html` on the `content` block keyword and on a host-HTML run · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | empty result for both positions | REQ-CALL-01 |
+| T06 | Prepare inside an **inline template region** reports host-file coordinates (§10 E31 edge) | unit | a `didOpen` host doc embedding a `{% macro m() %}` region ([E31](../foundations/E31-inline-templates.md)) · synthetic | one item: `kind=Function`, ranges in **host-file** line/col, not region-local | REQ-CALL-01 |
+| T07 | **Incoming** groups callers by template with all ranges (6.1 tree, happy) | unit | prepared `post_url` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | two `IncomingCall`s: `from=blog/post.html` with `fromRanges=[line 4, line 9]` (2), `from=email/digest.html` with `fromRanges=[line 12]` (1) | REQ-CALL-02 |
+| T08 | **Incoming** `from` is the **enclosing macro** when the call sits inside another macro body | unit | a `didOpen` doc where `{% macro wrapper() %}` calls `post_url(p)` in its body · synthetic | one `IncomingCall` whose `from` item is `wrapper` (the enclosing macro), not the template | REQ-CALL-02 |
+| T09 | **Incoming** on a macro with **no callers** returns an empty list (negative; §10 dead-macro edge) | unit | prepared `comment_card` after removing its call site, or a `didOpen` macro never called · synthetic | `incomingCalls` → `[]` | REQ-CALL-02 |
+| T10 | **Outgoing** lists the **called global** as a `ƒ` edge (6.2 tree, happy) | unit | prepared `post_url` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | one `OutgoingCall`: `to=url_for` (`kind=Function`, global — starlette pack), `fromRanges=[line 7]` | REQ-CALL-03 |
+| T11 | **Outgoing** lists a **called macro** as a `ƒ` edge | unit | a `didOpen` macro `{% macro a() %}{{ post_url(p) }}{% endmacro %}` · synthetic | one `OutgoingCall`: `to=post_url` (`kind=Function`, def `blog/macros.html:6`), `fromRanges` = call site in `a`'s body | REQ-CALL-03 |
+| T12 | **Outgoing** lists `include` / `import` **template edges** as `▤` edges (§5.3 second kind) | unit | a `didOpen` macro/template with `{% include "base.html" %}` and `{% import "blog/macros.html" as m %}` · synthetic | two `OutgoingCall`s: `to` items `kind=Module` for `base.html` and `blog/macros.html`, `fromRanges` = each directive's range | REQ-CALL-03 |
+| T13 | **Outgoing** on a macro that **calls and includes nothing** returns an empty list (negative; §10 empty-outgoing edge) | unit | a `didOpen` leaf macro `{% macro leaf() %}plain{% endmacro %}` · synthetic | `outgoingCalls` → `[]` | REQ-CALL-03 |
+| T14 | **Outgoing** **omits** dynamic / `ignore missing` template edges (negative; §10 unresolvable edge) | unit | the `{% include "x" ignore missing %}` and dynamic-path (`is_dynamic`) cases · [call-and-paths](../foundations/E17-testing.md#5-fixtures-registry) | those edges absent from `outgoingCalls`; only statically-resolvable edges remain | REQ-CALL-03 |
+| T15 | **One level per request**: outgoing on `post_url` does not transitively expand `url_for` | unit | prepared `post_url`, single `outgoingCalls` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | result is the direct edge(s) only; no children of `url_for` are included | REQ-CALL-04 |
+| T16 | **Import / call cycle** expands one level without recursion (§10 cycle edge; matches `JINJA-E404`) | unit | the recursive-import chain (A imports B, B imports A) · [inheritance](../foundations/E17-testing.md#5-fixtures-registry) | `outgoingCalls` returns the direct neighbor once and terminates; no infinite recursion | REQ-CALL-04 |
+| T17 | **Graph reuse**: handler reads the F09 reference/import graph, builds no second index | unit | prepared `post_url`, assert incoming/outgoing derive from the same resolved `Reference`s as [F09](F09-find-references.md) · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | incoming `fromRanges` == F09 function-call references to `post_url`; no separate traversal state | REQ-CALL-04 |
 
 ### 11.3 Fixtures
 
@@ -170,10 +183,10 @@ Target: **100% of this feature's behavior.** Every `REQ-CALL-NN` maps to a test;
 
 | Requirement | Covered by |
 |---|---|
-| REQ-CALL-01 | prepare unit tests |
-| REQ-CALL-02 | incoming-calls unit test |
-| REQ-CALL-03 | outgoing-calls + edge-omission unit tests |
-| REQ-CALL-04 | cycle-termination unit test |
+| REQ-CALL-01 | T01–T06 (prepare at def/call/import-name, non-macro, block/host text, inline region) |
+| REQ-CALL-02 | T07–T09 (grouped-by-template incoming, enclosing-macro `from`, no-callers empty) |
+| REQ-CALL-03 | T10–T14 (called global/macro `ƒ`, include/import `▤` edges, empty outgoing, dynamic/`ignore missing` omission) |
+| REQ-CALL-04 | T15–T17 (one level per request, cycle termination, F09 graph reuse) |
 
 ## 12. End-to-End Test Plan
 
@@ -185,10 +198,16 @@ Target: **100% of this feature's behavior.** Every `REQ-CALL-NN` maps to a test;
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `prepareCallHierarchy` on `post_url` | happy | one `Function` item anchored to `blog/macros.html` |
-| E2E-02 | `incomingCalls` on the prepared item | happy | callers `blog/post.html` (2 ranges) and `email/digest.html` (1) |
-| E2E-03 | `outgoingCalls` on the prepared item | happy | a called global plus the `include` template edge |
-| E2E-04 | `prepareCallHierarchy` over a plain variable | error | empty result |
+| E2E-01 | `prepareCallHierarchy` on the `post_url` **definition** (`blog/macros.html:6`) | happy | one `Function` item, `detail="blog/macros.html"`, ranges at the def |
+| E2E-02 | `prepareCallHierarchy` on a `post_url` **call site** (`blog/post.html:4`) | happy | same item anchored to `blog/macros.html:6`, not the call line |
+| E2E-03 | `prepareCallHierarchy` on the **imported-name** usage (`email/digest.html:12`) | happy | same item anchored to `blog/macros.html:6`, not the `from … import` line |
+| E2E-04 | `incomingCalls` on the prepared `post_url` item | happy | callers grouped: `blog/post.html` (2 ranges, lines 4 & 9) and `email/digest.html` (1 range, line 12) |
+| E2E-05 | `outgoingCalls` on the prepared `post_url` item | happy | one `Function` edge `url_for` (global, starlette pack) at line 7; one level only — `url_for` not expanded |
+| E2E-06 | `outgoingCalls` on a prepared macro that **includes/imports** another template | happy | a `Module` template edge for the `include`/`import` target appears alongside any called-macro edges |
+| E2E-07 | `outgoingCalls` across a **recursive import** chain returns one level and terminates | happy | direct neighbor returned once; no hang/recursion (matches `JINJA-E404`) |
+| E2E-08 | `prepareCallHierarchy` over a **plain variable** | error | empty result (no item) |
+| E2E-09 | `prepareCallHierarchy` over **host text / a block keyword** | error | empty result (no item) |
+| E2E-10 | `incomingCalls` on a macro with **no callers** | error | empty list returned |
 
 ## 13. Non-Functional Requirements
 
@@ -219,3 +238,4 @@ Target: **100% of this feature's behavior.** Every `REQ-CALL-NN` maps to a test;
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outgoing example drops the non-cast `blog/_meta.html` include; `post_url`'s only outgoing edge is the `url_for` global, matching its body in F08/F15.
+- **2026-06-25** — §11.2 and §12.2 rewritten to concrete rows covering every REQ sub-case, §6 state, and §10 edge in both polarities: prepare at def/call-site/import-name/inline-region, non-macro & block/host-text negatives, incoming grouped-by-template and enclosing-macro & no-callers, outgoing called-global/called-macro/include-import edges, empty-outgoing & dynamic/`ignore missing` omission, one-level-per-request, cycle termination, and F09 graph reuse. §11.4 updated to the full T01–T17 mapping; E2E expanded to E2E-01…E2E-10.

@@ -172,14 +172,29 @@ Target: **100% of this feature's behavior.** Every `REQ-INLAY-NN` maps to at lea
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Positional macro args get `param:` labels in order | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-01 |
-| Keyword args + over-arity args get no hint | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-01 |
-| Bare `{% endblock %}` echoes the block name; named one doesn't | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-02 |
-| Loop over a hinted list shows element type; non-hinted shows none | unit | [user-hints](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-03 |
-| Each toggle suppresses only its own category | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-04 |
-| Initial response carries no tooltip; resolve attaches it | unit + e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-INLAY-05 |
+Each row names the concrete call/construct, the fixture (or a synthetic `didOpen` doc where no fixture carries the construct — [E17 §5](../foundations/E17-testing.md#starlette-blog)), and the exact expected hint (label + position) or its absence. Rows pair happy (hint emitted) with negative (no hint) polarities for every branch.
+
+| # | Behavior / scenario | Call / construct · fixture | Expected hint (label · position) or absence | Type | Verifies |
+|---|---|---|---|---|---|
+| T-01 | Single positional arg → one `param:` label | `{{ post_url(post) }}` in `blog/post.html` · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | `post:` of kind `Parameter`, immediately before the `post` argument | unit | REQ-INLAY-01 |
+| T-02 | Multiple positional args → labels in left-to-right order | `comment_card(c, show_actions=true)` rewritten positionally `comment_card(c, true)` · synthetic doc importing `blog/macros.html` | `comment:` before `c`, then `show_actions:` before `true`, both `Parameter` | unit | REQ-INLAY-01 |
+| T-03 | Keyword arg already names its parameter → no hint (§10) | `{{ comment_card(c, show_actions=true) }}` in `blog/post.html` · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | `comment:` before `c`; no hint on `show_actions=true` (already named) | unit | REQ-INLAY-01 |
+| T-04 | Unresolvable / unknown macro callee → no hint (§10) | `{{ nonexistent_macro(x) }}` · synthetic doc | empty hint list — never guess a parameter name (P4) | unit | REQ-INLAY-01 |
+| T-05 | Over-arity call → label up to last param, extras get none (§10) | `{{ post_url(post, extra) }}` (one-param macro, two args) · synthetic doc importing `blog/macros.html` | `post:` before `post`; no hint before `extra` | unit | REQ-INLAY-01 |
+| T-06 | Half-typed call → no hint until the argument node exists (§10) | `{{ post_url( }}` · synthetic doc | empty hint list; tree-sitter recovers, no crash (P3) | unit | REQ-INLAY-01 |
+| T-07 | Bare `{% endblock %}` → block-name echo | long `content` block closed `{% endblock %}` in `blog/post.html` · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | `content` of kind `Type`, just inside the closing tag | unit | REQ-INLAY-02 |
+| T-08 | Bare `{% endblock %}` on the base layout → echoes `body` | `body` block closed bare in `base.html` · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | `body` of kind `Type`, just inside the closing tag | unit | REQ-INLAY-02 |
+| T-09 | Named `{% endblock content %}` → no echo (redundant, §10) | named endblock in a synthetic doc | no `Type` echo hint on that tag | unit | REQ-INLAY-02 |
+| T-10 | Loop over a hinted iterable → element-type hint | `{% for post in posts %}` where `posts` is hinted list of `Post` · [user-hints](../foundations/E17-testing.md#user-hints) | `: Post` of kind `Type`, after `post` | unit | REQ-INLAY-03 |
+| T-11 | Loop over a non-hinted iterable → no type hint even when on (§10) | `{% for c in post.comments %}` (no element-type hint) · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | no `Type` loop hint | unit | REQ-INLAY-03 |
+| T-12 | `parameterNames` off → suppresses only `param:` labels | `post.html` content block with `endblockNames` left on · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | no `Parameter` hints; `content` endblock echo still present | unit | REQ-INLAY-04 |
+| T-13 | `endblockNames` off → suppresses only the echo | `post.html` content block with `parameterNames` left on · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | no `Type` endblock echo; `post:` parameter hint still present | unit | REQ-INLAY-04 |
+| T-14 | `loopVariableTypes` on → enables only loop type hints | `{% for post in posts %}` with the other two toggles off · [user-hints](../foundations/E17-testing.md#user-hints) | `: Post` loop hint present; no parameter/endblock hints | unit | REQ-INLAY-04 |
+| T-15 | `loopVariableTypes` off (default) → no loop type hints, others unaffected | hinted-`posts` loop plus a macro call, defaults applied · [user-hints](../foundations/E17-testing.md#user-hints) | no `: Post` loop hint; parameter hint on the call still present | unit | REQ-INLAY-04 |
+| T-16 | Initial response carries label/kind/position only, no tooltip | `{{ post_url(post) }}` parameter hint · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | hint has no `tooltip` field; opaque `data` payload present | unit | REQ-INLAY-05 |
+| T-17 | Resolve a parameter hint → Markdown param doc tooltip | resolve the `show_actions:` hint · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | tooltip = param doc (`show_actions: bool = true` + body) | unit | REQ-INLAY-05 |
+| T-18 | Resolve an `endblock` echo → block definition location | resolve the `content` echo hint · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | tooltip points at the `{% block content %}` definition | unit | REQ-INLAY-05 |
+| T-19 | Resolve a stale hint (doc changed underneath) → unchanged, no throw (§10) | resolve a hint after editing the doc · synthetic doc | hint returned unchanged, no tooltip, no exception | unit | REQ-INLAY-05 |
 
 ### 11.3 Fixtures
 
@@ -189,11 +204,11 @@ Target: **100% of this feature's behavior.** Every `REQ-INLAY-NN` maps to at lea
 
 | Requirement | Covered by |
 |---|---|
-| REQ-INLAY-01 | parameter-name unit tests |
-| REQ-INLAY-02 | endblock-echo unit test |
-| REQ-INLAY-03 | loop-type unit test |
-| REQ-INLAY-04 | toggle-independence unit tests |
-| REQ-INLAY-05 | resolve round-trip unit + e2e |
+| REQ-INLAY-01 | T-01–T-06 (positional order, keyword-named no-hint, unknown-callee no-hint, over-arity, half-typed); E2E-01, E2E-06 |
+| REQ-INLAY-02 | T-07–T-09 (bare echo ×2, named no-echo); E2E-01 |
+| REQ-INLAY-03 | T-10, T-11 (hinted element type, non-hinted none); E2E-03 |
+| REQ-INLAY-04 | T-12–T-15 (each toggle isolated, loop default off); E2E-03 |
+| REQ-INLAY-05 | T-16–T-19 (no initial tooltip, param resolve, endblock resolve, stale resolve); E2E-02, E2E-04 |
 
 ## 12. End-to-End Test Plan
 
@@ -205,10 +220,12 @@ Target: **100% of this feature's behavior.** Every `REQ-INLAY-NN` maps to at lea
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `inlayHint` over `post.html` content block | happy | response includes `post:` and `content` echo at the right ranges |
-| E2E-02 | `inlayHint/resolve` on a parameter hint | happy | resolved hint carries the parameter's Markdown tooltip |
-| E2E-03 | `loopVariableTypes` off (default) | happy | no `Type` loop hints in the response |
-| E2E-04 | `inlayHint` at a position outside any Jinja delimiter | error | empty hint list (host language untouched — P5) |
+| E2E-01 | `inlayHint` over `post.html` content block (`post_url(post)`, `comment_card(c, show_actions=true)`, bare `{% endblock %}`) · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | happy | response includes `post:`, `comment:`, and the `content` endblock echo at the right ranges; no hint on the `show_actions=true` keyword arg |
+| E2E-02 | `inlayHint/resolve` on the `show_actions:` parameter hint · [starlette-blog](../foundations/E17-testing.md#starlette-blog) | happy | resolved hint carries the parameter's Markdown tooltip (`show_actions: bool = true` + body) |
+| E2E-03 | `inlayHint` with `loopVariableTypes` off (default) over the `posts` loop · [user-hints](../foundations/E17-testing.md#user-hints) | happy | no `Type` loop hints; parameter and endblock hints still present |
+| E2E-04 | `inlayHint/resolve` on a stale hint after a `didChange` · synthetic doc | happy | hint returned unchanged with no tooltip; the server never throws |
+| E2E-05 | `inlayHint` at a position outside any Jinja delimiter (host HTML) | error | empty hint list (host language untouched — P5) |
+| E2E-06 | `inlayHint` over a call to an unresolvable macro · synthetic doc | error | empty hint list — no guessed parameter names (P4) |
 
 ## 13. Non-Functional Requirements
 
@@ -238,3 +255,4 @@ Target: **100% of this feature's behavior.** Every `REQ-INLAY-NN` maps to at lea
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 test plan to concrete per-branch rows (T-01–T-19) covering every hint kind and polarity — positional single/multi-param labels, keyword-named no-hint, unknown-callee no-hint, over-arity, half-typed, bare/named endblock echo, hinted/non-hinted loop type, per-toggle isolation, no-initial-tooltip, param/endblock/stale resolve — and grew §12.2 to E2E-01–E2E-06 (added stale-resolve and unresolvable-macro journeys). Rewrote §11.4 to trace each REQ to its T-/E2E ids.

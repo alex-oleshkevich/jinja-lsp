@@ -154,12 +154,40 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Macro references collected across all templates | integration | starlette-blog | REQ-REF-01, REQ-REF-02 |
-| Block references include every override in the chain | integration | inheritance | REQ-REF-01 |
-| Import-alias usages resolved to the imported symbol | integration | starlette-blog | REQ-REF-01 |
-| Results ordered by URI then position (deterministic) | integration | starlette-blog | REQ-REF-02 |
-| `includeDeclaration` toggles the declaration in the list | integration | starlette-blog | REQ-REF-03 |
-| Generic variable returns an empty result | integration | starlette-blog | REQ-REF-04 |
+| **REQ-REF-01 — macro kind** | | | |
+| Cursor on `{% macro post_url(post) %}` decl in `macros.html` → all 3 call sites (`post_url(post)` and `post_url(related)` in `post.html` line 4/9, `post_url(post)` in `digest.html`) plus both `from … import post_url` binding sites (`post.html`, `digest.html`) collected | integration | starlette-blog | REQ-REF-01 |
+| `{% call … %}` call site of a macro is collected — cursor on a macro defined and invoked via `{% call comment_card(c) %}…{% endcall %}` returns the `{% call %}` site as a reference | integration | synthetic doc (a `{% macro %}` + `{% call %}` pair, not in baseline) | REQ-REF-01 |
+| `{{ m(…) }}` call site of a macro is collected — cursor on `comment_card` decl in `macros.html` returns the `comment_card(c, show_actions=true)` call in `post.html`'s comment loop | integration | starlette-blog | REQ-REF-01 |
+| `from … import` binding name is itself a reference — cursor on `post_url` in `{% from "blog/macros.html" import post_url %}` (`post.html`) resolves to the macro and the binding range is in the result set | integration | starlette-blog | REQ-REF-01 |
+| **REQ-REF-01 — block kind** | | | |
+| Cursor on `{% block content %}` decl in `base.html` → declaration plus the `content` overrides in `post.html` and `digest.html` | integration | starlette-blog | REQ-REF-01 |
+| Block overridden several levels deep — every override in a 3-level chain (grandparent decl, parent override, child override) is returned, not only the immediate child (§10) | integration | inheritance | REQ-REF-01 |
+| **REQ-REF-01 — import kind** | | | |
+| Import (`from`-import name) usages — cursor on the imported `post_url` returns every usage of that name within the importing template (`digest.html`: the call on line 12) | integration | starlette-blog | REQ-REF-01 |
+| Import alias slot (`{% import "x" as y %}`) — cursor on alias `y` returns every `y.member` usage in the importing template | integration | synthetic doc (`{% import … as y %}` alias slot, not in baseline) | REQ-REF-01 |
+| **REQ-REF-02 — workspace collection & ordering** | | | |
+| Macro references span the whole workspace — `post_url` usages in both `post.html` and `digest.html` are collected, not just the current file | integration | starlette-blog | REQ-REF-02 |
+| Each result is a `Location` at the usage's identifier range (URI + range covers the name token only, not the whole tag) | integration | starlette-blog | REQ-REF-02 |
+| Results ordered by URI, then by position — deterministic output across runs | integration | starlette-blog | REQ-REF-02 |
+| Multi-folder isolation — a macro defined in folder A is **not** reported at a same-named usage in folder B; references resolve within each folder only (§5.2 Note) | integration | large-workspace (multi-folder) | REQ-REF-02 |
+| **REQ-REF-03 — includeDeclaration toggle** | | | |
+| `includeDeclaration: true` on `post_url` → declaration range present alongside the 5 usages (6 total) | integration | starlette-blog | REQ-REF-03 |
+| `includeDeclaration: false` on `post_url` → only the 5 usages, declaration absent | integration | starlette-blog | REQ-REF-03 |
+| Declaration range is the name range of the `MacroDefinition`/`BlockDefinition`/`ImportAlias`, not the whole construct | integration | starlette-blog | REQ-REF-03 |
+| **REQ-REF-04 — negative contract** | | | |
+| Bare context variable (`{{ post }}`) returns an empty result, not an error | integration | starlette-blog | REQ-REF-04 |
+| Attribute access (`{{ user.email }}`) returns an empty result | integration | synthetic doc (`{{ user.email }}`) | REQ-REF-04 |
+| Loop variable (`{% for c in post.comments %}` → cursor on `c`) returns an empty result | integration | starlette-blog | REQ-REF-04 |
+| `{% set %}` variable returns an empty result | integration | synthetic doc (`{% set x = … %}{{ x }}`) | REQ-REF-04 |
+| **§10 edges & §6 states** | | | |
+| Macro never used, `includeDeclaration: true` → just the declaration | integration | unused-symbols | REQ-REF-01, REQ-REF-03 |
+| Macro never used, `includeDeclaration: false` → empty list | integration | unused-symbols | REQ-REF-03, REQ-REF-04 |
+| Macro imported under different aliases in different files → all call sites across both aliases resolve to the one definition and are collected | integration | synthetic docs (two importers, distinct alias names) | REQ-REF-01, REQ-REF-02 |
+| Cursor on a usage rather than the definition → resolve-then-collect yields the identical result set as cursor-on-definition | integration | starlette-blog | REQ-REF-01 |
+| Inline template (E31) — a macro usage inside an inline region is collected and reported in host-file coordinates | integration | call-and-paths (inline cases) | REQ-REF-01, REQ-REF-02 |
+| Unresolved macro call — cursor on a call with no resolvable definition returns an empty result (no anchor) | integration | call-and-paths | REQ-REF-04 |
+| §6.1 panel data — macro result groups usages by file and tags the declaration distinctly from plain usages (declaration carries the decl marker; usages are plain) | integration | starlette-blog | REQ-REF-01, REQ-REF-03 |
+| §6.2 panel data — block result tags the base declaration vs. each override distinctly | integration | starlette-blog | REQ-REF-01 |
 
 ### 11.3 Fixtures
 
@@ -169,10 +197,10 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 | Requirement | Covered by |
 |---|---|
-| REQ-REF-01 | macro/block/import reference tests |
-| REQ-REF-02 | workspace-collection + ordering test |
-| REQ-REF-03 | includeDeclaration test |
-| REQ-REF-04 | negative-contract test |
+| REQ-REF-01 | macro-kind tests (`{{ m() }}`, `{% call %}`, `from … import` binding), block-kind tests (overrides incl. deep chain), import-kind tests (`from`-import name + alias slot) |
+| REQ-REF-02 | workspace-span, identifier-range `Location`, URI-then-position ordering, and multi-folder isolation tests |
+| REQ-REF-03 | includeDeclaration true/false toggle + declaration-name-range tests |
+| REQ-REF-04 | negative-contract tests (bare var, attribute, loop var, `{% set %}` var, unresolved call) |
 
 ## 12. End-to-End Test Plan
 
@@ -184,10 +212,15 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | References on a macro definition, `includeDeclaration: true` | happy | declaration + all call sites across files |
-| E2E-02 | Same macro, `includeDeclaration: false` | happy | call sites only |
-| E2E-03 | References on a base block | happy | declaration + every override |
-| E2E-04 | References on a generic variable | negative | empty result, no error |
+| E2E-01 | References on the `post_url` macro **definition** in `macros.html`, `includeDeclaration: true` (starlette-blog) | happy | declaration + both `from … import` bindings + 3 call sites across `post.html` and `digest.html` (6 locations), ordered by URI then position |
+| E2E-02 | Same macro, `includeDeclaration: false` (starlette-blog) | happy | the 5 usages only (2 bindings + 3 calls); declaration absent |
+| E2E-03 | References on the `post_url` macro from a **usage** site (a call in `post.html`), `includeDeclaration: true` (starlette-blog) | happy | identical 6-location set as E2E-01 — invocation point doesn't change the result |
+| E2E-04 | References on the `content` **base block** in `base.html` (starlette-blog) | happy | declaration + the `post.html` and `digest.html` overrides, each tagged distinctly |
+| E2E-05 | References on a `{% call comment_card(c) %}` site collected alongside `{{ }}` calls (synthetic `didOpen` doc with a `{% macro %}` + `{% call %}` pair) | happy | both the `{% call %}` and any `{{ }}` invocation returned as references |
+| E2E-06 | References on a generic context variable (`{{ post }}`) (starlette-blog) | negative | empty result, no error |
+| E2E-07 | References on an attribute access (`{{ user.email }}`) (synthetic `didOpen` doc) | negative | empty result, no error |
+| E2E-08 | References on a macro that is never called, `includeDeclaration: false` (unused-symbols) | negative | empty list (no usages), no error |
+| E2E-09 | References on an unresolved macro call — no definition to anchor on (call-and-paths) | error | empty result; the call is flagged separately by F01 `JINJA-E103` |
 
 ## 13. Non-Functional Requirements
 
@@ -213,3 +246,4 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — `digest.html` references `post_url` via `from … import` (was an alias); mockup and §9 now count both import bindings plus three calls (6 with declaration), consistent with F15/F16.
+- **2026-06-25** — Expanded §11.2 and §12.2 to full combinatorial coverage: each REQ-REF sub-behavior (macro `{{ }}`/`{% call %}`/`from … import` kinds, block deep-chain overrides, import alias slot, identifier-range `Location`, multi-folder isolation, declaration-name-range, every §5.4 variable form), every §10 edge (never-used, multi-alias, deep override, cursor-on-usage, inline, unresolved call), and both §6 panel states now map to concrete test rows; §11.4 lists every REQ once; §12.2 adds happy/negative/error journeys (E2E-01–09).

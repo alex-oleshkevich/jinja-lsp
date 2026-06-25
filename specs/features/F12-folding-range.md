@@ -139,26 +139,69 @@ Target: **100% of this spec's behavior.** Every `REQ-FOLD2-NN` maps to at least 
 
 ### 11.2 Test plan
 
+Every foldable construct kind in §5.1 gets its own happy row (correct start/end span) and, where a negative polarity exists, a paired negative row. Synthetic `didOpen` documents supply the constructs absent from the baseline fixture (`raw`, `call`, `if/elif/else`, `for/else`, deeply nested, whitespace-control, single-line variants), per [E17-testing §5](../foundations/E17-testing.md#starlette-blog).
+
+**Per-construct ranges (REQ-FOLD2-01) — one row per kind:**
+
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Each construct yields a range with correct start/end | integration | starlette-blog | REQ-FOLD2-01 |
-| Comment blocks are `comment`; tags are `region` | integration | starlette-blog | REQ-FOLD2-02 |
-| Single-line constructs yield no fold | integration | starlette-blog | REQ-FOLD2-03 |
-| Whitespace-control + `if/elif/else` fold as one region | integration | starlette-blog | REQ-FOLD2-04 |
-| Unclosed tag yields no range (no run-to-EOF) | integration | syntax-errors | REQ-FOLD2-01 |
+| `{% block content %}…{% endblock %}` in `post.html` yields a range from the `block` opening line to the `endblock` line | integration | starlette-blog | REQ-FOLD2-01 |
+| `{% for c in post.comments %}…{% endfor %}` inside `content` yields a range from `for` line to `endfor` line | integration | starlette-blog | REQ-FOLD2-01 |
+| Multi-line `{# Post detail page — extends base… #}` header in `post.html` yields a range from its first line to its last line | integration | starlette-blog | REQ-FOLD2-01 |
+| `{% macro post_url(post) %}…{% endmacro %}` in `macros.html` (spanning ≥ 2 lines) yields a range from `macro` line to `endmacro` line | integration | starlette-blog | REQ-FOLD2-01 |
+| `{% if x %}<body>…{% endif %}` (multi-line) yields a range from `if` line to `endif` line | integration | synthetic doc | REQ-FOLD2-01 |
+| `{% call comment_card(c) %}<body>…{% endcall %}` (multi-line) yields a range from `call` line to `endcall` line | integration | synthetic doc | REQ-FOLD2-01 |
+| `{% raw %}…{% endraw %}` (multi-line) yields a range from `raw` line to `endraw` line | integration | synthetic doc | REQ-FOLD2-01 |
+
+**Region kind mapping (REQ-FOLD2-02) — both polarities, every kind:**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| The multi-line `{# … #}` fold in `post.html` carries `kind = Comment` | integration | starlette-blog | REQ-FOLD2-02 |
+| The `block` and `for` folds in `post.html` carry `kind = Region` (not Comment) | integration | starlette-blog | REQ-FOLD2-02 |
+| `macro`, `if`, `call`, `raw` folds each carry `kind = Region` | integration | starlette-blog + synthetic doc | REQ-FOLD2-02 |
+
+**Fold boundaries & single-line negatives (REQ-FOLD2-03):**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| A multi-line fold's `endLine` is the closing tag's line (body incl. close hides, opener stays visible) | integration | starlette-blog | REQ-FOLD2-03 |
+| Single-line `{% extends "base.html" %}` yields no fold | integration | starlette-blog | REQ-FOLD2-03 |
+| Single-line `{% if x %}…{% endif %}` on one line yields no fold | integration | synthetic doc | REQ-FOLD2-03 |
+| One-line `{# … #}` comment yields no fold | integration | synthetic doc | REQ-FOLD2-03 |
+
+**Whitespace-control & intermediate clauses (REQ-FOLD2-04):**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `{%- for c in post.comments -%}…{%- endfor -%}` folds by node span; trim markers don't shift `startLine`/`endLine` | integration | synthetic doc | REQ-FOLD2-04 |
+| `{% if %}…{% elif %}…{% else %}…{% endif %}` folds as one region from `if` to `endif` (no per-branch sub-folds) | integration | synthetic doc | REQ-FOLD2-04 |
+| `{% for %}…{% else %}…{% endfor %}` folds as one region from `for` to `endfor` | integration | synthetic doc | REQ-FOLD2-04 |
+
+**§10 edges & §6 states (negative / structural):**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Unclosed `{% for %}` (MISSING `endfor`) yields no range — no run-to-EOF fold (§10) | integration | syntax-errors | REQ-FOLD2-01, REQ-FOLD2-03 |
+| Unclosed `{% block %}` with no `{% endblock %}` yields no range (§10) | integration | syntax-errors | REQ-FOLD2-01, REQ-FOLD2-03 |
+| Deeply nested `for` ▸ `if` ▸ `block` each yield an independent range; outer span encloses inner spans (§10) | integration | synthetic doc | REQ-FOLD2-01 |
+| `post.html` block ▸ nested loop: both ranges present, foldable independently (§6.2) | integration | starlette-blog | REQ-FOLD2-01 |
+| `{% raw %}{% for %}…{% endfor %}{% endraw %}` yields exactly one `raw` region; inner tag-like text produces no nested fold (§10) | integration | synthetic doc | REQ-FOLD2-01 |
+| Inline template ([E31](../foundations/E31-inline-templates.md)): a foldable `{% for %}` inside an inline region yields a range in host-file coordinates (§10) | integration | call-and-paths | REQ-FOLD2-01 |
+| §6.1 layout: `post.html` returns the comment fold (Comment), the `content` block fold (Region), and leaves the single-line `extends`/`from` unfolded — exactly the gutter shown | integration | starlette-blog | REQ-FOLD2-01, REQ-FOLD2-02, REQ-FOLD2-03 |
 
 ### 11.3 Fixtures
 
-- `starlette-blog` for the construct catalog; `syntax-errors` for the unclosed-tag recovery case. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- `starlette-blog` for the on-disk construct catalog (`block`, `for`, multi-line `{# #}`, `macro`, single-line `extends`/`from`); `syntax-errors` for the unclosed-tag recovery cases; `call-and-paths` for the inline/E31 host-coordinate case. Constructs absent from those fixtures (`raw`, `call`, `if/elif/else`, `for/else`, single-line `{% if %}`/`{# #}`, deeply nested, whitespace-control) use synthetic in-memory `didOpen` documents, per [E17-testing §5](../foundations/E17-testing.md#starlette-blog). Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
 
 ### 11.4 Requirement coverage
 
 | Requirement | Covered by |
 |---|---|
-| REQ-FOLD2-01 | per-construct range test |
-| REQ-FOLD2-02 | region-kind test |
-| REQ-FOLD2-03 | single-line-no-fold test |
-| REQ-FOLD2-04 | whitespace-control + branch test |
+| REQ-FOLD2-01 | per-construct range tests (block, for, comment, macro, if, call, raw), nested-independence, raw-literal, inline host-coord, and unclosed-tag negatives |
+| REQ-FOLD2-02 | region-vs-comment kind tests across all kinds, plus the §6.1 layout row |
+| REQ-FOLD2-03 | endLine-keeps-opener test and single-line negatives (`extends`, one-line `if`, one-line `{# #}`), plus unclosed-tag negatives |
+| REQ-FOLD2-04 | whitespace-control span test, `if/elif/else` one-region test, `for/else` one-region test |
 
 ## 12. End-to-End Test Plan
 
@@ -170,9 +213,13 @@ Target: **100% of this spec's behavior.** Every `REQ-FOLD2-NN` maps to at least 
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `foldingRange` on `post.html` | happy | ranges for the comment, block, and loop with correct kinds |
-| E2E-02 | A single-line `{% if %}` | happy | no range emitted |
-| E2E-03 | An unclosed `{% for %}` | error path | no run-to-EOF range; server stays healthy |
+| E2E-01 | `foldingRange` on `post.html` (didOpen → request) | happy | ranges for the multi-line comment (Comment), `content` block (Region), and nested `for` loop (Region), each with correct start/end (§6.1, §6.2) |
+| E2E-02 | `foldingRange` over a `didOpen` doc holding `macro`, `call`, and `raw` blocks | happy | three Region ranges, one per construct, with spans from opener to closer |
+| E2E-03 | `foldingRange` over a `didOpen` doc with `{% if %}…{% elif %}…{% else %}…{% endif %}` | happy | a single Region range from `if` to `endif`; no per-branch sub-folds |
+| E2E-04 | `foldingRange` over a `didOpen` doc with whitespace-control `{%- for -%}…{%- endfor -%}` | happy | one Region range by node span; trim markers don't shift boundaries |
+| E2E-05 | `foldingRange` on a single-line `{% if x %}…{% endif %}` | negative | no range emitted |
+| E2E-06 | `foldingRange` on a single-line `{% extends "base.html" %}` and a one-line `{# … #}` | negative | no ranges emitted for either |
+| E2E-07 | `foldingRange` on an unclosed `{% for %}` (no `{% endfor %}`) | error path | no run-to-EOF range; server stays healthy and responds to the next request |
 
 ## 13. Non-Functional Requirements
 
@@ -197,3 +244,4 @@ Target: **100% of this spec's behavior.** Every `REQ-FOLD2-NN` maps to at least 
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 to one row per foldable construct kind (block, for, comment, macro, if, call, raw) in both polarities, plus rows for every §10 edge (unclosed-tag negatives, deep nesting, raw-literal, inline host-coords) and §6 states; rewrote §11.4 so each REQ lists its covering rows; expanded §12.2 to seven sequential E2E scenarios spanning happy, negative, and error paths.

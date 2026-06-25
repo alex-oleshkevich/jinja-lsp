@@ -235,6 +235,7 @@ In CI you'd rather diff structured output, so the workflow runs `jinja-lsp check
 - **Warnings only, no errors** → still exit `1` (any finding is non-zero).
 - **A slug passed to `--select`/`--ignore`** (e.g. `--ignore undefined-variable`) → rejected as an invalid filter, exit `2` (slugs are output labels, not input — [ADR-003](../decisions/ADR-003-diagnostic-code-scheme.md)).
 - **Output piped (not a TTY)** → `rich` drops color automatically; `compact`/`json` are already color-free.
+- **A `noqa`-suppressed finding** → the suppressed code is absent from every format's output exactly as in the server ([F01](F01-diagnostics.md) §5.4); an invalid `noqa` still surfaces its own `JINJA-W107 invalid-noqa` finding, so a file whose only "error" is a bad `noqa` still exits `1`.
 
 ## 11. Testing
 
@@ -246,17 +247,52 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-LINT-NN` maps
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| `PATH` as file vs directory vs omitted | integration | starlette-blog | REQ-LINT-01 |
-| Each flag parses and applies | unit | — | REQ-LINT-02 |
-| `--select`/`--ignore` by code and class prefix; overlap resolution | unit | starlette-blog | REQ-LINT-03 |
-| `rich` renders header + caret + help line | unit (snapshot, `insta`) | undefined-vars | REQ-LINT-04 |
-| `compact` is one line per finding, no color | unit (snapshot) | undefined-vars, unused-symbols | REQ-LINT-05 |
-| `json` array has the exact 7 keys, ordered | golden (check) | all diagnostic fixtures | REQ-LINT-06 |
-| `json` output equals `expected-diagnostics.json` byte-for-byte | golden (check) | all diagnostic fixtures | REQ-LINT-07 |
-| Exit 0 / 1 / 2 across clean / findings / bad config | integration | starlette-blog, syntax-errors | REQ-LINT-08 |
-| `check` output equals server `publishDiagnostics` | integration | starlette-blog | REQ-LINT-09 |
+Each row is a concrete invocation (with flags), the fixture it runs against, and the exact expected stdout shape + exit code. Rows are grouped by behavior; every `REQ-LINT-NN`, every flag and combination, all three formats, all three exit codes, the golden identity, `select`/`ignore` filtering, `noqa`, color gating, and every §10 edge and §6 state appears.
+
+| # | Invocation (+ flags) | Type | Fixture | Expected stdout · exit | Verifies |
+|---|---|---|---|---|---|
+| **PATH resolution (REQ-LINT-01)** ||||||
+| T-01 | `check templates/blog/post.html` (single file) | integration | starlette-blog | findings for that one file only · `1` | REQ-LINT-01 |
+| T-02 | `check templates/` (directory, scans configured `extensions`) | integration | undefined-vars | findings across all matching files, ordered by file/line/col · `1` | REQ-LINT-01 |
+| T-03 | `check` (PATH omitted → lints configured `templates` dirs) | integration | starlette-blog | findings over the discovered set · `1` | REQ-LINT-01 |
+| T-04 | `check ../outside/tpl.html` (PATH outside workspace, linted in isolation) | integration | call-and-paths | only checks reachable from it resolve; cross-file refs unresolved · `1` | REQ-LINT-01 |
+| T-05 | `check` over a directory with zero matching files (§10) | integration | starlette-blog (empty subdir) | `No problems found.` · `0` | REQ-LINT-01, REQ-LINT-08 |
+| **Flags (REQ-LINT-02)** ||||||
+| T-06 | `--config ./jinja.toml` parses and is honored | unit | — | uses given config, not discovery · n/a | REQ-LINT-02 |
+| T-07 | `-v`/`--verbose` raises tracing to INFO on **stderr**; findings still on stdout | integration | undefined-vars | discovery/timing on stderr; findings unchanged on stdout · `1` | REQ-LINT-02 |
+| T-08 | `--format`, `--select`, `--ignore` parse with code/prefix args | unit | — | each flag accepted and applied · n/a | REQ-LINT-02 |
+| **Select / ignore filtering (REQ-LINT-03)** ||||||
+| T-09 | `--select JINJA-E101` (full code) | unit/integration | undefined-vars | only `JINJA-E101` findings kept · `1` | REQ-LINT-03 |
+| T-10 | `--select JINJA-E1` (class prefix = all 1xx) | unit/integration | undefined-vars | all 1xx kept, 2xx/3xx dropped · `1` | REQ-LINT-03 |
+| T-11 | `--ignore JINJA-W2` (class prefix subtracts) | integration | unused-symbols | all 2xx dropped · `0` if only 2xx remained, else `1` | REQ-LINT-03 |
+| T-12 | `--select JINJA-E1 --ignore JINJA-E101` (overlap → ignore wins, §10) | unit | undefined-vars | 1xx kept **except** `JINJA-E101` · `1` | REQ-LINT-03 |
+| T-13 | CLI `--select` overrides config `lint.select` for the run | integration | starlette-blog (config sets `lint.select`) | CLI set wins over config · per-findings | REQ-LINT-03 |
+| T-14 | CLI `--ignore` overrides config `lint.ignore` for the run | integration | starlette-blog (config sets `lint.ignore`) | CLI set wins over config · per-findings | REQ-LINT-03 |
+| **`rich` format (REQ-LINT-04) + color gating + §6 states** ||||||
+| T-15 | `--format rich` (default) renders header + `-->` + caret + `= help:` | unit (snapshot, `insta`) | undefined-vars | rustc-style block, trailing `N problems (…)` · `1` | REQ-LINT-04 |
+| T-16 | `rich` clean run (§6.1 state) | integration | starlette-blog | `No problems found.` · `0` | REQ-LINT-04, REQ-LINT-08 |
+| T-17 | `rich` to a **TTY** → color emitted | unit (snapshot) | undefined-vars | ANSI color present · `1` | REQ-LINT-04 |
+| T-18 | `rich` **piped** (not a TTY) → color dropped (§10) | unit (snapshot) | undefined-vars | no ANSI escapes · `1` | REQ-LINT-04 |
+| T-19 | `rich` with `NO_COLOR` set, even on a TTY → color dropped (§10) | unit (snapshot) | undefined-vars | no ANSI escapes · `1` | REQ-LINT-04 |
+| **`compact` format (REQ-LINT-05) + §6 state** ||||||
+| T-20 | `--format compact` → one `path:line:col: CODE slug: message` line per finding, no blank lines, no color | unit (snapshot) | undefined-vars, unused-symbols | one line per finding, color-free · `1` | REQ-LINT-05 |
+| T-21 | `compact` clean run (§6.2 state) | integration | starlette-blog | empty stdout · `0` | REQ-LINT-05, REQ-LINT-08 |
+| **`json` format (REQ-LINT-06 / 07) + §6 state + golden identity** ||||||
+| T-22 | `--format json` array has exactly the 7 keys (`file,line,col,code,slug,severity,message`), ordered by file/line/col | golden (check) | all diagnostic fixtures | well-formed 7-key array · `1` | REQ-LINT-06 |
+| T-23 | `--format json` output equals `expected-diagnostics.json` **byte-for-byte** (regression gate) | golden (check) | syntax-errors, undefined-vars, unused-symbols, duplicates, inheritance, call-and-paths | stdout ≡ golden file · `1` | REQ-LINT-07 |
+| T-24 | `json` clean run (§6.3 state) | golden (check) | starlette-blog | `[]` ≡ near-empty golden · `0` | REQ-LINT-07, REQ-LINT-08 |
+| **Exit codes (REQ-LINT-08) across all formats** ||||||
+| T-25 | clean fixture in rich / compact / json → exit `0` | integration | starlette-blog | `No problems found.` / empty / `[]` · `0` | REQ-LINT-08 |
+| T-26 | findings present (any format) → exit `1` | integration | syntax-errors | report rendered · `1` | REQ-LINT-08 |
+| T-27 | warnings-only, no errors → still exit `1` (§10) | integration | unused-symbols | warning findings rendered · `1` | REQ-LINT-08 |
+| T-28 | bad `--config` (missing or malformed; no LSP fallback, §10) → error to **stderr**, stdout empty in every format → exit `2` | integration | config-reload (invalid variant) | `error: …` on stderr; stdout empty (`json` consumers see no array) · `2` | REQ-LINT-08 |
+| T-29 | nonexistent `PATH` (§10) → error to stderr, stdout empty → exit `2` | integration | — (`./does-not-exist`) | `error: …` on stderr · `2` | REQ-LINT-08 |
+| T-30 | slug passed to `--select`/`--ignore` (e.g. `--ignore undefined-variable`, §10) → rejected as invalid filter → exit `2` | unit | — | `error: …` invalid filter on stderr · `2` | REQ-LINT-03, REQ-LINT-08 |
+| T-31 | `2>/dev/null` keeps the report intact (diagnostics never leak to stderr) | integration | undefined-vars | findings on stdout survive stderr redirect · `1` | REQ-LINT-08 |
+| **Parity + noqa (REQ-LINT-09)** ||||||
+| T-32 | `check` finding (code/slug/range/message) equals server `publishDiagnostics` for the same file | integration | starlette-blog | per-finding equality CLI ↔ server · matches | REQ-LINT-09 |
+| T-33 | `noqa`-suppressed finding absent from CLI output, identical to server suppression (§10) | integration | undefined-vars | suppressed code not printed in any format · per-findings | REQ-LINT-09 |
+| T-34 | invalid `noqa` still surfaces `JINJA-W107 invalid-noqa` in CLI output (§10) | integration | undefined-vars (bad-noqa template) | `JINJA-W107` printed · `1` | REQ-LINT-09 |
 
 ### 11.3 Fixtures
 
@@ -266,15 +302,15 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-LINT-NN` maps
 
 | Requirement | Covered by |
 |---|---|
-| REQ-LINT-01 | path-resolution integration tests |
-| REQ-LINT-02 | flag-parsing unit tests |
-| REQ-LINT-03 | select/ignore unit tests |
-| REQ-LINT-04 | `rich` snapshot test |
-| REQ-LINT-05 | `compact` snapshot test |
-| REQ-LINT-06 | json-shape golden tests |
-| REQ-LINT-07 | golden-file byte-diff tests |
-| REQ-LINT-08 | exit-code integration tests |
-| REQ-LINT-09 | CLI/server parity test |
+| REQ-LINT-01 | T-01–T-05 (file / directory / omitted / outside-workspace / empty-dir) |
+| REQ-LINT-02 | T-06–T-08 (`--config`, `-v`/`--verbose`, `--format`/`--select`/`--ignore` parsing) |
+| REQ-LINT-03 | T-09–T-14, T-30 (code, class-prefix, overlap, CLI-over-config precedence, slug rejection) |
+| REQ-LINT-04 | T-15–T-19 (`rich` block + clean state + TTY/pipe/`NO_COLOR` color gating) |
+| REQ-LINT-05 | T-20–T-21 (`compact` one-line-per-finding + clean state) |
+| REQ-LINT-06 | T-22 (7-key ordered array) |
+| REQ-LINT-07 | T-23–T-24 (byte-for-byte golden identity + `[]` clean) |
+| REQ-LINT-08 | T-05, T-16, T-21, T-25–T-31 (exit 0 / 1 / 2 across formats, edges) |
+| REQ-LINT-09 | T-32–T-34 (CLI ↔ server parity + `noqa` suppression + invalid-`noqa`) |
 
 ## 12. End-to-End Test Plan
 
@@ -286,15 +322,28 @@ The CLI is itself an E2E surface — [E29](../foundations/E29-e2e-testing.md) Br
 
 ### 12.2 Scenarios
 
+Each E2E runs the real binary against a fixture. The happy path covers clean and dirty runs in every format plus the filtering, golden-identity, parity, `noqa`, and color-gating journeys; the error path covers every exit-`2` cause.
+
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `check --format json` over a clean fixture | happy | `[]`, exit `0` |
-| E2E-02 | `check --format json` over each broken fixture | happy | output equals `expected-diagnostics.json`, exit `1` |
-| E2E-03 | `check --format rich` over a broken fixture | happy | rustc-style block with caret + help, exit `1` |
-| E2E-04 | `check --format compact` over a broken fixture | happy | one `path:line:col:` line per finding, exit `1` |
-| E2E-05 | `check --config ./missing.toml` | error | error on stderr, exit `2` |
-| E2E-06 | `check ./does-not-exist` | error | error on stderr, exit `2` |
-| E2E-07 | `check --ignore undefined-variable` (a slug) | error | rejected, exit `2` |
+| E2E-01 | `check --format json` over the clean baseline | happy | `[]` ≡ near-empty golden, exit `0` |
+| E2E-02 | `check --format json` over each broken fixture | happy | stdout ≡ `expected-diagnostics.json` byte-for-byte, exit `1` |
+| E2E-03 | `check --format rich` over a broken fixture | happy | rustc-style block (header + `-->` + caret + `= help:`) and `N problems (…)`, exit `1` |
+| E2E-04 | `check --format compact` over a broken fixture | happy | one `path:line:col: CODE slug: message` line per finding, no color, exit `1` |
+| E2E-05 | `check --format rich` over the clean baseline | happy | `No problems found.`, exit `0` |
+| E2E-06 | `check --format compact` over the clean baseline | happy | empty stdout, exit `0` |
+| E2E-07 | `check PATH` as a single file vs. a directory vs. omitted | happy | findings scoped to the file / whole tree / configured `templates` dir, exit `1` |
+| E2E-08 | `check --select JINJA-E1` then `--ignore JINJA-W2` over a mixed fixture | happy | only the selected class survives; ignored class drops out, exit `1` (or `0` if nothing remains) |
+| E2E-09 | `check --select JINJA-E1 --ignore JINJA-E101` (overlap) over a broken fixture | happy | 1xx survive except `JINJA-E101` (ignore wins), exit `1` |
+| E2E-10 | `check --format rich` piped (not a TTY) and again with `NO_COLOR` on a TTY | happy | both emit color-free `rich` output, exit `1` |
+| E2E-11 | `check` with warnings-only fixture | happy | warning findings rendered, still exit `1` |
+| E2E-12 | `check --format json` then compare to the server's `publishDiagnostics` for the same file | happy | identical code/slug/range/message; `noqa`-suppressed code absent in both, exit `1` |
+| E2E-13 | `check -v --format json` over a broken fixture | happy | progress/timing on stderr, golden-identical array on stdout, `2>/dev/null` leaves it intact, exit `1` |
+| E2E-14 | `check --config ./missing.toml` | error | error on stderr, stdout empty, exit `2` |
+| E2E-15 | `check --config ./malformed.toml` (invalid config variant) | error | error on stderr, stdout empty, exit `2` |
+| E2E-16 | `check ./does-not-exist` | error | error on stderr, stdout empty, exit `2` |
+| E2E-17 | `check --ignore undefined-variable` (a slug) | error | rejected as invalid filter, error on stderr, exit `2` |
+| E2E-18 | `check --select undefined-variable` (a slug) | error | rejected as invalid filter, error on stderr, exit `2` |
 
 ## 13. Non-Functional Requirements
 
@@ -329,3 +378,4 @@ N/A — `check` is a plain-text CLI; per constitution §4.6 Accessibility is N/A
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 to concrete invocation-level rows (T-01–T-34) and §12.2 to E2E-01–E2E-18, covering every format, flag and combination, all three exit codes, the golden-file identity, `select`/`ignore` filtering and overlap, `noqa` suppression and invalid-`noqa`, CLI↔server parity, and `NO_COLOR`/TTY-vs-pipe color gating; rebuilt the §11.4 requirement-coverage map; added the `noqa`/`JINJA-W107` §10 edge.

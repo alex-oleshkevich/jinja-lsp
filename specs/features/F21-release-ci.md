@@ -249,18 +249,93 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-REL-NN` maps 
 
 ### 11.2 Test plan
 
+Rows are CI-step assertions, unit tests (version/CHANGELOG gates), and dry-run release-workflow E2Es. The Rust gate diffs the diagnostic fixtures' goldens ([E17](../foundations/E17-testing.md#5-fixtures-registry) §5).
+
+**Lint gate (REQ-REL-01) — clippy + rustfmt, per OS**
+
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Lint gate fails on rustfmt drift / clippy warning | CI step | — | REQ-REL-01 |
-| Rust gate runs nextest + golden diffs | CI step | all diagnostic fixtures | REQ-REL-02 |
-| Python E2E gate drives the stdio binary | CI step | starlette-blog | REQ-REL-03 |
-| Matrix runs on Linux/macOS/Windows | CI config | — | REQ-REL-04 |
-| All four targets cross-compile (dry run) | CI step | — | REQ-REL-05 |
-| All target wheels build via maturin (dry run) | CI step | — | REQ-REL-10 |
-| Publish to all four channels from one tag | CI step (dry run) | — | REQ-REL-06 |
-| SemVer bump rules documented and applied | review | — | REQ-REL-07 |
-| Missing CHANGELOG section aborts release | unit | — | REQ-REL-08 |
-| Tag ≠ Cargo.toml aborts release | unit | — | REQ-REL-09 |
+| Lint gate passes (clean fmt + clippy) on Linux | CI step | — | REQ-REL-01, REQ-REL-04 |
+| Lint gate passes on macOS | CI step | — | REQ-REL-01, REQ-REL-04 |
+| Lint gate passes on Windows | CI step | — | REQ-REL-01, REQ-REL-04 |
+| Lint gate fails on `cargo fmt --check` drift (red ✘, merge blocked) | CI step | — | REQ-REL-01 |
+| Lint gate fails on a clippy warning (`-D warnings`) | CI step | — | REQ-REL-01 |
+| Lint gate runs first / is the cheapest job (ordering) | CI config | — | REQ-REL-01 |
+
+**Rust test gate (REQ-REL-02) — nextest + golden fixtures, per OS**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Rust gate passes: `cargo nextest run` (unit + integration + golden) on Linux | CI step | all diagnostic fixtures | REQ-REL-02, REQ-REL-04 |
+| Rust gate passes on macOS (path/line-ending parity) | CI step | all diagnostic fixtures | REQ-REL-02, REQ-REL-04 |
+| Rust gate passes on Windows (path/line-ending parity) | CI step | all diagnostic fixtures | REQ-REL-02, REQ-REL-04 |
+| Golden `check --format json` diff matches `expected-diagnostics.json` (green) | CI step | all diagnostic fixtures | REQ-REL-02 |
+| Stale golden → job fails, prints unified diff inline (§6.1 golden-diff failure state) | CI step | a deliberately stale fixture | REQ-REL-02 |
+| Goldens are never auto-updated in CI (`UPDATE_FIXTURES=1` unset → diff fails, not rewrites) | CI step | a stale fixture | REQ-REL-02 |
+
+**Python E2E gate (REQ-REL-03) — pytest-lsp on Linux**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| pytest-lsp gate passes: handshake, didOpen→publishDiagnostics, completion, hover, definition | CI step | starlette-blog | REQ-REL-03, REQ-REL-04 |
+| pytest-lsp runs only on Linux (one host exercises the protocol) | CI config | — | REQ-REL-03, REQ-REL-04 |
+| Flaky pytest-lsp timeout retried once, then passes (transient flake absorbed) | CI step | starlette-blog | REQ-REL-03 |
+| pytest-lsp fails twice (retry-once exhausted) → merge blocked | CI step | starlette-blog | REQ-REL-03 |
+
+**OS matrix (REQ-REL-04)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Lint + Rust gates fan out across Linux/macOS/Windows runners; e2e on Linux only | CI config | — | REQ-REL-04 |
+| All five PR checks green → "All checks have passed", Merge enabled (§6.1 passing state) | dry-run e2e | — | REQ-REL-04, REQ-REL-01, REQ-REL-02, REQ-REL-03 |
+| A red gate → merge blocked, "Details" links the job log (§6.1 failing state) | dry-run e2e | — | REQ-REL-04 |
+| Pending checks render as spinners (§6.1 pending state) | dry-run e2e | — | REQ-REL-04 |
+
+**Cross-compiled binary targets (REQ-REL-05) — four targets, dry run**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `x86_64-unknown-linux-gnu` binary builds; packaged `.tar.gz` + SHA-256 | dry-run e2e | — | REQ-REL-05 |
+| `aarch64-unknown-linux-gnu` binary builds; packaged `.tar.gz` + SHA-256 | dry-run e2e | — | REQ-REL-05 |
+| `aarch64-apple-darwin` binary builds; packaged `.tar.gz` + SHA-256 | dry-run e2e | — | REQ-REL-05 |
+| `x86_64-pc-windows-msvc` binary builds; packaged `.zip` + SHA-256 | dry-run e2e | — | REQ-REL-05 |
+| `SHA256SUMS` produced for all four artifacts | dry-run e2e | — | REQ-REL-05 |
+| One target fails to cross-compile → whole release fails, no partial binary set (§10) | dry-run e2e | — | REQ-REL-05 |
+
+**maturin wheel targets (REQ-REL-10) — one wheel per target, dry run**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Wheel builds for `x86_64-unknown-linux-gnu` (manylinux 2_28), bundles the binary | dry-run e2e | — | REQ-REL-10 |
+| Wheel builds for `aarch64-unknown-linux-gnu`, bundles the binary | dry-run e2e | — | REQ-REL-10 |
+| Wheel builds for `aarch64-apple-darwin`, bundles the binary | dry-run e2e | — | REQ-REL-10 |
+| Wheel builds for `x86_64-pc-windows-msvc`, bundles the binary | dry-run e2e | — | REQ-REL-10 |
+| Wheel carries no Python code / no added runtime dependency | dry-run e2e | — | REQ-REL-10 |
+| One wheel target fails to build → whole release fails, no partial wheel set (§10) | dry-run e2e | — | REQ-REL-10 |
+
+**Distribution channels (REQ-REL-06) — four channels from one tag, dry run**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Publish crates.io (`jinja-lsp` crate) from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| Publish PyPI wheels via OIDC trusted publishing (`uv publish`, no stored token, `--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| Publish VS Code marketplace extension from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| Publish GitHub release (four binaries + checksums) from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| All four channels published from the same tag → "published" (§6.2 published state) | dry-run e2e | — | REQ-REL-06 |
+| Artifacts uploading → "drafting" state (§6.2 drafting state) | dry-run e2e | — | REQ-REL-06 |
+| crates.io succeeds but marketplace push fails → release incomplete; re-attempt bumps PATCH (immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
+| PyPI succeeds but another channel fails → release incomplete; re-attempt bumps PATCH (immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
+
+**Versioning discipline (REQ-REL-07/08/09)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| SemVer bump rules: new code/key/capability → MINOR; schema/json break → MAJOR; fix → PATCH | review | — | REQ-REL-07 |
+| Version gate passes: tag `vX.Y.Z` == `Cargo.toml` `package.version` | unit | — | REQ-REL-09 |
+| Version gate: `pyproject.toml` derives version dynamically from `Cargo.toml` (wheel cannot drift) | unit | — | REQ-REL-09 |
+| Tag ≠ `Cargo.toml` → gate fails, release aborts before any publish (§6.2 version-gate failure; §10) | unit | — | REQ-REL-09 |
+| CHANGELOG gate passes: tag's version has a dated section | unit | — | REQ-REL-08 |
+| Missing CHANGELOG section for the tag → release aborts (§10) | unit | — | REQ-REL-08 |
 
 ### 11.3 Fixtures
 
@@ -270,16 +345,16 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-REL-NN` maps 
 
 | Requirement | Covered by |
 |---|---|
-| REQ-REL-01 | lint-gate CI step |
-| REQ-REL-02 | nextest + golden CI step |
-| REQ-REL-03 | pytest-lsp CI step |
-| REQ-REL-04 | matrix CI config check |
-| REQ-REL-05 | cross-compile dry-run |
-| REQ-REL-06 | publish dry-run |
+| REQ-REL-01 | lint-gate CI steps (pass per OS + fmt-drift + clippy-warning + ordering) |
+| REQ-REL-02 | nextest + golden CI steps (pass per OS + golden-diff + no-CI-update) |
+| REQ-REL-03 | pytest-lsp CI steps (pass + Linux-only + retry-once flake + double-fail) |
+| REQ-REL-04 | matrix CI config + §6.1 PR-check states (pending/passing/failing) |
+| REQ-REL-05 | cross-compile dry-run (four targets + checksums + one-target-fail abort) |
+| REQ-REL-06 | publish dry-run (four channels from one tag + drafting/published states + partial-publish aborts) |
 | REQ-REL-07 | SemVer policy review |
-| REQ-REL-08 | CHANGELOG-gate unit test |
-| REQ-REL-09 | version-gate unit test |
-| REQ-REL-10 | maturin wheel-build dry-run |
+| REQ-REL-08 | CHANGELOG-gate unit tests (pass + missing-section abort) |
+| REQ-REL-09 | version-gate unit tests (pass + pyproject-derives + mismatch abort) |
+| REQ-REL-10 | maturin wheel-build dry-run (four wheel targets + no-Python-code + one-wheel-fail abort) |
 
 ## 12. End-to-End Test Plan
 
@@ -293,13 +368,20 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | Push a matching tag with a CHANGELOG entry | happy | gates pass, four binaries + wheels built, four channels published |
-| E2E-02 | PR with all gates green | happy | merge enabled |
-| E2E-07 | `pip install jinja-lsp` on a supported platform | happy | resolves the right platform wheel; the binary lands on PATH |
-| E2E-03 | Push a tag that mismatches `Cargo.toml` | error | release aborts before publish |
-| E2E-04 | Tag with no CHANGELOG section | error | release aborts |
-| E2E-05 | One cross-compile target fails | error | whole release fails; nothing published |
-| E2E-06 | Stale golden fixture in a PR | error | Rust gate fails with a unified diff |
+| E2E-01 | PR with all five checks (lint + Rust×3 OS + e2e) green | happy | "All checks have passed", Merge enabled (§6.1 passing) |
+| E2E-02 | Push a matching tag with a CHANGELOG entry (full dry-run release) | happy | version + CHANGELOG gates pass; four binaries + four wheels build; crates.io, PyPI, marketplace, GitHub release all published from the one tag (§6.2 published) |
+| E2E-03 | Dry-run cross-compile of all four targets + checksums | happy | four `.tar.gz`/`.zip` artifacts + `SHA256SUMS` produced |
+| E2E-04 | Dry-run maturin wheel build for all four targets | happy | four binary-bundling wheels built; no Python code/runtime dep |
+| E2E-05 | `pip install jinja-lsp` on a supported platform | happy | resolves the right platform wheel; the binary lands on PATH |
+| E2E-06 | Flaky pytest-lsp timeout retried once, then green | happy | E2E gate passes after one retry; merge enabled |
+| E2E-07 | Push a tag that mismatches `Cargo.toml` | error | version gate fails; release aborts before any publish (§6.2 version-gate failure) |
+| E2E-08 | Push a tag with no CHANGELOG section | error | CHANGELOG gate fails; release aborts before any publish |
+| E2E-09 | One cross-compile target fails to build | error | whole release fails; no partial binary set published |
+| E2E-10 | One maturin wheel target fails to build | error | whole release fails; no partial wheel set published |
+| E2E-11 | crates.io publishes but the marketplace push fails | error | release marked incomplete; immutable channels, re-attempt bumps PATCH |
+| E2E-12 | PyPI publishes but another channel fails | error | release marked incomplete; immutable channels, re-attempt bumps PATCH |
+| E2E-13 | Stale golden fixture in a PR | error | Rust gate fails with a unified diff inline (§6.1 golden-diff failure); never auto-updated in CI |
+| E2E-14 | pytest-lsp fails twice (retry-once exhausted) | error | E2E gate stays red; merge blocked |
 
 ## 13. Non-Functional Requirements
 
@@ -332,5 +414,6 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 
 ## 17. Changelog
 
+- **2026-06-25** — Expanded §11.2 test plan and §12.2 E2E scenarios to full combinatorial coverage: every gate × OS, every binary + wheel target, all four channels from one tag, version/CHANGELOG gates pass+abort, retry-once flake, golden-diff and partial-publish paths; §11.4 lists each REQ-REL once.
 - **2026-06-25** — Added PyPI as a fourth distribution channel (maturin wheels, ADR-010).
 - **2026-06-24** — Initial draft.

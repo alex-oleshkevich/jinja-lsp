@@ -219,41 +219,83 @@ Target: **100% of this feature's behavior.** Every `REQ-ACT-NN` maps to a test; 
 
 ### 11.2 Test plan
 
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| Remove unused import / macro deletes the whole construct | unit | [unused-symbols](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-01 |
-| `E103` offers import + did-you-mean; edit inserts the from-import | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-02 |
-| `E102`/`E104` offer registry-ranked suggestions | unit | [undefined-vars](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-03 |
-| `E403` inserts a block stub after `extends` | unit | [inheritance](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-04 |
-| `E601` emits a `CreateFile`; escaping paths offer nothing | unit | [call-and-paths](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-05 |
-| `W305`/`W30x` offer rename/remove | unit | [duplicates](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-06 |
-| Extract-to-macro produces macro + call; rejects split selection | unit + e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-07 |
-| Wrap-in-block/if/for wraps and re-indents the body | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-08 |
-| Rename a macro rewrites the def + all references workspace-wide; a local var renames in-scope only; collision is refused | unit + e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-11 |
-| executeCommand round-trip yields a round-trip-safe edit | e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
-| Actions carry correct kinds + `isPreferred` | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-10 |
-| `executeCommand` cancelled (empty name) → document unchanged | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
-| Multiple diagnostics on one line each contribute their quick-fixes; an action over an inline-template region maps edits back to host coordinates | unit | [call-and-paths](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
+Every row is concrete: a named diagnostic / selection / cursor on a specific fixture (or a synthetic `didOpen` doc where the baseline lacks the construct), with the exact expected `WorkspaceEdit` or action set asserted. Both polarities — the action fires and produces the right edit, and the documented §10 negatives offer nothing — are covered. Rows are grouped by REQ.
+
+| # | Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|---|
+| **REQ-ACT-01 — remove unused** | | | | |
+| T-01 | `W203` on `{% import "shared.html" as shared %}` → "Remove unused import" deletes the whole `{% import … %}` line **incl. trailing newline** (no blank line left) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
+| T-02 | `W202` on an unused `{% macro foo() %}…{% endmacro %}` → "Remove unused macro" deletes the whole macro region incl. trailing newline | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
+| T-03 | `W203` on a `{% from "x.html" import a, b %}` where only `b` is unused → the offered "Remove unused import" still deletes the construct the diagnostic targets (whole line for a single-name import) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
+| **REQ-ACT-02 — resolve undefined function** | | | | |
+| T-04 | `E103` on `{{ post_url(post) }}` in `blog/post.html` (no import) → "Import `post_url` from "blog/macros.html"" inserts `{% from "blog/macros.html" import post_url %}` **after the `extends` line**; diagnostic clears | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02 |
+| T-05 | `E103` on a near-miss call (`post_ur(post)`) → import fix **plus** "Did you mean `post_url`?" replacing the call identifier; near-matches ranked by edit distance over the index + registry | unit (synthetic `didOpen`) | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02 |
+| T-06 | **Negative (§10):** `E103` on a name with **no macro and no near-match** (`zzqq(post)`) → no import and no did-you-mean action offered (only generic actions); we don't guess (P4) | unit (synthetic `didOpen`) | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02 |
+| **REQ-ACT-03 — filter/test suggestions** | | | | |
+| T-07 | `E102` on `{{ x \| uppercas }}` → "Did you mean `upper`?" (and other ranked near-matches) replacing the misspelled filter name; matches drawn from built-in/pack/custom/hinted registry | unit | [undefined-vars](../foundations/E17-testing.md#undefined-vars) | REQ-ACT-03 |
+| T-08 | `E104` on `{% if x is evne %}` → "Did you mean `even`?" replacing the misspelled test name | unit | [undefined-vars](../foundations/E17-testing.md#undefined-vars) | REQ-ACT-03 |
+| T-09 | **Negative:** `E102`/`E104` with **no close registry match** → no action offered (we don't invent fixes — P4) | unit (synthetic `didOpen`) | [undefined-vars](../foundations/E17-testing.md#undefined-vars) | REQ-ACT-03 |
+| **REQ-ACT-04 — required-block stub** | | | | |
+| T-10 | `E403` on a child template missing a required block → "Insert `<block>` block" inserts `{% block <name> %}{% endblock %}` **after the `extends` line**, indented to match the file | unit | [inheritance](../foundations/E17-testing.md#inheritance) | REQ-ACT-04 |
+| **REQ-ACT-05 — create template** | | | | |
+| T-11 | `E601` on `{% extends "missing/base.html" %}` → "Create template `<path>`" emits a `CreateFile` for the resolved path under the nearest templates root, seeded with an `{% extends %}`-aware/minimal body | unit | [call-and-paths](../foundations/E17-testing.md#call-and-paths) | REQ-ACT-05 |
+| T-12 | **Negative (§10):** `E601` whose path **escapes the templates root** (`../secret.html`) → no "Create template" action offered (rejected upstream, §13.1) | unit | [call-and-paths](../foundations/E17-testing.md#call-and-paths) | REQ-ACT-05 |
+| **REQ-ACT-06 — shadowing & duplicates** | | | | |
+| T-13 | `W301` duplicate-block → "Remove duplicate block" deletes the later block definition only | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| T-14 | `W302` duplicate-macro → "Remove duplicate macro" deletes the later macro | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| T-15 | `W303` duplicate-import-alias → "Remove duplicate import" deletes the later `{% import … as … %}` | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| T-16 | `W304` duplicate-from-import → "Remove duplicate import" deletes the later `{% from … import … %}` | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| T-17 | `W305` name-shadowing → "Rename to `<suggestion>`" suffixes a disambiguating index (`post` → `post_2`) and rewrites **only that binding's local scope** (single-occurrence, not workspace) | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| T-18 | **§10 edge:** duplicate macro where **both look identical** → "Remove duplicate" targets the **later** definition only | unit | [duplicates](../foundations/E17-testing.md#duplicates) | REQ-ACT-06 |
+| **REQ-ACT-07 — extract to macro** | | | | |
+| T-19 | Non-empty selection over a contiguous, balanced run of nodes (the `<article>` markup in `post.html`) → "Extract to macro" offered, carrying a `command` (not an inline edit) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-07 |
+| T-20 | **Negative (§10):** selection that **splits a tag** (`{% if` … without `%}`) → extract not offered (would corrupt — P3) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-07 |
+| **REQ-ACT-08 — wrap refactors** | | | | |
+| T-21 | Well-formed selection → "Wrap in `{% block %}`" offered, carries a `command` (prompts for block name); body re-indented one level, host bytes outside the wrap untouched (P5) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| T-22 | Well-formed selection → "Wrap in `{% if %}`" inserts `{% if condition %}` placeholder, cursor on the placeholder, body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| T-23 | Well-formed selection → "Wrap in `{% for %}`" inserts `{% for item in items %}` placeholder, cursor on the placeholder, body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| T-24 | **Negative (§10):** selection splitting a tag → none of the three wraps offered (P3) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| **REQ-ACT-11 — rename symbol** | | | | |
+| T-25 | Cursor on the `post_url` **macro definition** in `blog/macros.html` → "Rename `post_url`…" rewrites the declaration + every reference **across the workspace** (`post.html` call site + `email/digest.html` from-import & use) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-26 | Cursor on a **macro usage** (call site in `post.html`) → same workspace-wide rename resolved through the F09 reference graph | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-27 | Cursor on a **block** name → rename rewrites the `{% block %}`/`{% endblock %}`-keyed name across the inheritance chain | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-28 | Cursor on an **import** binding (`{% from "blog/macros.html" import post_url %}` in `digest.html`) → rename rewrites the from-import binding + its uses + the definition + other importers | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-29 | Cursor on a **local variable** — a `{% for c in post.comments %}` loop var (also `{% set %}`/`{% with %}`) → rename rewrites uses **within that scope only**, never beyond it (`VariableScope`) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-30 | **Negative:** rename to a name that **already binds in the same scope** → refused with a message, no edit produced (P3/P4) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-31 | **Negative:** cursor on a **non-renameable target** — a built-in filter/test, a hinted context variable, or host text → no "Rename" action offered (we only rename symbols jinja-lsp owns — P5) | unit (synthetic `didOpen` + hint) | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| **REQ-ACT-09 — apply path & commands** | | | | |
+| T-32 | A no-input quick-fix returns its `WorkspaceEdit` inline (or via `codeAction/resolve`); the edit is round-trip safe — the file re-parses to a valid tree (P3) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-09 |
+| T-33 | **Negative (§10):** `executeCommand` **cancelled** (empty name) → no edit produced; document unchanged | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-09 |
+| T-34 | **§10 edge:** **multiple diagnostics on one line** → each contributes its own quick-fixes; the menu lists all | unit (synthetic `didOpen`) | [undefined-vars](../foundations/E17-testing.md#undefined-vars) | REQ-ACT-09 |
+| T-35 | **§10 edge:** action over an **inline/embedded-template region** ([E31](../foundations/E31-inline-templates.md)) → edits map back to host-file coordinates; host bytes outside the Jinja range untouched (P5) | unit | [call-and-paths](../foundations/E17-testing.md#call-and-paths) | REQ-ACT-09 |
+| **REQ-ACT-10 — action kinds & isPreferred** | | | | |
+| T-36 | Quick-fixes tagged `quickfix` with `diagnostics` set to the resolved diagnostic; extract/wrap-in-block tagged `refactor.extract`; wrap-in-if/for tagged `refactor.rewrite`; rename command tagged `refactor.rewrite` | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-10 |
+| T-37 | The most directly-applicable fix is marked `isPreferred` — the `E103` import fix over the spelling suggestions (§6.1 ★) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-10 |
+| **§6 mockup states** | | | | |
+| T-38 | **§6.1/§6.2:** `codeAction` at the `E103` `post_url` diagnostic returns the menu in §6.1 order (import ★ preferred, then did-you-mean, then "Extract to macro…"); applying the import yields the §6.2 after-state | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02, REQ-ACT-10 |
+| T-39 | **§6.3:** "Extract to macro…" command prompts (executeCommand), and on name `post_card` appends `{% macro post_card() %}…{% endmacro %}` and replaces the selection with `{{ post_card() }}` | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-07, REQ-ACT-09 |
+| T-40 | **§6.4:** "Rename `post_card`…" command prompts and on `article_card` rewrites the def + all call sites across `post.html` + `email/digest.html`; refused if `article_card` already binds | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
 
 ### 11.3 Fixtures
 
-- Reuses the diagnostic fixtures from [E17-testing](../foundations/E17-testing.md#5-fixtures-registry) — `unused-symbols`, `undefined-vars`, `inheritance`, `call-and-paths`, `duplicates` — so each quick-fix is tested against the same source that triggers its diagnostic, and `starlette-blog` for refactors.
+- Reuses the diagnostic fixtures from [E17-testing](../foundations/E17-testing.md#5-fixtures-registry) — `unused-symbols` (W202/W203), `undefined-vars` (E102/E103/E104), `inheritance` (E403), `call-and-paths` (E601 + inline/E31), `duplicates` (W301–W305) — so each quick-fix is tested against the same source that triggers its diagnostic, and `starlette-blog` for the refactors and rename (`post_url` imported into `post.html` and `email/digest.html`).
+- Constructs the baseline fixtures don't carry — a near-miss `E103` call, a no-match `E103`/`E102`/`E104`, a non-renameable cursor target, two diagnostics on one line — use synthetic in-memory `didOpen` documents rather than polluting the clean baselines ([E17-testing § starlette-blog](../foundations/E17-testing.md#starlette-blog)).
 
 ### 11.4 Requirement coverage
 
 | Requirement | Covered by |
 |---|---|
-| REQ-ACT-01 | remove-unused unit tests |
-| REQ-ACT-02 | undefined-function fix unit test |
-| REQ-ACT-03 | filter/test suggestion unit test |
-| REQ-ACT-04 | required-block stub unit test |
-| REQ-ACT-05 | create-template + path-escape unit test |
-| REQ-ACT-06 | shadowing/duplicate fix unit tests |
-| REQ-ACT-07 | extract-to-macro unit + e2e |
-| REQ-ACT-08 | wrap refactor unit tests |
-| REQ-ACT-09 | executeCommand round-trip e2e |
-| REQ-ACT-10 | action-kind unit test |
-| REQ-ACT-11 | rename unit (macro/local/collision) + e2e |
+| REQ-ACT-01 | T-01, T-02, T-03 (W203/W202 remove-unused) |
+| REQ-ACT-02 | T-04, T-05, T-06 (E103 import + did-you-mean + no-match negative); E2E-01, E2E-02 |
+| REQ-ACT-03 | T-07, T-08, T-09 (E102/E104 suggestion + no-match negative); E2E-03 |
+| REQ-ACT-04 | T-10 (E403 block stub); E2E-05 |
+| REQ-ACT-05 | T-11, T-12 (E601 CreateFile + path-escape negative); E2E-10, E2E-11 |
+| REQ-ACT-06 | T-13, T-14, T-15, T-16, T-17, T-18 (W301–W305 remove/rename + identical-duplicate edge); E2E-06, E2E-07 |
+| REQ-ACT-07 | T-19, T-20, T-39 (extract + split-selection negative); E2E-08 |
+| REQ-ACT-08 | T-21, T-22, T-23, T-24 (wrap block/if/for + split-selection negative); E2E-09 |
+| REQ-ACT-09 | T-32, T-33, T-34, T-35, T-39 (round-trip + cancellation + multi-diagnostic + inline-template); E2E-08, E2E-16 |
+| REQ-ACT-10 | T-36, T-37, T-38 (kinds + isPreferred); E2E-17 |
+| REQ-ACT-11 | T-25, T-26, T-27, T-28, T-29, T-30, T-31, T-40 (macro/block/import/local + collision + non-renameable negative); E2E-12, E2E-13, E2E-14, E2E-15 |
 
 ## 12. End-to-End Test Plan
 
@@ -263,14 +305,27 @@ Target: **100% of this feature's behavior.** Every `REQ-ACT-NN` maps to a test; 
 
 ### 12.2 Scenarios
 
+Each journey requests `codeAction` (or `executeCommand`) over the protocol, asserts the offered actions, applies one, and asserts the resulting document and re-published diagnostics. Journeys cover both polarities; the **Path** column matches the asserted outcome.
+
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `codeAction` at an `E103` diagnostic | happy | offers the import fix (preferred) + did-you-mean; applying inserts the from-import and clears the diagnostic |
-| E2E-02 | Apply "Remove unused import" at `W203` | happy | the `import` line is deleted; `W203` clears on re-publish |
-| E2E-03 | Extract-to-macro via `executeCommand` | happy | prompt → name → macro appended, selection replaced, tree still valid |
-| E2E-04 | `codeAction` at an `E601` with an escaping path | error | no "Create template" action offered |
-| E2E-05 | Rename a macro via `executeCommand` | happy | prompt → name → def + every reference rewritten across files; trees still valid |
-| E2E-06 | Rename to a name already bound in scope | error | rename refused with a message; document unchanged |
+| E2E-01 | `codeAction` at an `E103` `post_url` diagnostic; apply the import fix | happy | offers the import fix (preferred ★) + did-you-mean; applying inserts `{% from "blog/macros.html" import post_url %}` after `extends` and clears `E103` on re-publish (REQ-ACT-02) |
+| E2E-02 | `codeAction` at an `E103` near-miss; apply "Did you mean `post_url`?" | happy | the call identifier is rewritten and the diagnostic clears (REQ-ACT-02) |
+| E2E-03 | `codeAction` at an `E102` undefined-filter; apply "Did you mean `<name>`?" | happy | the filter name is rewritten and `E102` clears; an `E104` test suggestion behaves the same (REQ-ACT-03) |
+| E2E-04 | Apply "Remove unused import" at `W203` | happy | the whole `import` line is deleted incl. trailing newline; `W203` clears on re-publish (REQ-ACT-01) |
+| E2E-05 | Apply "Insert `<block>` block" at `E403` | happy | the block stub is inserted after `extends`, indented; `E403` clears (REQ-ACT-04) |
+| E2E-06 | Apply "Remove duplicate macro" at `W302` | happy | the later macro is deleted; `W302` clears (REQ-ACT-06) |
+| E2E-07 | Apply "Rename to `<suggestion>`" at `W305` | happy | only the shadowing binding's scope is rewritten (`post` → `post_2`); `W305` clears (REQ-ACT-06) |
+| E2E-08 | Extract-to-macro via `executeCommand` | happy | prompt → name → macro appended, selection replaced with `{{ <name>() }}`, tree still valid (REQ-ACT-07, REQ-ACT-09) |
+| E2E-09 | Wrap-in-block via `executeCommand`; wrap-in-if/for inline | happy | prompt → block name → body wrapped and re-indented; `if`/`for` insert placeholder conditions with the cursor positioned (REQ-ACT-08) |
+| E2E-10 | `codeAction` at an `E601` with an escaping path | error | no "Create template" action offered (REQ-ACT-05) |
+| E2E-11 | Apply "Create template `<path>`" at an `E601` with an in-root path | happy | a `CreateFile` operation creates the seeded file; `E601` clears (REQ-ACT-05) |
+| E2E-12 | Rename a macro via `executeCommand` | happy | prompt → name → def + every reference rewritten across `post.html` + `email/digest.html`; trees still valid (REQ-ACT-11) |
+| E2E-13 | Rename a local `{% for %}` variable via `executeCommand` | happy | only uses within the loop scope are rewritten; bindings of the same name outside the scope are untouched (REQ-ACT-11) |
+| E2E-14 | Rename to a name already bound in scope | error | rename refused with a message; document unchanged (REQ-ACT-11) |
+| E2E-15 | `codeAction` with the cursor on a non-renameable target (built-in filter / hinted variable / host text) | error | no "Rename" action offered (REQ-ACT-11) |
+| E2E-16 | Extract-to-macro `executeCommand` cancelled (empty name) | error | no edit applied; document unchanged (REQ-ACT-09) |
+| E2E-17 | `codeAction` asserts reported `CodeActionKind`s and `isPreferred` over the wire | happy | quick-fixes `quickfix` with `diagnostics` set; extract/wrap-in-block `refactor.extract`; wrap-in-if/for + rename `refactor.rewrite`; import fix `isPreferred` (REQ-ACT-10) |
 
 ## 13. Non-Functional Requirements
 
@@ -300,5 +355,6 @@ Target: **100% of this feature's behavior.** Every `REQ-ACT-NN` maps to a test; 
 
 ## 17. Changelog
 
+- **2026-06-25** — Expanded the §11.2 test plan (T-01..T-40) and §12.2 E2E scenarios (E2E-01..E2E-17) to concrete, full-combination coverage: every quick-fix REQ-ACT × its triggering diagnostic(s), every refactor incl. split-selection and the three wraps, the full rename matrix (macro/block/import/local + collision + non-renameable negatives), and every §10 edge and §6 mockup state, both polarities. Synced §11.3 fixtures note and §11.4 requirement-coverage bijection.
 - **2026-06-25** — Added the rename command (REQ-ACT-11): cursor-driven, workspace-wide for macro/block/import definitions (via [F09](F09-find-references.md)) and scope-local for local variables, delivered through `executeCommand`. Rename promoted from a suite-wide Non-Goal to a goal landing here.
 - **2026-06-24** — Initial draft.

@@ -165,28 +165,94 @@ Target: **100% of this spec's behavior.** Every `REQ-SEM-NN` maps to at least on
 
 ### 11.2 Test plan
 
+Each row names the concrete token (or request) and the type + modifier set it must
+decode to. Every §5.1 token type, every §5.2 modifier, both polarities of the
+`defined`/`unknown` and `builtin`/`user` axes, every §10 edge, and every §6 legend
+row / §6.2 line token are covered. "synthetic doc" = an in-memory `didOpen` document
+for constructs not present in a registered fixture (§11.3).
+
+**Legend declaration (REQ-SEM-01, REQ-SEM-02)**
+
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Declared legend matches §5.1/§5.2 exactly, in order | unit | — | REQ-SEM-01, REQ-SEM-02 |
-| `full` tokenizes a whole file with correct types/modifiers | integration | starlette-blog | REQ-SEM-03, REQ-SEM-04 |
-| `range` returns a subset matching `full` for those lines | integration | starlette-blog | REQ-SEM-03 |
-| Resolved vs unknown; builtin vs user modifiers correct | integration | starlette-blog, user-hints | REQ-SEM-04 |
-| Disabled pack → pack filter tokens as `unknown` | integration | starlette-blog | REQ-SEM-04 |
-| `full/delta` is not advertised | e2e (pytest-lsp) | starlette-blog | REQ-SEM-05 |
+| Token-type legend = `[macro, variable, parameter, filter, function, test, block, keyword]` in exactly that order (indices 0–7) | unit | — | REQ-SEM-01 |
+| Token-modifier legend = `[defined, unknown, builtin, user]` in exactly that order (bits 0–3) | unit | — | REQ-SEM-02 |
+| Legend order is stable across versions — re-declaring never shifts an existing index (§10 legend-evolution) | unit | — | REQ-SEM-01, REQ-SEM-02 |
+
+**Token TYPES — one positive row per §5.1 type (REQ-SEM-04)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `post_url` in `post.html` → type `macro` | integration | starlette-blog | REQ-SEM-04 |
+| `post` in `{{ post_url(post) }}` → type `variable` | integration | starlette-blog, user-hints | REQ-SEM-04 |
+| `post` in `macro post_url(post)` (macros.html) → type `parameter` | integration | starlette-blog | REQ-SEM-04 |
+| `truncate` in `{{ … \| truncate(40) }}` → type `filter` | integration | starlette-blog | REQ-SEM-04 |
+| `request` (starlette extra) used as a call → type `function` | integration | starlette-blog | REQ-SEM-04 |
+| `defined` in `{% if x is defined %}` → type `test` | integration | synthetic doc | REQ-SEM-04 |
+| `content` block name in `{% block content %}` → type `block` | integration | starlette-blog | REQ-SEM-04 |
+| Statement keywords `for`, `block`, `extends` → type `keyword` | integration | starlette-blog | REQ-SEM-04 |
+
+**Modifier combinations — both polarities of every axis (REQ-SEM-02, REQ-SEM-04)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `macro` `{defined, user}` — `post_url` resolves to the user-defined macro (§6.1) | integration | starlette-blog | REQ-SEM-04 |
+| `macro` `{unknown}` — a misspelled macro call (e.g. `psot_url(post)`) resolves to nothing (§6.1, §6.2) | integration | synthetic doc | REQ-SEM-04 |
+| `variable` `{defined, user}` — hinted `post` (type `Post`) (§6.1, §6.2) | integration | user-hints | REQ-SEM-04 |
+| `variable` `{unknown}` — `psot` resolves to nothing (§6.1, §6.2) | integration | undefined-vars | REQ-SEM-04 |
+| `filter` `{builtin, defined}` — `truncate` from the core registry (§6.1) | integration | starlette-blog | REQ-SEM-04 |
+| `filter` `{user, defined}` — a hinted `markdown` filter (§6.1) | integration | user-hints | REQ-SEM-04 |
+| `filter` `{unknown}` — misspelled `truncat` resolves to nothing (§6.1, §6.2) | integration | undefined-vars | REQ-SEM-04 |
+| `function` `{builtin, defined}` — `url_for` / `request` from the starlette pack | integration | starlette-blog | REQ-SEM-04 |
+| `function` `{unknown}` — an undefined global call resolves to nothing | integration | undefined-vars | REQ-SEM-04 |
+| `function` `{user, defined}` — a hinted user function | integration | user-hints | REQ-SEM-04 |
+| `test` `{builtin, defined}` — `defined` / `divisibleby` from the registry | integration | synthetic doc | REQ-SEM-04 |
+| `test` `{unknown}` — a misspelled `is` test resolves to nothing | integration | undefined-vars | REQ-SEM-04 |
+| `parameter` carries no resolution modifier (a param is neither defined nor unknown) | integration | starlette-blog | REQ-SEM-01, REQ-SEM-04 |
+| `block` carries no resolution modifier | integration | starlette-blog | REQ-SEM-01, REQ-SEM-04 |
+| `keyword` carries no resolution modifier | integration | starlette-blog | REQ-SEM-04 |
+
+**The two requests (REQ-SEM-03)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `full` tokenizes the whole `post.html`, every reference typed/modified per §5.1/§5.2 | integration | starlette-blog | REQ-SEM-03, REQ-SEM-04 |
+| `range` over a viewport returns a strict subset of `full` for those lines | integration | starlette-blog | REQ-SEM-03 |
+| `range` includes a token whose span overlaps the viewport edge; positions stay file-absolute (§10 range-split) | integration | starlette-blog | REQ-SEM-03 |
+| Both responses encode as LSP delta-position integers relative to the `initialize` legend | integration | starlette-blog | REQ-SEM-03 |
+
+**§10 edges & §6.2 line (REQ-SEM-04)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| Disabled extension pack → a pack-only filter tokens as `filter {unknown}` (§10) | integration | starlette-blog | REQ-SEM-04 |
+| Hinted symbol overriding a built-in filter → `{user, defined}`, not `{builtin, defined}` (§10) | integration | user-hints | REQ-SEM-04 |
+| Broken template → tokenize whatever Pass 1 extracted; unparseable spans skipped, never erroring (§10, P3) | integration | syntax-errors | REQ-SEM-04 |
+| Inline/embedded template → tokens emit in host-file coordinates (§10, E31) | integration | call-and-paths | REQ-SEM-03, REQ-SEM-04 |
+| Host-language bytes are never tokenized — only Jinja spans (P5) | integration | starlette-blog | REQ-SEM-04 |
+| The whole `{{ post_url(post) \| truncat }}` line decodes to `macro{defined,user}` · `variable{defined,user}` · `filter{unknown}` (§6.2) | integration | synthetic doc | REQ-SEM-04 |
+
+**Delta (REQ-SEM-05)**
+
+| Behavior / scenario | Type | Fixtures | Verifies |
+|---|---|---|---|
+| `full/delta` is absent from `semanticTokensProvider` server capabilities | e2e (pytest-lsp) | starlette-blog | REQ-SEM-05 |
+| Client editing the file falls back to `full`/`range` and still gets correct tokens | e2e (pytest-lsp) | starlette-blog | REQ-SEM-05 |
 
 ### 11.3 Fixtures
 
-- `starlette-blog` for the resolved/built-in cases; `user-hints` for the `user` modifier. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- `starlette-blog` for the resolved/built-in cases; `user-hints` for the `user` modifier (and the hint-over-builtin override); `undefined-vars` for the `unknown` polarity (variable/filter/function/test); `syntax-errors` for the broken-template edge; `call-and-paths` for the inline/embedded-template (E31) edge. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- Constructs absent from any registered fixture — an `is`-test call site, a misspelled macro call, and the exact §6.2 `{{ post_url(post) | truncat }}` line — use synthetic in-memory `didOpen` documents (per the `starlette-blog` registry note on throwaway probes).
 
 ### 11.4 Requirement coverage
 
 | Requirement | Covered by |
 |---|---|
-| REQ-SEM-01 | legend-types test |
-| REQ-SEM-02 | legend-modifiers test |
-| REQ-SEM-03 | full + range subset test |
-| REQ-SEM-04 | resolution + modifier test |
-| REQ-SEM-05 | delta-not-advertised e2e |
+| REQ-SEM-01 | legend-types order + stability tests; per-type rows (macro…keyword); parameter/block "no resolution modifier" rows |
+| REQ-SEM-02 | legend-modifiers order + stability tests; every modifier-combination row (both polarities of `defined`/`unknown` and `builtin`/`user`) |
+| REQ-SEM-03 | full + range-subset + range-overlap + delta-encoding rows; inline host-coordinate row; E2E-03 |
+| REQ-SEM-04 | per-type rows; every modifier-combination row; §10 edge rows (disabled pack, hint-override, broken template, inline, host-bytes); §6.2 line row; E2E-02/04/05/06 |
+| REQ-SEM-05 | delta-not-advertised + fallback rows; E2E-07 |
 
 ## 12. End-to-End Test Plan
 
@@ -198,10 +264,13 @@ Target: **100% of this spec's behavior.** Every `REQ-SEM-NN` maps to at least on
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | `initialize` then read the declared legend | happy | legend equals §5.1/§5.2 in order |
-| E2E-02 | `semanticTokens/full` on `post.html` | happy | macro `defined`, filter `builtin`, var `user` |
-| E2E-03 | `semanticTokens/range` over a viewport | happy | subset consistent with `full` |
-| E2E-04 | Misspell a filter | happy | the token carries the `unknown` modifier |
+| E2E-01 | `initialize` then read the declared legend | happy | token types = `[macro,variable,parameter,filter,function,test,block,keyword]` and modifiers = `[defined,unknown,builtin,user]`, in order |
+| E2E-02 | `semanticTokens/full` on `post.html` — resolved symbols | happy | `post_url` → `macro{defined,user}`; `truncate` → `filter{builtin,defined}`; `post` → `variable{defined,user}`; `content` → `block`; `for`/`block` → `keyword` |
+| E2E-03 | `semanticTokens/range` over a viewport of `post.html` | happy | a strict subset of `full` for those lines, positions file-absolute even when a token straddles the viewport edge |
+| E2E-04 | Misspell a filter (`truncate` → `truncat`) | negative | the filter token carries `{unknown}`, not `{builtin,defined}` |
+| E2E-05 | Reference an undefined variable (`psot`) and an undefined `is` test | negative | `variable{unknown}` and `test{unknown}` tokens emitted (still colored, not dropped) |
+| E2E-06 | Open a file with a `user`-hinted filter overriding a built-in | happy | the filter tokens as `{user,defined}`, reflecting the highest-priority source |
+| E2E-07 | Inspect `semanticTokensProvider` capability; then edit and re-pull | negative | `full/delta` is absent; client falls back to `full`/`range` and still gets correct tokens |
 
 ## 13. Non-Functional Requirements
 
@@ -226,3 +295,4 @@ Target: **100% of this spec's behavior.** Every `REQ-SEM-NN` maps to at least on
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
+- **2026-06-25** — Expanded §11.2 test plan and §12.2 E2E scenarios to cover every combination: each §5.1 token type, each §5.2 modifier in both `defined`/`unknown` and `builtin`/`user` polarities, the parameter/block/keyword "no resolution modifier" cases, all §10 edges (disabled pack, hint-over-builtin, broken template, range-split, inline, host-bytes, legend evolution), and the §6 legend rows / §6.2 line. Updated §11.3 fixtures and §11.4 requirement-coverage table; added E2E-05/06/07.
