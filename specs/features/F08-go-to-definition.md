@@ -2,9 +2,9 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-25
 >
-> **Purpose:** Jump from a Jinja symbol's usage site to where it's defined — a macro call to its `{% macro %}`, a template path to the file, a `from`-import to the macro it names, a child block to its parent, an alias to its declaration.
+> **Purpose:** Jump from a Jinja symbol's usage site to where it's defined — a macro call to its `{% macro %}`, a template path to the file, a `from`-import to the macro it names, a block / `self` / `super` to the block declaration, an alias to its declaration, a scope-local variable to its binding, and a hinted symbol to its hint file.
 
 > **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md), [E01-architecture](../foundations/E01-architecture.md)   ·   **Related:** [F09-find-references](F09-find-references.md), [F10-symbols](F10-symbols.md), [F06-hover](F06-hover.md)
 
@@ -20,8 +20,8 @@ This spec defines `textDocument/definition`: which Jinja symbols jump, where the
 
 This spec covers:
 
-- The five jump kinds: macro call, template path, `from`-import name, child block, import alias.
-- The negative contract — generic variables don't jump.
+- The jump kinds: macro call; template path (incl. list/tuple includes); `from`-import name; block name / `self.<block>` / `super()`; import alias; scope-local variable; and a hinted symbol to its hint file.
+- The negative contract — host-injected context variables and built-in callables don't jump.
 - The response shape — `Location` vs `LocationLink`.
 
 ## 2. Non-Goals / Out of Scope
@@ -40,7 +40,8 @@ We can do this because Pass 2 already resolves every cross-template reference in
 ## 4. Concepts & Definitions
 
 - **Jump target** — the definition a usage site resolves to: a macro, a template file, a block, or an import alias.
-- **Resolvable symbol** — a symbol jinja-lsp can statically resolve from the index. Generic variables are *not* resolvable (§5.6).
+- **Resolvable symbol** — a symbol jinja-lsp can statically resolve to a template-owned (or hint-backed) definition. Host-injected context variables are *not* resolvable (§5.8).
+- **Scope-local** — a variable bound by an enclosing `{% for %}`/`{% set %}`/`{% with %}`/`{% call %}` or a macro parameter, with a `valid_range` ([E07](../foundations/E07-data-model.md) `VariableScope`).
 - **`LocationLink`** — an LSP response that carries both the *origin* range (the word you clicked) and the *target* range, enabling editor peek UIs. (Canonical term in [glossary](../glossary.md).)
 
 ## 5. Detailed Specification
@@ -59,7 +60,7 @@ The `extends`, `include`, `import`, and `from … import` tags all name a templa
 
 **REQ-DEF-02 — A template-path string jumps to the file.**
 
-When the cursor is inside the path literal of an `{% extends "base.html" %}`, `{% include … %}`, `{% import … %}`, or `{% from … import … %}` tag, resolve the path against the configured templates directories ([E30](../foundations/E30-extraction-and-indexing.md)) and return a `Location` at the **start of the target file** (line 0, col 0). A dynamic path (`{% extends layout_var %}`, the `is_dynamic` flag on the `TemplateReference` — [E07](../foundations/E07-data-model.md)) is not statically resolvable, so it doesn't jump.
+When the cursor is inside the path literal of an `{% extends "base.html" %}`, `{% include … %}`, `{% import … %}`, or `{% from … import … %}` tag, resolve the path against the configured templates directories ([E30](../foundations/E30-extraction-and-indexing.md)) and return a `Location` at the **start of the target file** (line 0, col 0). Inside a **list/tuple include** (`{% include ["a.html", "b.html"] %}`), the candidate under the cursor resolves; a candidate that doesn't resolve simply doesn't jump while its siblings still do. A dynamic path (`{% extends layout_var %}`, the `is_dynamic` flag on the `TemplateReference` — [E07](../foundations/E07-data-model.md)) is not statically resolvable, so it doesn't jump.
 
 ### 5.3 `from … import` name → macro definition
 
@@ -69,13 +70,17 @@ When the cursor is inside the path literal of an `{% extends "base.html" %}`, `{
 
 When the cursor is on an imported name in a `{% from X import Y %}` (or `Y as alias`) statement, resolve template `X`, find the `MacroDefinition` named `Y` inside it, and jump to that macro's definition — not merely to the top of `X`. This is more precise than the path jump in §5.2: it lands you on the exact macro.
 
-### 5.4 Child block → parent block
+### 5.4 Block, `self.<block>`, and `super()`
 
-When a child template overrides a block, the author usually wants to see what the parent's block looked like.
+When a child overrides a block — or references another block through `self`/`super` — the author wants the block's declaration.
 
-**REQ-DEF-04 — A block name in a child jumps to the same block in its parent.**
+**REQ-DEF-04 — Block names, `self.<block>`, and `super()` jump to the block declaration.**
 
-When the cursor is on a block name in `{% block content %}` and the template `extends` a parent that declares a block of the same name, jump to the parent's `{% block content %}` ([E07](../foundations/E07-data-model.md) `BlockDefinition`). Walk the [template chain](../glossary.md) upward and land on the **nearest** ancestor that declares the block. A block that introduces a new name (no ancestor declares it) doesn't jump.
+Three cursor positions resolve through the [template chain](../glossary.md) ([E07](../foundations/E07-data-model.md) `BlockDefinition`):
+
+- On a block name in `{% block content %}` (or `{% endblock content %}`) that overrides an ancestor's block → jump to the **nearest ancestor** declaring it. A block introducing a new name (no ancestor declares it) doesn't jump.
+- On a `self.<name>` reference (`{{ self.content() }}`) → jump to that block's definition, resolved through the chain.
+- On `super()` inside an overriding block → jump to the **parent's** same-named block (the one `super()` renders). When the parent declares no such block, nothing jumps (consistent with [F01](F01-diagnostics.md)'s `JINJA-E401 invalid-super`).
 
 ### 5.5 Import alias → its declaration
 
@@ -85,17 +90,33 @@ When the cursor is on a block name in `{% block content %}` and the template `ex
 
 When the cursor is on an alias usage (the namespace part of `macros.post_url`), jump to the `ImportAlias` declaration ([E07](../foundations/E07-data-model.md)) in the current template. If the cursor is on the *attribute* part (`post_url`), resolve through the alias to that macro's definition in the source template (a §5.1-style macro jump).
 
-### 5.6 Negative contract — generic variables don't jump
+### 5.6 Scope-local variable → binding site
+
+A variable bound inside the template is a definition jinja-lsp owns and can land you on.
+
+**REQ-DEF-08 — A scope-local variable jumps to its binding site.**
+
+A usage of a variable bound by an enclosing construct — a `{% for x in … %}` loop variable (and tuple-unpacking targets `{% for k, v in … %}`), a `{% set x = … %}` / `{% set x %}…{% endset %}` binding, a `{% with x = … %}` binding, a `{% call(arg) … %}` argument, or a macro parameter inside the macro body — jumps to that binding's definition site, chosen by the binding whose `valid_range` contains the cursor ([E07](../foundations/E07-data-model.md) `VariableScope`). These are template-owned bindings jinja-lsp resolves statically — the same ones [F11](F11-document-highlight.md) marks `Write` and [F06](F06-hover.md) hovers. Only host-injected context variables and free variables fall to the negative contract (§5.8).
+
+### 5.7 Hinted symbol → its hint file
+
+A symbol documented by the user's own hint jumps to where they declared it.
+
+**REQ-DEF-09 — A hinted context variable jumps to its hint file.**
+
+A hinted context variable (`post`) or one of its declared attributes jumps to its declaration in the originating hint file — a `*.hints.md` sidecar or a configured `hints` directory ([F04](F04-user-hints.md)). This requires the registry to record each hint's source location ([E07](../foundations/E07-data-model.md), [F04](F04-user-hints.md)). A hinted symbol whose source file can't be resolved falls through to the negative contract (§5.8). (Built-in and pack callables have no source file and don't jump — hover [F06](F06-hover.md) shows their docs instead; see [OQ-DEF-1](#15-open-questions--decisions) for custom builtins.)
+
+### 5.8 Negative contract — host-owned symbols don't jump
 
 This is the most important rule in the spec, because getting it wrong means stepping on the host LSP.
 
-**REQ-DEF-06 — Only Jinja-resolvable symbols jump; generic variables return nothing.**
+**REQ-DEF-06 — Host-owned and unresolvable symbols return nothing.**
 
-A bare variable reference (`{{ post }}`, `{{ user.email }}`, a `{% for %}` loop variable, a `{% set %}` target's later use) does **not** jump. These are either context variables injected by host code (invisible to static analysis — P1) or locals whose definition is a different concern. Returning nothing here keeps jinja-lsp a [companion, not a replacement](../constitution.md) (P5): the Python LSP owns Python symbols, and we never compete for them.
+A symbol jinja-lsp can't resolve to a template- or hint-backed definition returns an empty result: a host-injected context variable with **no** hint (`{{ request }}`, an un-hinted `{{ post }}`), an attribute on an unknown or un-hinted receiver (`{{ user.email }}`), and a built-in or pack callable (which has no source file). These are owned by the host Python LSP or have no definition site. Returning nothing here keeps jinja-lsp a [companion, not a replacement](../constitution.md) (P5): the Python LSP owns Python symbols, and we never compete for them.
 
 > **Note:** "returns nothing" means an empty result, never an error. The editor falls through to its other providers cleanly.
 
-### 5.7 Response shape
+### 5.9 Response shape
 
 **REQ-DEF-07 — Prefer `LocationLink`; fall back to `Location`.**
 
@@ -147,8 +168,9 @@ In `starlette-blog`, `templates/blog/post.html` opens with `{% extends "base.htm
 - Cursor on `"base.html"` → jumps to the top of `templates/base.html` (§5.2).
 - Cursor on `post_url` in the import → jumps to `{% macro post_url(post) %}` in `blog/macros.html` (§5.3).
 - Cursor on `post_url` in `{{ post_url(post) }}` → same macro definition (§5.1).
-- Cursor on `content` in `{% block content %}` → jumps to `{% block content %}` in `base.html` (§5.4).
-- Cursor on `post` in `{{ post_url(post) }}` → returns nothing; `post` is a hinted context variable owned by the host (§5.6).
+- Cursor on `content` in `{% block content %}` → jumps to `{% block content %}` in `base.html` (§5.4); on `{{ super() }}` inside it → the same parent block; on `{{ self.footer() }}` → `base.html`'s `footer` block.
+- Cursor on `c` in `{% for c in post.comments %}…{{ c.body }}` → jumps to the loop binding `{% for c … %}` (§5.6).
+- Cursor on `post` (a hinted `context_variable`) → jumps to its declaration in the `post` hint file (§5.7); on un-hinted `{{ request }}` → returns nothing, owned by the host (§5.8).
 
 ## 10. Edge Cases & Failure Modes
 
@@ -156,6 +178,10 @@ In `starlette-blog`, `templates/blog/post.html` opens with `{% extends "base.htm
 - **Block declared in the child but not the parent** → no jump; it's a new block, not an override.
 - **`extends` chain with the block in a grandparent** → walk the chain and land on the nearest ancestor declaring it (§5.4).
 - **Dynamic path (`is_dynamic`)** → no jump (§5.2); consistent with [F01](F01-diagnostics.md) REQ-DIAG-02 not flagging it.
+- **Loop / `set` / `with` variable used outside its scope** → no binding's `valid_range` contains the cursor → nothing (§5.6).
+- **`super()` where the parent declares no matching block** → nothing (consistent with [F01](F01-diagnostics.md) `JINJA-E401`).
+- **`self.<name>` for a block no ancestor declares** → nothing (§5.4).
+- **Hinted variable whose hint file is unresolvable, or a core/pack built-in** → nothing; only resolvable hints jump (§5.7).
 - **Cursor inside an inline template** ([E31](../foundations/E31-inline-templates.md)) → jumps work identically; targets report host-file coordinates via the inline range map.
 - **Unsaved edits in the target file** → resolve against the in-memory document, not the on-disk copy ([E01](../foundations/E01-architecture.md)).
 
@@ -171,13 +197,15 @@ Target: **100% of this spec's behavior.** Every `REQ-DEF-NN` maps to at least on
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Macro call resolves to its `{% macro %}` (local + imported) | integration | starlette-blog | REQ-DEF-01 |
-| `extends`/`include`/`import` path resolves to the file start | integration | starlette-blog | REQ-DEF-02 |
-| `from X import Y` name resolves to macro `Y` in `X` | integration | starlette-blog | REQ-DEF-03 |
-| Child block name resolves to nearest parent block | integration | inheritance | REQ-DEF-04 |
-| Import alias resolves to its `import … as` declaration | integration | starlette-blog | REQ-DEF-05 |
-| Generic variable returns an empty result | integration | starlette-blog | REQ-DEF-06 |
-| `LocationLink` returned when client advertises `linkSupport`; else `Location` | e2e (pytest-lsp) | starlette-blog | REQ-DEF-07 |
+| `post_url` in `{{ post_url(post) }}` resolves to `{% macro post_url %}` in `blog/macros.html`; a locally-defined macro resolves in-file; a `{% call x() %}` callee resolves | integration | starlette-blog | REQ-DEF-01 |
+| `"base.html"` in `{% extends %}` resolves to `base.html` at line 0; the candidate under the cursor in a list-include resolves; a dynamic path does not | integration | starlette-blog, call-and-paths | REQ-DEF-02 |
+| `post_url` in `{% from "blog/macros.html" import post_url %}` resolves to the macro itself, not the file top | integration | starlette-blog | REQ-DEF-03 |
+| Child `{% block content %}` → nearest ancestor's `content`; `{{ self.footer() }}` → its block; `{{ super() }}` → the parent block; a new-name block and a `super()` with no parent block don't jump | integration | inheritance | REQ-DEF-04 |
+| In `{{ macros.post_url(post) }}`: the `macros` namespace → its `{% import … as macros %}`; the `post_url` attribute → the macro definition | integration | starlette-blog | REQ-DEF-05 |
+| Un-hinted `{{ request }}`, an attribute on an un-hinted receiver, and a built-in filter all return an empty result | integration | starlette-blog | REQ-DEF-06 |
+| `LocationLink[]` (single element) when the client advertises `linkSupport`; else `Location[]`; an unresolved symbol returns `[]` | e2e (pytest-lsp) | starlette-blog | REQ-DEF-07 |
+| `c` in `{% for c in post.comments %}{{ c.body }}` → the `{% for c … %}` binding; a `{% set %}`/`{% with %}`/macro-param use → its binding; the binding is chosen by `valid_range`; a use outside scope returns `[]` | integration | starlette-blog | REQ-DEF-08 |
+| A hinted `post` (and a hinted attribute) → its `*.hints.md` declaration; an unresolvable hint returns `[]` | integration | user-hints | REQ-DEF-09 |
 
 ### 11.3 Fixtures
 
@@ -187,13 +215,15 @@ Target: **100% of this spec's behavior.** Every `REQ-DEF-NN` maps to at least on
 
 | Requirement | Covered by |
 |---|---|
-| REQ-DEF-01 | macro-call jump test |
-| REQ-DEF-02 | template-path jump test |
+| REQ-DEF-01 | macro-call jump test (local + imported + `{% call %}`) |
+| REQ-DEF-02 | template-path + list-element jump test; dynamic-path negative |
 | REQ-DEF-03 | from-import-name jump test |
-| REQ-DEF-04 | child→parent block jump test |
-| REQ-DEF-05 | import-alias jump test |
-| REQ-DEF-06 | negative-contract test |
-| REQ-DEF-07 | response-shape e2e |
+| REQ-DEF-04 | block + `self.<block>` + `super()` jump tests; new-name and missing-parent negatives |
+| REQ-DEF-05 | import-alias namespace + attribute jump test |
+| REQ-DEF-06 | host-owned negative-contract test |
+| REQ-DEF-07 | response-shape e2e (`LocationLink`/`Location`/empty) |
+| REQ-DEF-08 | scope-local binding jump test (in-range + out-of-scope) |
+| REQ-DEF-09 | hint-file jump test; unresolvable-hint negative |
 
 ## 12. End-to-End Test Plan
 
@@ -205,11 +235,16 @@ Target: **100% of this spec's behavior.** Every `REQ-DEF-NN` maps to at least on
 
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
-| E2E-01 | Definition on a macro call | happy | `Location`/`LocationLink` at the macro definition |
-| E2E-02 | Definition on an `extends` path | happy | `Location` at the target file's start |
-| E2E-03 | Definition on a `from`-import name | happy | `Location` at the named macro |
-| E2E-04 | Definition on a child block name | happy | `Location` at the parent block |
-| E2E-05 | Definition on a generic variable | negative | empty result, no error |
+| E2E-01 | Definition on `post_url` in `{{ post_url(post) }}` | happy | `Location`/`LocationLink` on `{% macro post_url %}` in `blog/macros.html` |
+| E2E-02 | Definition on `"base.html"` in `{% extends %}` | happy | `Location` at `base.html` line 0 |
+| E2E-03 | Definition on `post_url` in `{% from "blog/macros.html" import post_url %}` | happy | `Location` on the named macro, not the file top |
+| E2E-04 | Definition on the child `{% block content %}` name | happy | `Location` on `base.html`'s `content` block |
+| E2E-05 | Definition on `{{ super() }}` inside `content` | happy | `Location` on the parent `content` block |
+| E2E-06 | Definition on `c` inside `{% for c in post.comments %}{{ c.body }}` | happy | `Location` on the `{% for c … %}` binding |
+| E2E-07 | Definition on a hinted `post` | happy | `Location` in the `post` hint file |
+| E2E-08 | Definition on the `macros` namespace in `{{ macros.post_url() }}` | happy | `Location` on its `{% import … as macros %}` |
+| E2E-09 | Definition on un-hinted `{{ request }}` | negative | empty result, no error |
+| E2E-10 | Definition on `c` referenced after its `{% endfor %}` | negative | empty result (outside `valid_range`) |
 
 ## 13. Non-Functional Requirements
 
@@ -226,12 +261,19 @@ Target: **100% of this spec's behavior.** Every `REQ-DEF-NN` maps to at least on
 
 - **Latency** — definition is a pure index lookup and returns in < 100 ms (P6), well within budget since Pass 2 has already resolved the cross-template links.
 
+## 15. Open Questions & Decisions
+
+- **Decided** — definition prefers `LocationLink` (origin + target ranges) when the client supports it, falling back to `Location`; every jump resolves to a single target.
+- **Decided** — scope-local variables (loop/`set`/`with`/macro-param) and hinted context variables jump (REQ-DEF-08/09); only host-injected context variables and built-in callables fall to the negative contract (REQ-DEF-06).
+- **OQ-DEF-1** — should a **custom-builtin** filter/test/function ([F02 §5.6](F02-builtin-registry.md)) jump to the `.md` doc file it was loaded from? This is net-new and requires the registry to retain each doc's source path (which the doc model doesn't currently carry). Deferred; built-in, pack, and custom callables currently don't jump.
+
 ## 16. Cross-References
 
-- **Depends on:** [constitution](../constitution.md) — P1, P5, P6; [E07-data-model](../foundations/E07-data-model.md) — the symbol types resolved; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — path resolution and the import graph; [E01-architecture](../foundations/E01-architecture.md) — pure-read handlers.
-- **Related:** [F09-find-references](F09-find-references.md) — the inverse direction; [F10-symbols](F10-symbols.md) — the same definitions as an outline; [F06-hover](F06-hover.md) — the definition's docs without jumping.
+- **Depends on:** [constitution](../constitution.md) — P1, P5, P6; [E07-data-model](../foundations/E07-data-model.md) — the symbol types, scopes, and `valid_range` resolved; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — path resolution and the import graph; [E01-architecture](../foundations/E01-architecture.md) — pure-read handlers.
+- **Related:** [F09-find-references](F09-find-references.md) — the inverse direction; [F11-document-highlight](F11-document-highlight.md) — the file-local view of the same bindings; [F10-symbols](F10-symbols.md) — the same definitions as an outline; [F04-user-hints](F04-user-hints.md) — the hint files hinted jumps target; [F06-hover](F06-hover.md) — the definition's docs without jumping.
 
 ## 17. Changelog
 
-- **2026-06-24** — Initial draft.
+- **2026-06-25** — v0.2: added scope-local jumps (REQ-DEF-08), `self.<block>`/`super()` jumps and list/tuple include paths (REQ-DEF-04, REQ-DEF-02), and hint-file jumps (REQ-DEF-09); narrowed the negative contract (REQ-DEF-06) to host-injected context variables and built-in callables; rebuilt the test and E2E plans. Deferred custom-builtin doc jumps (OQ-DEF-1).
 - **2026-06-24** — `post_url`'s body shown as `url_for(...)`, matching F15/F16's depiction of the same macro.
+- **2026-06-24** — Initial draft.

@@ -31,7 +31,7 @@ This spec covers:
 - File-local occurrence highlighting on cursor-rest — [F11-document-highlight](F11-document-highlight.md) (the same data, a narrower scope).
 - The call graph as a navigable tree — [F16-call-hierarchy](F16-call-hierarchy.md).
 - The "N references" lens — [F15-code-lens](F15-code-lens.md) (it counts what this spec collects).
-- Renaming a symbol across its references — deferred, see §3.
+- Performing the rename edit itself — owned by [F17-code-actions](F17-code-actions.md)'s rename command, which consumes this reference graph (§3). F09 supplies the references; F17 rewrites them.
 
 ## 3. Background & Rationale
 
