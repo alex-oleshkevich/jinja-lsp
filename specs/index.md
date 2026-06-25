@@ -50,14 +50,14 @@ Numbered in build order: the meaning layer (diagnostics, registry, packs, hints)
 | Spec | Purpose | Load this when | Status |
 |---|---|---|---|
 | [F00-template](features/F00-template.md) | Boilerplate for new feature specs | Starting a new feature | — |
-| [F01-diagnostics](features/F01-diagnostics.md) | The 21-code catalog + `noqa` suppression | Adding/auditing a check | ✏️ |
-| [F02-builtin-registry](features/F02-builtin-registry.md) | The unified doc registry (113 embedded docs) | Touching docs/hover data | ✏️ |
-| [F03-extension-packs](features/F03-extension-packs.md) | Flask, Starlette, Starlette-Babel, Starlette-Flash packs | Adding a framework pack | ✏️ |
-| [F04-user-hints](features/F04-user-hints.md) | Sidecar + configured hint files; `W106` | Supporting project symbols | ✏️ |
-| [F05-completions](features/F05-completions.md) | Context-aware completions + resolve | Working on completion | ✏️ |
-| [F06-hover](features/F06-hover.md) | Hover docs for symbols and attributes | Working on hover | ✏️ |
-| [F07-signature-help](features/F07-signature-help.md) | Param hints in macro/filter calls | Working on signatures | ✏️ |
-| [F08-go-to-definition](features/F08-go-to-definition.md) | Jump to macro/template/block defs | Working on navigation | ✏️ |
+| [F01-diagnostics](features/F01-diagnostics.md) | The 21-code catalog + `noqa` suppression | Adding/auditing a check | ✅ |
+| [F02-builtin-registry](features/F02-builtin-registry.md) | The unified doc registry (113 embedded docs) | Touching docs/hover data | ✅ |
+| [F03-extension-packs](features/F03-extension-packs.md) | Flask, Starlette, Starlette-Babel, Starlette-Flash packs | Adding a framework pack | ✅ |
+| [F04-user-hints](features/F04-user-hints.md) | Sidecar + configured hint files; `W106` | Supporting project symbols | ✅ |
+| [F05-completions](features/F05-completions.md) | Context-aware completions + resolve | Working on completion | ✅ |
+| [F06-hover](features/F06-hover.md) | Hover docs for symbols and attributes | Working on hover | ✅ |
+| [F07-signature-help](features/F07-signature-help.md) | Param hints in macro/filter calls | Working on signatures | ✅ |
+| [F08-go-to-definition](features/F08-go-to-definition.md) | Jump to macro/template/block defs | Working on navigation | ✅ |
 | [F09-find-references](features/F09-find-references.md) | Workspace-wide usages of a symbol | Working on references | ✏️ |
 | [F10-symbols](features/F10-symbols.md) | Document outline + workspace symbol search | Working on symbols | ✏️ |
 | [F11-document-highlight](features/F11-document-highlight.md) | In-file occurrence highlighting | Working on highlights | ✏️ |

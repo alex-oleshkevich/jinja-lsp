@@ -1,6 +1,6 @@
 # F04 — User Hints
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
