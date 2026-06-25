@@ -93,7 +93,7 @@ For a name in `{% from "x" import a as c %}` or `{% import "x" as m %}`, hover r
 
 **REQ-HOV-11 — Keyword-argument names render their parameter.**
 
-For a keyword-argument name in a call (`post_url(anchor=…)`, `truncate(length=…)`), hover identifies the parameter it binds on the callee — the macro's `params` ([E07](../foundations/E07-data-model.md)) or the built-in's `params` frontmatter ([F02](F02-builtin-registry.md)) — and shows that parameter's type and default. The value expression after the `=` hovers as its own target, not as the parameter.
+For a keyword-argument name in a call (`comment_card(show_actions=…)`, `truncate(length=…)`), hover identifies the parameter it binds on the callee — the macro's `params` ([E07](../foundations/E07-data-model.md)) or the built-in's `params` frontmatter ([F02](F02-builtin-registry.md)) — and shows that parameter's type and default. The value expression after the `=` hovers as its own target, not as the parameter.
 
 **REQ-HOV-12 — Special objects render their doc and scope.**
 
@@ -194,15 +194,15 @@ An imported name resolves through to the source macro; a keyword-arg name shows 
   1 │ {% from "blog/macros.html" import post_url %}
     │                                    ╿
     │   ╭─ post_url ──────────── imported from blog/macros.html ─╮
-    │   │ macro post_url(post, anchor=none)                       │
+    │   │ macro post_url(post)                                    │
     │   │   defined in blog/macros.html:3                         │
     │   ╰─────────────────────────────────────────────────────────╯
 
-  9 │ {{ post_url(post, anchor='top') }}
-    │                   ╿
-    │   ╭─ anchor ──────────────────────── parameter of post_url ─╮
-    │   │ anchor : default none                                    │
-    │   ╰──────────────────────────────────────────────────────────╯
+  9 │ {{ comment_card(c, show_actions=false) }}
+    │                    ╿
+    │   ╭─ show_actions ───────────── parameter of comment_card ─╮
+    │   │ show_actions : default true                             │
+    │   ╰─────────────────────────────────────────────────────────╯
 ```
 
 States: registry doc (with alias resolution) · macro signature+docstring · variable scope/def · scope-local binding kind · hinted body · attribute type · block inheritance card · imported-name source · keyword-arg parameter · special-object doc · statement-keyword tag doc · template-path resolution (incl. list / dynamic / ignore-missing) · minimal fallback · silent (outside delimiters / comment / string / raw).
@@ -247,7 +247,7 @@ A hover response over the `truncate` filter:
 
 ## 9. Examples & Use Cases
 
-In `starlette-blog`'s `templates/blog/post.html`, hovering `truncate` shows the built-in filter doc (§6.1); hovering the `post_url(post)` call shows `macro post_url(post)`, its source line in `blog/macros.html`, and the macro's leading-comment docstring (§6.2); hovering `post` (hinted as a `context_variable`) shows the hint body and `type: Post` (§6.3), and hovering `.title` shows `title : string`. Hovering the `"base.html"` in `{% extends "base.html" %}` shows `→ templates/base.html (exists)`. Hovering the `content` block shows it overrides `base.html` and is overridden by `email/digest.html` (§6.4); hovering the imported `post_url` in `{% from "blog/macros.html" import post_url %}` resolves to its source macro (§6.5); hovering the `anchor=` keyword in a `post_url(…)` call names that parameter and its default; and hovering `loop` inside the comment loop shows the loop special-object doc with its `for`-scope note. Hovering inside a `{# comment #}`, a string literal, or a `{% raw %}` body — like plain HTML — shows nothing.
+In `starlette-blog`'s `templates/blog/post.html`, hovering `truncate` shows the built-in filter doc (§6.1); hovering the `post_url(post)` call shows `macro post_url(post)`, its source line in `blog/macros.html`, and the macro's leading-comment docstring (§6.2); hovering `post` (hinted as a `context_variable`) shows the hint body and `type: Post` (§6.3), and hovering `.title` shows `title : string`. Hovering the `"base.html"` in `{% extends "base.html" %}` shows `→ templates/base.html (exists)`. Hovering the `content` block shows it overrides `base.html` and is overridden by `email/digest.html` (§6.4); hovering the imported `post_url` in `{% from "blog/macros.html" import post_url %}` resolves to its source macro (§6.5); hovering the `show_actions=` keyword in a `comment_card(…)` call names that parameter and its default; and hovering `loop` inside the comment loop shows the loop special-object doc with its `for`-scope note. Hovering inside a `{# comment #}`, a string literal, or a `{% raw %}` body — like plain HTML — shows nothing.
 
 ## 10. Edge Cases & Failure Modes
 
@@ -288,6 +288,8 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-HOV-NN` maps 
 | Imported name resolves to source macro; alias slot reads "alias of" | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-10 |
 | Keyword-arg name hover names the bound parameter + default | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-11 |
 | Special objects render doc + scope note; `self.x`/`super()` resolve | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-12 |
+| A scope-gated special out of scope, and `super()` with no parent block, render the constraint note | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-12 |
+| A hinted name overriding a built-in renders the hint body (merge order) | unit | user-hints | REQ-HOV-02 |
 | Statement keyword renders its tag doc; unknown keyword → fallback | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-13 |
 | Cards compose sections in order, omitting empty ones | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-14 |
 | All responses are Markdown `MarkupContent` with a range | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-HOV-07 |

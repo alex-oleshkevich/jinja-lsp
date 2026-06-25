@@ -104,7 +104,7 @@ tests/fixtures/
 
 ### starlette-blog
 
-The recurring example cast ([constitution §5](../constitution.md)) as a working fixture. Its `jinja.toml` sets `templates = ["templates"]` and `extras = ["starlette"]`, so `request` resolves. Holds `base.html` (the `head`/`body`/`content`/`footer` blocks), `blog/post.html` (extends base, fills `content`, calls `post_url` and `comment_card`), `blog/macros.html` (defines `post_url`, `comment_card`), and `email/digest.html` (extends base, imports `post_url`, uses `request`). It is the clean baseline — its golden file is (near) empty — and the workspace every spec's examples draw from. Reused across the whole suite.
+The recurring example cast ([constitution §5](../constitution.md)) as a working fixture. Its `jinja.toml` sets `templates = ["templates"]` and `extras = ["starlette"]`, so `request` resolves. Holds `base.html` (the `head`/`body`/`content`/`footer` blocks), `blog/post.html` (extends base, overrides `content`, renders `{{ post.title | truncate(60) }}`, loops `{% for c in post.comments %}` calling `comment_card(c, show_actions=true)`, and calls `post_url(post)`), `blog/macros.html` (defines `post_url(post)` and `comment_card(comment, show_actions=true)`), and `email/digest.html` (extends base, overrides `content`, imports `{% from "blog/macros.html" import post_url %}`, uses `request`). These constructs — a filter call, a keyword-argument macro call (`comment_card`), a comment loop, and a cross-file macro import — give the interactive features ([F05](../features/F05-completions.md)/[F06](../features/F06-hover.md)/[F07](../features/F07-signature-help.md)) realizable call sites. It is the clean baseline — its golden file is (near) empty — and the workspace every spec's examples draw from. Reused across the whole suite. Negative/edge probes that need throwaway constructs (`{% raw %}` bodies, `{# comment #}` text, list-form `{% include ["a","b"] %}`, `is divisibleby(...)`, an `{% import "x" as y %}` alias slot) use synthetic in-memory `didOpen` documents rather than living in this baseline.
 
 ### large-workspace
 
@@ -136,7 +136,7 @@ Macro calls with wrong arguments and template paths that don't exist, triggering
 
 ### user-hints
 
-A template with a hint sidecar (`*.hints.md`) and a configured `hints` directory, declaring a `context_variable` with an `attributes` list. Triggers **`JINJA-W106 unknown-attribute`** (the hint-gated, off-by-default code) on an undeclared attribute, and suppresses `JINJA-E101` for the hinted variable. Reused by [F04-user-hints](../features/F04-user-hints.md).
+A template with a hint sidecar (`*.hints.md`) and a configured `hints` directory, declaring `post` as a `context_variable` of `type: Post` with an `attributes` list (`title`, `slug`, `body`, `author`) — the same `post` the [F05](../features/F05-completions.md)/[F06](../features/F06-hover.md) attribute and hover examples draw on. Triggers **`JINJA-W106 unknown-attribute`** (the hint-gated, off-by-default code) on an undeclared attribute, and suppresses `JINJA-E101` for the hinted variable. Reused by [F04-user-hints](../features/F04-user-hints.md).
 
 ### config-reload
 

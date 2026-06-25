@@ -232,6 +232,8 @@ Target: **100% of this feature's behavior.** Every `REQ-ACT-NN` maps to a test; 
 | Rename a macro rewrites the def + all references workspace-wide; a local var renames in-scope only; collision is refused | unit + e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-11 |
 | executeCommand round-trip yields a round-trip-safe edit | e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
 | Actions carry correct kinds + `isPreferred` | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-10 |
+| `executeCommand` cancelled (empty name) → document unchanged | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
+| Multiple diagnostics on one line each contribute their quick-fixes; an action over an inline-template region maps edits back to host coordinates | unit | [call-and-paths](../foundations/E17-testing.md#5-fixtures-registry) | REQ-ACT-09 |
 
 ### 11.3 Fixtures
 

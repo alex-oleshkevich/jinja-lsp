@@ -26,8 +26,8 @@ This spec covers:
 ## 2. Non-Goals / Out of Scope
 
 - The registry and the `params`/`signature` data — owned by [F02-builtin-registry](F02-builtin-registry.md).
-- Completing the callee name (before the paren) — owned by [F05-completions](F05-completions.md).
-- Whole-symbol hover docs — owned by [F06-hover](F06-hover.md) (signature help is per-parameter).
+- Completing the callee name (before the paren) and the keyword-argument *names* inside it (REQ-CMP-08) — owned by [F05-completions](F05-completions.md); signature help is the active-parameter tooltip that runs alongside them.
+- Whole-symbol hover docs, and per-keyword-argument hover (REQ-HOV-11) — owned by [F06-hover](F06-hover.md); signature help steps through the parameters live as you type.
 - The `wrong-call-args` diagnostic — owned by [F01-diagnostics](F01-diagnostics.md).
 
 ## 3. Background & Rationale
@@ -57,7 +57,7 @@ The signature comes from whatever the callee is — a user macro or a registry s
 **REQ-SIG-02 — Signatures resolve from macro params or the registry.**
 
 - For a **macro** call, the signature is built from the macro's `params` ([E07](../foundations/E07-data-model.md)) — name, and default where present.
-- For a **function/filter/test** call, the signature is the registry entry's `signature` string and `params` list ([F02 §5.3](F02-builtin-registry.md)) — including pack ([F03](F03-extension-packs.md)) and hinted ([F04](F04-user-hints.md)) callables. Only active-set symbols are eligible.
+- For a **function/filter/test** call, the signature is the registry entry's `signature` string and `params` list ([F02 §5.3](F02-builtin-registry.md)) — including pack ([F03](F03-extension-packs.md)), custom ([F02 §5.6](F02-builtin-registry.md)), and hinted ([F04](F04-user-hints.md)) callables. Only active-set symbols are eligible.
 
 Each parameter's `type`, `default`, and `required` ([F02](F02-builtin-registry.md) `Param`) become its per-parameter documentation in the popup.
 
@@ -186,7 +186,7 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-SIG-NN` maps 
 | Active param re-resolves across top-level commas | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-SIG-04 |
 | Nested commas/strings don't bump the active index | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-SIG-04 |
 | Response carries `activeParameter` + per-param docs | unit + e2e | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-SIG-05 |
-| Outside a call / unknown callee → null | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-SIG-01, REQ-SIG-02 |
+| Cursor leaves the parens/delimiter (dismissed) or unknown callee → null | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-SIG-01, REQ-SIG-02 |
 
 ### 11.3 Fixtures
 
@@ -244,8 +244,9 @@ Signature help is exercised end to end via `pytest-lsp` ([E29 Branch B](../found
 ## 16. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — P5 (companion), P6 (latency); [F02-builtin-registry](F02-builtin-registry.md) — `signature`/`params` and per-parameter docs; [E07-data-model](../foundations/E07-data-model.md) — macro params; [E01-architecture](../foundations/E01-architecture.md) — trigger chars, pure-read dispatch.
-- **Related:** [F03-extension-packs](F03-extension-packs.md), [F04-user-hints](F04-user-hints.md) — extra callable sources; [F05-completions](F05-completions.md) — completes the callee before the paren; [F06-hover](F06-hover.md) — whole-symbol docs vs per-parameter; [F01-diagnostics](F01-diagnostics.md) — `wrong-call-args` validates what signature help guides.
+- **Related:** [F03-extension-packs](F03-extension-packs.md), [F04-user-hints](F04-user-hints.md) — pack/custom/hinted callable sources (custom builtins per [F02 §5.6](F02-builtin-registry.md)); [F05-completions](F05-completions.md) — completes the callee name and keyword-arg names (REQ-CMP-08) before/inside the paren; [F06-hover](F06-hover.md) — whole-symbol docs and per-keyword-arg hover (REQ-HOV-11) vs the live per-parameter tooltip here; [F01-diagnostics](F01-diagnostics.md) — `wrong-call-args` validates what signature help guides.
 
 ## 17. Changelog
 
+- **2026-06-25** — Named custom builtins ([F02 §5.6](F02-builtin-registry.md)) as a signature source alongside pack/hinted (REQ-SIG-02); cross-linked the boundary with keyword-arg completion ([F05](F05-completions.md) REQ-CMP-08) and keyword-arg hover ([F06](F06-hover.md) REQ-HOV-11).
 - **2026-06-24** — Initial draft.

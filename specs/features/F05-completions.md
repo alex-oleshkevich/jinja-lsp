@@ -192,11 +192,11 @@ Inside a call's parens, the callee's parameter names complete as keyword args (R
     │                             │ ◈ end=        str='...'   │
     │                             ╰───────────────────────────╯
 
-  7 │ {{ post_url(| }}
-    │            └─▶ ╭─ completions ───────╮
-    │                │ ◈ post=             │
-    │                │ ◈ anchor=           │
-    │                ╰─────────────────────╯
+  7 │ {{ comment_card(| }}
+    │                └─▶ ╭─ completions ───────╮
+    │                    │ ◈ comment=          │
+    │                    │ ◈ show_actions=     │
+    │                    ╰─────────────────────╯
 ```
 
 ### 6.5 End-tag and `self` completions
@@ -258,7 +258,7 @@ After `completionItem/resolve`, the same item gains its `documentation`:
 
 ## 9. Examples & Use Cases
 
-Editing `templates/blog/post.html` in `starlette-blog`, you type `{% extends "` and get the four workspace templates (§6.3); you pick `base.html`. Lower down you write `{{ post.title | tr` and the popup offers `trim`/`truncate` (§6.1); selecting `truncate` resolves its built-in doc. Inside `{% for c in post.comments %}{{ loop. }}`, you get the `loop.*` attributes (§6.2), and `c` itself completes as a scope-local (REQ-CMP-11). Typing `{{ post_url(` offers the macro's parameter names `post=`/`anchor=` (§6.4, REQ-CMP-08); closing the loop with `{% end` offers only `endfor` (REQ-CMP-09); and `{{ self.` lists the template's blocks (REQ-CMP-10). And when you type plain HTML between tags, nothing pops up — the negative contract keeps jinja-lsp quiet for the HTML server (REQ-CMP-06).
+Editing `templates/blog/post.html` in `starlette-blog`, you type `{% extends "` and get the four workspace templates (§6.3); you pick `base.html`. Lower down you write `{{ post.title | tr` and the popup offers `trim`/`truncate` (§6.1); selecting `truncate` resolves its built-in doc. Inside `{% for c in post.comments %}{{ loop. }}`, you get the `loop.*` attributes (§6.2), and `c` itself completes as a scope-local (REQ-CMP-11). Typing `{{ comment_card(` offers the macro's parameter names `comment=`/`show_actions=` (§6.4, REQ-CMP-08); closing the loop with `{% end` offers only `endfor` (REQ-CMP-09); and `{{ self.` lists the template's blocks (REQ-CMP-10). And when you type plain HTML between tags, nothing pops up — the negative contract keeps jinja-lsp quiet for the HTML server (REQ-CMP-06).
 
 ## 10. Edge Cases & Failure Modes
 
@@ -302,6 +302,8 @@ Target: **100% of this feature's behavior is covered.** Every `REQ-CMP-NN` maps 
 | `self.` offers block names; `super`/`loop`/`caller`/`varargs`/`kwargs` gated to their scope | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CMP-10 |
 | Scope-locals (loop/set/with/macro-param) complete only within range | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CMP-11 |
 | Path descent emits Folder/File kinds, `isIncomplete`, quote-excluded edits, first-root-wins | unit + integration | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CMP-12 |
+| A disabled pack's symbols are absent from the candidate set | integration | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-CMP-02 |
+| Resolve for a symbol removed by a mid-flight reload returns the item without docs, never errors | unit | config-reload | REQ-CMP-05 |
 
 ### 11.3 Fixtures
 
@@ -347,7 +349,7 @@ Completions are exercised end to end via `pytest-lsp` ([E29 Branch B](../foundat
 | E2E-09 | Complete after `{% ▍` | happy | statement keywords returned |
 | E2E-10 | Complete inside `truncate(▍` (filter args) | happy | filter keyword-arg names (`length=`, `killwords=`, `end=`) returned |
 | E2E-11 | Complete inside `is divisibleby(▍` (test args) | happy | the test's argument name returned |
-| E2E-12 | Complete inside `post_url(▍` (macro params) | happy | macro parameter names (`post=`, `anchor=`) returned |
+| E2E-12 | Complete inside `comment_card(▍` (macro params) | happy | macro parameter names (`comment=`, `show_actions=`) returned |
 | E2E-13 | Complete after `{% end` inside a `for` | happy | only `endfor` returned (REQ-CMP-09) |
 | E2E-14 | Complete after `self.` in a child template | happy | the template's block names returned (REQ-CMP-10) |
 | E2E-15 | Complete a loop variable inside the loop, then outside | mixed | offered within the loop's range; absent after `{% endfor %}` (REQ-CMP-11) |

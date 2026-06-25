@@ -172,6 +172,8 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-EXT-NN` maps to 
 | Pack symbols enter the registry as `Pack(name)` | unit | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-EXT-02 |
 | Disabled pack symbol → `JINJA-E103`; enabling clears it | integration + golden | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-EXT-03 |
 | Pack ≠ custom builtins ≠ hints (distinct load paths) | unit | user-hints | REQ-EXT-05 |
+| Both `flask` + `starlette` enabled → both contribute `url_for`/`request`; deterministic merge | unit | embedded docs | REQ-EXT-02 |
+| No `extras` → registry is core-only; framework globals read as undefined | integration | [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | REQ-EXT-03 |
 
 ### 11.3 Fixtures
 
@@ -232,5 +234,5 @@ Packs are exercised end to end through diagnostics ([F01](F01-diagnostics.md)) a
 
 ## 17. Changelog
 
-- **2026-06-25** — Removed Django support: dropped the `django` pack (REQ-EXT-05), leaving four framework packs (`flask`, `starlette`, `starlette-babel`, `starlette-flash`).
+- **2026-06-25** — Removed Django support: dropped the `django` pack (removing its former REQ-EXT-05; the pack-vs-builtins-vs-hints requirement renumbered REQ-EXT-06 → REQ-EXT-05), leaving four framework packs (`flask`, `starlette`, `starlette-babel`, `starlette-flash`).
 - **2026-06-24** — Initial draft.
