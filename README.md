@@ -71,11 +71,12 @@ language-servers = ["vscode-html-language-server", "jinja-lsp"]
 
 Install from the Zed extensions panel (`Cmd+Shift+X`) — search for **jinja-lsp** and click Install. It activates automatically for Jinja and HTML templates.
 
-To control server order alongside other language servers or pass initialization options, add to `~/.config/zed/settings.json`:
+To control server order alongside other language servers or pass initialization options, add to `~/.config/zed/settings.json` (the language-server id is `jinja2-lsp` and the language is `Jinja2 (HTML)`):
 
 ```jsonc
 {
-  "lsp": { "jinja-lsp": { "initialization_options": { "templates": ["templates"], "extras": ["starlette"] } } }
+  "languages": { "Jinja2 (HTML)": { "language_servers": ["jinja2-lsp"] } },
+  "lsp": { "jinja2-lsp": { "initialization_options": { "templates": ["templates"], "extras": ["starlette"] } } }
 }
 ```
 
@@ -85,13 +86,16 @@ Install the **jinja-lsp** extension from the marketplace. It spawns `jinja-lsp l
 
 ## Configuration
 
-Zero config for standard projects — template directories are discovered automatically (`templates/`, `<project-name>/templates/`, `jinja/`, `j2/`). Priority: `InitializationOptions` › `jinja.toml` › `[tool.jinja]` in `pyproject.toml`.
+Zero config for standard projects — template directories are discovered automatically (`templates/`, `<project-name>/templates/`, `jinja/`, `j2/`). A discovered config file (`jinja.toml`, then `[tool.jinja]` in `pyproject.toml`) — or the zero-config defaults when there's none — is the base; the editor's `InitializationOptions` are then overlaid on top, **overriding only the keys they set** while leaving the rest of the file intact.
 
 | Option | Default | |
 |---|---|---|
 | `templates` | _(auto-discovered)_ | template root directories; `"..."` expands to the discovered set |
+| `extensions` | `["html", "jinja", "jinja2", "j2"]` | file extensions to scan |
 | `extras` | `[]` | framework packs: `flask`, `starlette`, `starlette-babel`, `starlette-flash` |
-| `hints` | `[]` | directories of `*.hints.md` files describing context variables |
+| `hints` | `[]` | directories of hint files describing your project's context variables/macros |
+| `custom_builtins` | `[]` | directories of built-in-format `*.md` docs for third-party filters/functions/tests |
+| `inline_patterns` | `["render_template_string"]` | host render-function names whose string argument is parsed as an inline template |
 | `lint.select` | _(all)_ | diagnostic codes/classes to enable (`JINJA-E1`, `JINJA-W`, …) |
 | `lint.ignore` | `[]` | diagnostic codes/classes to suppress |
 

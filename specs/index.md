@@ -36,7 +36,7 @@ jinja-lsp is a specialist language server for Jinja2 templates: static, editor-a
 | [E02-folder-structure](foundations/E02-folder-structure.md) | `src/` module layout, downward-dependency rule | Placing new code | ✏️ |
 | [E03-tech-stack](foundations/E03-tech-stack.md) | Dependencies, upstream tree-sitter grammar, Rust edition, test deps | Setting up the crate | ✏️ |
 | [E07-data-model](foundations/E07-data-model.md) | Symbol types, scopes, TemplateIndex/WorkspaceIndex | Touching the index | ✏️ |
-| [E15-app-config](foundations/E15-app-config.md) | Config discovery, zero-config fallback, live reload | Touching config | ✏️ |
+| [E15-app-config](foundations/E15-app-config.md) | Config discovery, protocol config (`initializationOptions`), zero-config fallback, live reload | Touching config | ✏️ |
 | [E16-conventions](foundations/E16-conventions.md) | Error handling, parse recovery, tracing | Writing engine code | ✏️ |
 | [E17-testing](foundations/E17-testing.md) | Coverage policy, fixtures registry, golden files | Writing any test plan | ✏️ |
 | [E29-e2e-testing](foundations/E29-e2e-testing.md) | The two E2E branches (golden `check` + pytest-lsp) | Writing an E2E plan | ✏️ |

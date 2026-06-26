@@ -2,11 +2,11 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
-> **Purpose:** How jinja-lsp finds and reads its configuration — TOML-only discovery, the zero-config fallback, every config key, the validation rules, and live reload without restarting the server.
+> **Purpose:** How jinja-lsp finds and reads its configuration — TOML-only file discovery, configuration delivered over the LSP protocol, the zero-config fallback, every config key, the validation rules, and live reload without restarting the server.
 
-> **Depends on:** [constitution](../constitution.md), [E01-architecture](E01-architecture.md)   ·   **Related:** [E16-conventions](E16-conventions.md), [E30-extraction-and-indexing](E30-extraction-and-indexing.md), [F03-extension-packs](../features/F03-extension-packs.md), [F04-user-hints](../features/F04-user-hints.md)
+> **Depends on:** [constitution](../constitution.md), [E01-architecture](E01-architecture.md)   ·   **Related:** [E16-conventions](E16-conventions.md), [E30-extraction-and-indexing](E30-extraction-and-indexing.md), [F03-extension-packs](../features/F03-extension-packs.md), [F04-user-hints](../features/F04-user-hints.md), [F20-editor-integrations](../features/F20-editor-integrations.md)
 
 > Requirement tag: **CFG**
 
@@ -19,6 +19,7 @@ This spec defines jinja-lsp's configuration: where the config file lives, what i
 This spec covers:
 
 - Config file discovery (TOML only).
+- Configuration delivered over the LSP protocol (`initializationOptions` / `didChangeConfiguration`) and how it ranks against the file.
 - The zero-config fallback and template auto-discovery.
 - The `"..."` sentinel in the `templates` list.
 - Every config key and its default.
@@ -42,6 +43,7 @@ The best config is the one you never write. A new user should be able to point a
 - **Zero-config fallback** — automatic template discovery when no config file is present. (Canonical definition in [glossary](../glossary.md).)
 - **`"..."` sentinel** — the placeholder that expands to the discovered directories. (Canonical definition in [glossary](../glossary.md).)
 - **Live reload** — re-applying config changes without restarting the server. (Canonical definition in [glossary](../glossary.md).)
+- **`initializationOptions`** — the JSON config object an editor sends in the LSP `initialize` request (and updates via `workspace/didChangeConfiguration`) to configure the server when there is no config file. Its fields mirror the file key set (§5.7).
 
 ## 5. Detailed Specification
 
@@ -70,7 +72,7 @@ With no config file present, jinja-lsp auto-discovers template directories, rela
 2. **`<project-name>/templates/`** — where `<project-name>` is read from `pyproject.toml`'s `[project].name`, falling back to `[tool.poetry].name`.
 3. **`jinja/`** and **`j2/`** — conventional default directories.
 
-Only directories that actually exist on disk are added; missing ones are silently skipped. A config file, when present, always overrides this fallback — the fallback applies *only* when no config file is found.
+Only directories that actually exist on disk are added; missing ones are silently skipped. A config file, when present, overrides this fallback — the fallback applies *only* when no config file is found. Editor-supplied configuration (`initializationOptions`, §5.7) is then layered on top of whichever base applies — the file, or this fallback — overriding the keys it sets (REQ-CFG-11).
 
 ### 5.3 The `templates` key and the `"..."` sentinel
 
@@ -141,6 +143,19 @@ The server registers the discovered config file with `workspace/didChangeWatched
 
 If the new config fails to parse, the server reports the failure as a **workspace diagnostic** and **retains the previous valid config** — a typo never breaks an active session.
 
+The same diffed re-application runs when the editor pushes new settings via `workspace/didChangeConfiguration` (REQ-CFG-11): the pushed `initializationOptions` are re-applied as an overlay on top of the current file/defaults base, overriding the keys they set.
+
+### 5.7 Configuration over the LSP protocol
+
+A config file is not the only configuration channel, and for many editors it is not the primary one. An editor with no `jinja.toml` — or a user who prefers editor/GUI settings — configures the server **over the LSP protocol** instead of a file. jinja-lsp accepts the same key set across both channels and merges them under one precedence.
+
+**REQ-CFG-11 — `initializationOptions` and `didChangeConfiguration` deliver config over the protocol; the file wins.**
+
+- The client may send an **`initializationOptions`** object in the `initialize` request. Its fields mirror the §5.4 key set one-to-one — same names, same types, **no protocol-only keys**: one schema, two delivery channels. VS Code settings, Zed `initialization_options`, and Neovim `init_options` all serialize into this single object ([F20](../features/F20-editor-integrations.md) REQ-EDIT-10).
+- **Precedence is fixed: zero-config defaults ‹ config file ‹ `initializationOptions`.** The server takes the discovered config file (REQ-CFG-01), or the zero-config defaults (REQ-CFG-02) when there is none, as the **base**, then applies `initializationOptions` as an **overlay on top**, overriding every key they set. A key *absent* from `initializationOptions` keeps the file's (or default's) value — explicit editor settings win per-key, but never erase keys they don't mention. An absent `templates` (in both file and options) still defaults to `["..."]` (REQ-CFG-03), so auto-discovery (REQ-CFG-02) runs and the `"..."` sentinel still merges discovered dirs into whichever `templates` list is in effect.
+- The client may push updated settings at any time via **`workspace/didChangeConfiguration`**; the server re-applies the overlay on top of the current file/defaults base and re-resolves with the same diffed invalidation as REQ-CFG-10. The pushed settings override the file per-key, exactly as `initializationOptions` do at startup.
+- `initializationOptions` / `didChangeConfiguration` payloads are **untrusted** and may be absent or partial; the server deserializes tolerantly and validates per REQ-CFG-07, never panicking on bad input (P3, [E16](E16-conventions.md)).
+
 ## 8. Data Shapes
 
 A worked `jinja.toml` for the `starlette-blog` cast. It points at `templates/`, turns on the Starlette pack so `request` resolves, adds a project hints directory, and tunes the lint set:
@@ -170,6 +185,17 @@ templates = ["templates"]
 extras = ["starlette"]
 ```
 
+The same config delivered over the protocol — the `initializationOptions` object an editor sends in `initialize` when there is no file (REQ-CFG-11). Field names and types mirror the TOML keys exactly:
+
+```json
+{
+  "templates": ["templates"],
+  "extras": ["starlette"],
+  "hints": ["jinja-hints"],
+  "lint": { "select": ["JINJA-E", "JINJA-W2"], "ignore": ["JINJA-W203"] }
+}
+```
+
 ## 9. Examples & Use Cases
 
 A developer opens `starlette-blog` with **no config file**. jinja-lsp finds `templates/` on disk, adds it (REQ-CFG-02), and resolves `base.html`, `blog/post.html`, and the rest. Later they add a `jinja.toml` with `extras = ["starlette"]`; the watcher fires, the registry reloads `request`/`url_for`, and the previously-flagged `request` in `email/digest.html` stops being an undefined variable — all without restarting the editor.
@@ -181,6 +207,9 @@ A developer opens `starlette-blog` with **no config file**. jinja-lsp finds `tem
 - **Config edited to invalid TOML during a session** → workspace diagnostic raised, previous config retained (REQ-CFG-10).
 - **An `extras` name is misspelled** → config error; the misspelled pack is not loaded, and the rest of the config still applies.
 - **A `templates` entry escapes the workspace with `../`** → rejected during path resolution ([E30](E30-extraction-and-indexing.md)).
+- **No config file, but the editor sent `initializationOptions`** → the protocol settings configure the server; an absent/`"..."` `templates` still triggers auto-discovery (REQ-CFG-11, §5.7).
+- **Editor settings and a `jinja.toml` are both present** → the file is the base and the editor settings (`initializationOptions` / a `didChangeConfiguration` push) override the keys they set; keys they don't mention keep the file's values (REQ-CFG-11).
+- **Malformed/partial `initializationOptions`** → deserialized tolerantly; unknown values validated per REQ-CFG-07, never a panic (REQ-CFG-11, P3).
 
 ## 11. Testing
 
@@ -203,6 +232,10 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 | Overlapping select/ignore warns; ignore wins | unit | — | REQ-CFG-07 |
 | Editing config reloads only the changed section in < 500 ms | e2e (pytest-lsp) | [config-reload](E17-testing.md#config-reload) | REQ-CFG-10 |
 | Invalid config on reload retains the previous config | e2e (pytest-lsp) | [config-reload](E17-testing.md#config-reload) | REQ-CFG-10 |
+| `initializationOptions` (no file present) configures the server; fields map to the key set | integration | [config-reload](E17-testing.md#config-reload) | REQ-CFG-11 |
+| `initializationOptions` override a discovered `jinja.toml` per-key; keys they omit keep the file value | integration | [starlette-blog](E17-testing.md#starlette-blog) | REQ-CFG-11 |
+| `didChangeConfiguration` push re-applies the overlay and re-resolves, overriding the file per-key | e2e (pytest-lsp) | [config-reload](E17-testing.md#config-reload) | REQ-CFG-11 |
+| Malformed/partial `initializationOptions` deserializes tolerantly, no panic | unit | — | REQ-CFG-11 |
 
 ### 11.4 Requirement coverage
 
@@ -216,6 +249,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 | REQ-CFG-06 | hints-vs-builtins separation test |
 | REQ-CFG-07 | validation-rules tests |
 | REQ-CFG-10 | live-reload + retain-on-error e2e |
+| REQ-CFG-11 | initializationOptions-configures + initializationOptions-override-file-per-key + didChangeConfiguration-reapply + tolerant-deserialize tests |
 
 ## 12. End-to-End Test Plan
 
@@ -232,6 +266,9 @@ Live reload is exercised end to end through the running server against the `conf
 | E2E-01 | Add `extras = ["starlette"]` to config | happy | registry reloads; `request` stops being undefined |
 | E2E-02 | Change `templates` dirs | happy | workspace re-scans; new templates resolve |
 | E2E-03 | Save invalid TOML | error | workspace diagnostic; previous config still active |
+| E2E-04 | No file; client sends `initializationOptions = {extras=["starlette"]}` in `initialize` | happy | server loads the Starlette pack; `request` resolves with no config file |
+| E2E-05 | A `jinja.toml` exists; client also sends `initializationOptions` overriding `extras` | precedence | the file is the base; the sent `extras` wins, keys not in the options keep the file's values (REQ-CFG-11) |
+| E2E-06 | No file; client pushes `workspace/didChangeConfiguration` mid-session | happy | config re-resolves and re-indexes without a restart |
 
 ## 13. Non-Functional Requirements
 
@@ -248,9 +285,10 @@ Live reload is exercised end to end through the running server against the `conf
 ## 16. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — "degrade, don't fail"; [E01-architecture](E01-architecture.md) — watched-files dispatch.
-- **Related:** [E16-conventions](E16-conventions.md) — `ConfigError` handling; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — consumes `templates`/`extensions`; [F01-diagnostics](../features/F01-diagnostics.md) — the `lint.*` codes; [F02-builtin-registry](../features/F02-builtin-registry.md) — `custom_builtins`; [F03-extension-packs](../features/F03-extension-packs.md) — `extras`; [F04-user-hints](../features/F04-user-hints.md) — `hints`.
+- **Related:** [E16-conventions](E16-conventions.md) — `ConfigError` handling; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — consumes `templates`/`extensions`; [F01-diagnostics](../features/F01-diagnostics.md) — the `lint.*` codes; [F02-builtin-registry](../features/F02-builtin-registry.md) — `custom_builtins`; [F03-extension-packs](../features/F03-extension-packs.md) — `extras`; [F04-user-hints](../features/F04-user-hints.md) — `hints`; [F20-editor-integrations](../features/F20-editor-integrations.md) — forwards editor settings as the `initializationOptions` this spec defines (REQ-CFG-11 ↔ REQ-EDIT-10).
 
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft: TOML-only discovery, zero-config fallback (incl. `<project-name>/templates`), the `"..."` sentinel, the full key set, validation rules, and live reload (REQ-CFG-10).
 - **2026-06-24** — Added the `inline_patterns` key (default `["render_template_string"]`) so E31's configurable host patterns have a defined home, including its live-reload behavior.
+- **2026-06-26** — **Added configuration over the LSP protocol (v0.2).** New §5.7 / REQ-CFG-11 defines `initializationOptions` (in `initialize`) and `workspace/didChangeConfiguration` as config delivery channels whose schema mirrors the §5.4 key set one-to-one. Precedence is **defaults ‹ config file ‹ `initializationOptions`**: the file (or zero-config defaults) is the base and protocol-supplied settings are layered on top, overriding per-key while leaving unmentioned keys intact — matching the legacy server's behavior of letting explicit editor settings override the file. Reconciled with the `"..."` sentinel and auto-discovery. Extended REQ-CFG-02 with a precedence pointer and REQ-CFG-10 with a `didChangeConfiguration` overlay-reapply arm. Added the §4 `initializationOptions` term, the §8 JSON shape, three §10 edges, four §11.2 test rows + REQ-CFG-11 coverage, and §12.2 E2E-04/05/06. Added F20 to Related (REQ-CFG-11 ↔ F20 REQ-EDIT-10). Closes the gap that the protocol config channel F20 depends on was unspecified here.

@@ -38,7 +38,7 @@ The Zed extension is a small `zed_extension_api` crate that declares the tree-si
 
 The guiding rule is that an integration must add *zero* analysis logic. It launches the binary, forwards settings, and gets out of the way. If an integration starts to "know things" about Jinja, that knowledge belongs in the server, not the shim.
 
-Two config delivery paths exist and they coexist. A project with a `jinja.toml` is configured by that file; the editor needs to supply nothing. A project without one (or a user who prefers editor settings) configures the server through LSP `InitializationOptions`, whose schema mirrors the config keys exactly. Same keys, two delivery mechanisms — see §5.5.
+Two config delivery paths exist and they layer. A project with a `jinja.toml` is configured by that file; the editor needs to supply nothing. On top of that file (or, with no file, on top of the zero-config defaults) the editor's LSP `InitializationOptions` are overlaid, overriding any key they set — so a user can keep a shared `jinja.toml` and still override a key from their editor. The `InitializationOptions` schema mirrors the config keys exactly. Same keys, two delivery mechanisms, file-then-overlay precedence ([E15](../foundations/E15-app-config.md) REQ-CFG-11) — see §5.5.
 
 ## 4. Concepts & Definitions
 
@@ -60,7 +60,7 @@ The server is invoked as `jinja-lsp lsp`; the client communicates over the proce
 
 **REQ-EDIT-02 — Configuration reaches the server one of two ways.**
 
-Either a `jinja.toml` / `pyproject.toml` in the workspace (the server discovers it — [E15](../foundations/E15-app-config.md)), **or** the client's `InitializationOptions` (§5.5). When both are present, the config file wins; `InitializationOptions` are the fallback for projects without one. No integration invents its own config format.
+A `jinja.toml` / `pyproject.toml` in the workspace (the server discovers it — [E15](../foundations/E15-app-config.md)) and/or the client's `InitializationOptions` (§5.5). When both are present, the file is the base and `InitializationOptions` override it per-key; keys the editor omits keep the file's values ([E15](../foundations/E15-app-config.md) REQ-CFG-11). With no file, the options overlay the zero-config defaults. No integration invents its own config format.
 
 ### 5.2 VS Code extension
 
@@ -101,11 +101,11 @@ A small Rust crate compiled to WASM.
 
 **REQ-EDIT-07 — Rust extension crate registering grammar + server.**
 
-The extension is a `zed_extension_api` crate (`crate-type = ["cdylib"]`) whose `extension.toml` declares the tree-sitter-jinja grammar and the language server. The grammar entry points at the upstream `alex-oleshkevich/tree-sitter-jinja` ([ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)); the `[language_servers.jinja-lsp]` entry names the server and its languages. The crate's `language_server_command` returns `jinja-lsp lsp` over stdio, downloading the release binary if it isn't on `PATH`.
+The extension is a `zed_extension_api` crate (`crate-type = ["cdylib"]`) whose `extension.toml` declares the tree-sitter-jinja grammar and the language server. The grammar entry points at the upstream `alex-oleshkevich/tree-sitter-jinja` ([ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)); the `[language_servers.jinja2-lsp]` entry names the server and its languages. The crate's `language_server_command` returns `jinja-lsp lsp` over stdio, downloading the release binary if it isn't on `PATH`. The Zed language-server id is **`jinja2-lsp`** and the language is **`Jinja2 (HTML)`**, ported verbatim from the legacy manually-created `.zed/settings.json` so existing Zed users' configuration keeps working; the binary itself remains `jinja-lsp`.
 
 **REQ-EDIT-08 — Server registration and configuration.**
 
-The extension registers `jinja-lsp` for the `Jinja2` language and forwards Zed's `lsp.jinja-lsp.initialization_options` as the server's `InitializationOptions` (§5.5), so Zed users configure the server through `settings.json` when no `jinja.toml` exists.
+The extension registers the `jinja2-lsp` language server for the `Jinja2 (HTML)` language and forwards Zed's `lsp.jinja2-lsp.initialization_options` as the server's `InitializationOptions` (§5.5), so Zed users configure the server through `settings.json` — overlaid on any `jinja.toml` per REQ-EDIT-02.
 
 ### 5.4 Neovim — documented `nvim-lspconfig` block
 
@@ -121,7 +121,7 @@ Any LSP client can configure the server with no config file by sending `Initiali
 
 **REQ-EDIT-10 — `InitializationOptions` mirrors `jinja.toml`.**
 
-The `initializationOptions` object the server accepts in `initialize` has one field per config key, with the same names and types as `jinja.toml` ([E15](../foundations/E15-app-config.md)). The full shape is in §8. The server reads these only when no config file is discovered (REQ-EDIT-02); they are the universal, editor-independent configuration path. This is the same schema every integration above forwards — VS Code settings, Zed `initialization_options`, and Neovim `init_options` all serialize into this one object.
+The `initializationOptions` object the server accepts in `initialize` has one field per config key, with the same names and types as `jinja.toml` ([E15](../foundations/E15-app-config.md)). The full shape is in §8. The server overlays these on top of the discovered config file (or the zero-config defaults), overriding the keys they set (REQ-EDIT-02, [E15](../foundations/E15-app-config.md) REQ-CFG-11); they are the universal, editor-independent configuration path. This is the same schema every integration above forwards — VS Code settings, Zed `initialization_options`, and Neovim `init_options` all serialize into this one object.
 
 ## 6. UI Mockups
 
@@ -152,11 +152,11 @@ What a user sees in **Settings → Extensions → Jinja LSP** — the GUI wrappe
 │  Diagnostic codes or class prefixes (e.g. JINJA-E1).                 │
 │  select [                       ]   ignore [ JINJA-W203          ]   │
 │                                                                       │
-│  ⓘ A workspace jinja.toml overrides these settings.                  │
+│  ⓘ These settings override matching keys in a workspace jinja.toml.  │
 └───────────────────────────────────────────────────────────────────── ┘
 ```
 
-States: default (all empty → server uses zero-config discovery) · binary-not-found (a notification toast: "jinja-lsp not found — install it or set jinja-lsp.server.path") · workspace-has-config (an info banner; settings become advisory).
+States: default (all empty → server uses zero-config discovery) · binary-not-found (a notification toast: "jinja-lsp not found — install it or set jinja-lsp.server.path") · workspace-has-config (an info banner noting these settings override matching `jinja.toml` keys).
 
 ### 6.2 Neovim `nvim-lspconfig` snippet
 
@@ -186,7 +186,7 @@ end
 lspconfig.jinja_lsp.setup({})
 ```
 
-States: with a workspace `jinja.toml` the file wins and `init_options` are ignored (REQ-EDIT-02) · without one, `init_options` configure the server.
+States: with a workspace `jinja.toml` the `init_options` override the keys they set on top of the file (REQ-EDIT-02) · without one, `init_options` overlay the zero-config defaults.
 
 ## 7. Visualizations
 
@@ -234,7 +234,7 @@ A third teammate runs Neovim with no `jinja.toml`. They paste the §6.2 block, s
 ## 10. Edge Cases & Failure Modes
 
 - **Binary not on `PATH` and no override** → VS Code shows a "not found" notification; Zed attempts to download the release binary; Neovim's `cmd` fails and `:LspInfo` reports it.
-- **Both `jinja.toml` and editor settings present** → the config file wins; editor settings are ignored (REQ-EDIT-02).
+- **Both `jinja.toml` and editor settings present** → the file is the base and editor settings override the keys they set; keys they omit keep the file's values (REQ-EDIT-02).
 - **Unknown `extra` in editor settings** → forwarded to the server, which reports it as a config error ([E15](../foundations/E15-app-config.md)); the integration doesn't validate config itself.
 - **A slug passed in `lint.ignore` via settings** → rejected by the server (slugs aren't input — [ADR-003](../decisions/ADR-003-diagnostic-code-scheme.md)); the integration forwards it verbatim.
 - **Editor requests TCP/`--http`** → unsupported; stdio is the only transport ([ADR-009](../decisions/ADR-009-stdio-only-transport.md)).
@@ -256,7 +256,7 @@ Rows are grouped by editor so every integration is traced across the same three 
 | **Shared contract — stdio, every editor** ||||
 | T-01 | Every shim's launch command is `jinja-lsp lsp` and pipes LSP over stdin/stdout — no TCP/`--http` argument is emitted by any integration | unit | — | REQ-EDIT-01 |
 | T-02 | A client that requests a TCP/`--http` transport is rejected — the binary exposes no listener option and the integrations expose no such setting (ADR-009) | unit | — | REQ-EDIT-01 |
-| T-03 | Config reaches the server two ways and the file wins: with a workspace `jinja.toml` present the editor's forwarded settings are ignored; without one the forwarded `InitializationOptions` apply (REQ-EDIT-02) | integration | starlette-blog, config-reload | REQ-EDIT-02 |
+| T-03 | Config layers two ways: with a workspace `jinja.toml` present the editor's forwarded settings override the keys they set while unmentioned keys keep the file's values; without a file the forwarded `InitializationOptions` overlay the defaults (REQ-EDIT-02) | integration | starlette-blog, config-reload | REQ-EDIT-02 |
 | **VS Code extension** ||||
 | T-04 | Discovery on `PATH`: with `jinja-lsp.server.path` empty the client resolves `jinja-lsp` on `PATH`, spawns `jinja-lsp lsp`, and negotiates capabilities on `initialize` | integration | starlette-blog | REQ-EDIT-01, REQ-EDIT-03 |
 | T-05 | Explicit override: a non-empty `jinja-lsp.server.path` is used verbatim as the binary location to spawn `jinja-lsp lsp` over stdio | unit | — | REQ-EDIT-01, REQ-EDIT-03 |
@@ -265,20 +265,20 @@ Rows are grouped by editor so every integration is traced across the same three 
 | T-08 | Settings map one-to-one onto `jinja.toml` keys (`templates`→`templates`, `extensions`→`extensions`, `extras`→`extras`, `customBuiltins`→`custom_builtins`, `hints`→`hints`, `lint.select`→`lint.select`, `lint.ignore`→`lint.ignore`; `server.path` is client-only) and serialize into the §5.5 `InitializationOptions` | unit | — | REQ-EDIT-05, REQ-EDIT-10 |
 | T-09 | Settings are forwarded as `InitializationOptions` on start and re-pushed via `workspace/didChangeConfiguration` on change | unit | — | REQ-EDIT-05 |
 | T-10 | §6 default state: all settings empty → no `InitializationOptions` are forced and the server uses zero-config discovery | unit | — | REQ-EDIT-05, REQ-EDIT-10 |
-| T-11 | §6 workspace-has-config state: a workspace `jinja.toml` is present → the info banner renders and forwarded settings are advisory (file wins per REQ-EDIT-02) | integration | starlette-blog | REQ-EDIT-02 |
+| T-11 | §6 workspace-has-config state: a workspace `jinja.toml` is present → the info banner renders noting forwarded settings override matching file keys (REQ-EDIT-02) | integration | starlette-blog | REQ-EDIT-02 |
 | T-12 | tmLanguage: `jinja.tmLanguage.json` and the language contribution register the `jinja` / `jinja-html` languages with extensions `.html`, `.jinja`, `.jinja2`, `.j2` | unit | — | REQ-EDIT-06 |
 | **Zed extension** ||||
-| T-13 | `extension.toml` declares the upstream `alex-oleshkevich/tree-sitter-jinja` grammar (ADR-002) and the `[language_servers.jinja-lsp]` server with its languages; the crate is `crate-type = ["cdylib"]` | unit | — | REQ-EDIT-07 |
+| T-13 | `extension.toml` declares the upstream `alex-oleshkevich/tree-sitter-jinja` grammar (ADR-002) and the `[language_servers.jinja2-lsp]` server (language `Jinja2 (HTML)`) with its languages; the crate is `crate-type = ["cdylib"]` | unit | — | REQ-EDIT-07 |
 | T-14 | Discovery on `PATH`: `language_server_command` returns `jinja-lsp lsp` over stdio when the binary is on `PATH` | integration | — | REQ-EDIT-07 |
 | T-15 | Binary-not-found (§10, Zed path): when `jinja-lsp` is not on `PATH` the extension downloads the release binary from the GitHub release over HTTPS and verifies it against its published checksum before launching `jinja-lsp lsp` (§13.1) | unit | — | REQ-EDIT-07 |
 | T-16 | Checksum mismatch: a downloaded release binary whose checksum does not match the published one is rejected and not launched | unit | — | REQ-EDIT-07 |
-| T-17 | Server registration: the extension registers `jinja-lsp` for the `Jinja2` language and forwards `lsp.jinja-lsp.initialization_options` as the server's `InitializationOptions` (§5.5) | unit | — | REQ-EDIT-08 |
+| T-17 | Server registration: the extension registers the `jinja2-lsp` language server for the `Jinja2 (HTML)` language (ported from the legacy `.zed/settings.json`) and forwards `lsp.jinja2-lsp.initialization_options` as the server's `InitializationOptions` (§5.5) | unit | — | REQ-EDIT-08 |
 | **Neovim — documented `nvim-lspconfig` block** ||||
 | T-18 | Discovery / launch: the snippet's `cmd` is `{ "jinja-lsp", "lsp" }` (stdio), `filetypes` and `root_dir` (`jinja.toml` / `pyproject.toml` / `.git`) are valid, and `init_options` keys are valid §5.5 keys | doc-check | — | REQ-EDIT-09 |
 | T-19 | Binary-not-found (§10, Neovim path): with `jinja-lsp` absent the `cmd` fails to spawn and `:LspInfo` reports the failure (no override mechanism beyond editing `cmd`) | doc-check | — | REQ-EDIT-09 |
-| T-20 | §6 Neovim states: without a workspace `jinja.toml` the `init_options` configure the server; with one the file wins and `init_options` are ignored (REQ-EDIT-02) | integration | starlette-blog, config-reload | REQ-EDIT-09, REQ-EDIT-02 |
+| T-20 | §6 Neovim states: without a workspace `jinja.toml` the `init_options` overlay the defaults; with one they override matching file keys while unmentioned keys keep the file's values (REQ-EDIT-02) | integration | starlette-blog, config-reload | REQ-EDIT-09, REQ-EDIT-02 |
 | **Generic LSP client (incl. Helix and any stdio client)** ||||
-| T-21 | `InitializationOptions` schema: the object the server accepts in `initialize` has one field per `jinja.toml` key with the same names and types (§8), and is read only when no config file is discovered (REQ-EDIT-02) | unit | — | REQ-EDIT-10 |
+| T-21 | `InitializationOptions` schema: the object the server accepts in `initialize` has one field per `jinja.toml` key with the same names and types (§8), and is overlaid on the config file/defaults, overriding the keys it sets (REQ-EDIT-02) | unit | — | REQ-EDIT-10 |
 | T-22 | A generic stdio client (e.g. Helix, configured with `command = "jinja-lsp"`, `args = ["lsp"]`) launches the server over stdio and configures it purely through `InitializationOptions`, no config file present | integration | — | REQ-EDIT-01, REQ-EDIT-10 |
 | **Shared §10 edges — forwarded verbatim, server validates** ||||
 | T-23 | Unknown `extra` in editor settings is forwarded unchanged; the server reports the config error (E15); the integration does not validate config | integration | — | REQ-EDIT-05, REQ-EDIT-10 |
@@ -293,7 +293,7 @@ Rows are grouped by editor so every integration is traced across the same three 
 | Requirement | Covered by |
 |---|---|
 | REQ-EDIT-01 | T-01, T-02 (stdio-only + TCP rejection); T-04, T-05 (VS Code PATH/override); T-22 (generic client) |
-| REQ-EDIT-02 | T-03 (two paths, file wins); T-11 (VS Code banner); T-20 (Neovim) |
+| REQ-EDIT-02 | T-03 (file base + options overlay); T-11 (VS Code banner); T-20 (Neovim) |
 | REQ-EDIT-03 | T-04 (PATH spawn + negotiation), T-05 (override), T-06 (not-found notification) |
 | REQ-EDIT-04 | T-07 (activation events + lazy non-activation) |
 | REQ-EDIT-05 | T-08 (settings→keys mapping), T-09 (forward on start + didChangeConfiguration), T-10 (default state), T-23, T-24 (verbatim forwarding) |
@@ -327,7 +327,7 @@ Each editor gets a happy launch (binary discovered or overridden → diagnostics
 | E2E-08 | Neovim with the documented block, `jinja-lsp` absent | error | `cmd` fails to spawn; `:LspInfo` reports the failure; no crash |
 | E2E-09 | Generic stdio client (e.g. Helix) sends `InitializationOptions`, no config file | happy | server applies them over stdio; Starlette `request` resolves |
 | E2E-10 | Generic client attempts a TCP/`--http` transport | error | unsupported — the binary exposes no listener and the request is rejected; stdio remains the only transport (ADR-009) |
-| E2E-11 | Workspace `jinja.toml` present while editor settings also set | happy | the config file wins; forwarded settings are ignored (REQ-EDIT-02) |
+| E2E-11 | Workspace `jinja.toml` present while editor settings also set | happy | the file is the base; forwarded settings override the keys they set, unmentioned keys keep the file's values (REQ-EDIT-02) |
 
 ## 13. Non-Functional Requirements
 
@@ -356,3 +356,4 @@ Each editor gets a happy launch (binary discovered or overridden → diagnostics
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 test plan and §12.2 e2e scenarios to full combination coverage: each editor (VS Code, Zed, Neovim, generic/Helix) × {PATH discovery, `server.path` override, binary-not-found} happy + negative, the stdio-only/TCP-rejection contract (ADR-009), the Zed grammar + release-binary download + checksum (and mismatch) path, settings→`InitializationOptions` mapping with `didChangeConfiguration`, capability negotiation, and every §6 state and §10 edge. Rebuilt §11.4 so every REQ-EDIT maps to its concrete test IDs.
+- **2026-06-26** — **Config-precedence flip + legacy Zed port.** Reconciled the precedence with [E15](../foundations/E15-app-config.md) REQ-CFG-11 and the legacy server: the config file (or zero-config defaults) is now the **base** and `InitializationOptions` are an **overlay that overrides per-key** — previously the spec said the file wins and options are ignored when a file exists. Updated REQ-EDIT-02/EDIT-10, §1, the §6.1 VS Code banner + states, §6.2 Neovim states, §10, and T-03/T-11/T-20/T-21/E2E-11 accordingly. Ported the legacy manually-created `.zed/settings.json` identifiers into the Zed extension (REQ-EDIT-07/08, T-13/T-17): language-server id **`jinja2-lsp`**, language **`Jinja2 (HTML)`**, settings key `lsp.jinja2-lsp.initialization_options` — the binary stays `jinja-lsp`. Note: the Zed server id now differs from VS Code's `jinja-lsp`; unify if a suite-wide rename is desired.
