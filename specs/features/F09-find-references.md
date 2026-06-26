@@ -23,7 +23,7 @@ This spec covers:
 - The symbol kinds with workspace-wide references: macros, blocks, imports.
 - Collecting usages across files from the `Reference` data.
 - The `includeDeclaration` flag.
-- The negative contract — only Jinja-resolvable symbols, never generic variables.
+- The negative contract — host-injected context variables and built-in callables don't resolve (scope-local variables do).
 
 ## 2. Non-Goals / Out of Scope
 
@@ -51,15 +51,16 @@ Find-references is cheap for us because the work is already done. Pass 1 extract
 
 Three Jinja symbol kinds resolve across the workspace, so they're the ones that answer find-references.
 
-**REQ-REF-01 — Macros, blocks, and imports have workspace-wide references.**
+**REQ-REF-01 — Macros, blocks, imports, and scope-local variables have references.**
 
 Given the cursor on a definition or a usage of:
 
 - a **macro** — return every call site (`{{ m(…) }}`, `{% call m(…) %}`) and every `from … import` that names it, across all templates;
 - a **block** — return every override of that block in descendant templates, plus the declaration in each ([template chain](../glossary.md));
-- an **import** (alias or `from`-import name) — return every usage of the imported symbol in the importing template.
+- an **import** (alias or `from`-import name) — return every usage of the imported symbol in the importing template;
+- a **scope-local variable** — a `{% for %}` loop variable, a `{% set %}` / `{% with %}` binding, a `{% call(arg) %}` argument, or a macro parameter — return every use **within the binding's `valid_range`** ([E07](../foundations/E07-data-model.md) REQ-DATA-11). These references are file-local (the binding doesn't cross templates), and an inner same-named binding is a *different* symbol, never mixed in.
 
-References are collected from the resolved `Reference` set in the [WorkspaceIndex](../glossary.md) ([E07](../foundations/E07-data-model.md)).
+References are collected from the resolved `Reference` set in the [WorkspaceIndex](../glossary.md) ([E07](../foundations/E07-data-model.md) REQ-DATA-11), which resolves each use to the binding its name and position select. This is the same resolution F08 jumps and F11 highlights, and the graph F17's rename rewrites.
 
 ### 5.2 Workspace-wide collection
 
@@ -67,7 +68,7 @@ References don't stop at the current file — a macro defined once is called fro
 
 **REQ-REF-02 — Collection spans the whole workspace.**
 
-When asked for a macro's or block's references, scan every `TemplateIndex` in the workspace, not just the current file. Each result is a `Location` (URI + range) at the usage's identifier range. Results are returned in a stable order — by URI, then by position — so editors and tests see deterministic output.
+When asked for a macro's or block's references, scan every `TemplateIndex` in the workspace, not just the current file. (A scope-local variable's references come from its single `TemplateIndex` only — the binding is file-local.) Each result is a `Location` (URI + range) at the usage's identifier range. The response is `Location[]`; an empty result is an empty array, never `null` or an error, and `LocationLink` is not part of `textDocument/references`. Results are **de-duplicated by (URI, range)** — no location appears twice even when reached through multiple resolution paths — and returned in a stable order, by URI then by position, so editors and tests see deterministic output.
 
 > **Note:** A multi-folder workspace resolves references **within** each folder; cross-folder references aren't linked ([E30](../foundations/E30-extraction-and-indexing.md)). This matches how Pass 2 builds one `WorkspaceIndex` per folder.
 
@@ -79,13 +80,13 @@ The LSP request carries a flag for whether the definition belongs in the list. S
 
 When `context.includeDeclaration` is `true`, the result includes the symbol's declaration range alongside its usages. When `false`, only usages are returned. The declaration is the `MacroDefinition`/`BlockDefinition`/`ImportAlias` name range ([E07](../foundations/E07-data-model.md)).
 
-### 5.4 Negative contract — only Jinja-resolvable symbols
+### 5.4 Negative contract — host-owned symbols
 
 Like go-to-definition, find-references stays in its lane.
 
-**REQ-REF-04 — Generic variables have no references; return an empty result.**
+**REQ-REF-04 — Host-owned symbols have no references; return an empty result.**
 
-A bare variable (`{{ post }}`, `{{ user.email }}`, a loop or `{% set %}` variable) returns an empty result — these are host-owned context variables or locals, not Jinja-resolvable symbols (P5). Returning nothing lets the editor fall through to the host LSP cleanly. An empty result is never an error.
+A reference that resolves to no template-owned binding ([E07](../foundations/E07-data-model.md) REQ-DATA-11) returns an empty result: a host-injected context variable (`{{ request }}`, an un-hinted `{{ post }}`), an attribute on an un-hinted receiver (`{{ user.email }}`), and a built-in or pack callable (which has no workspace definition). These are owned by the host Python LSP (P5); returning nothing lets the editor fall through cleanly, and an empty result is never an error. **Scope-local variables — loop / `{% set %}` / `{% with %}` / macro-param — are *not* host-owned; their in-scope uses are returned per REQ-REF-01.** A scope-local referenced *outside* its `valid_range` resolves to no binding there and returns empty.
 
 ## 6. UI Mockups
 
@@ -131,7 +132,7 @@ References on the `content` block surface every template that overrides it.
 
 In `starlette-blog`, `post_url` is defined in `blog/macros.html` and imported with `from … import` into both `blog/post.html` and `email/digest.html`, where it is called three times (twice in `post.html`, once in `digest.html`). Find References on the macro name returns all six sites — declaration, the two import bindings (REQ-REF-01), and the three calls — when `includeDeclaration` is on, and five when it's off.
 
-Find References on the `content` block (declared in `base.html`) returns its declaration plus every child override (§5.1). Find References on `post` — a hinted context variable — returns nothing (§5.4).
+Find References on the `content` block (declared in `base.html`) returns its declaration plus every child override (§5.1). Find References on the loop variable `c` in `{% for c in post.comments %}…{{ c.body }}` returns every use of `c` within the loop body (REQ-REF-01); on `c` used after `{% endfor %}`, or on `post` — a host-injected context variable — it returns nothing (§5.4).
 
 ## 10. Edge Cases & Failure Modes
 
@@ -139,6 +140,9 @@ Find References on the `content` block (declared in `base.html`) returns its dec
 - **A macro imported under different aliases in different files** → all usages resolve to the one definition; every alias's call sites are collected.
 - **A block overridden several levels deep** → every override in the chain is a reference, not only the immediate child.
 - **Cursor on a usage rather than the definition** → resolve to the definition first, then collect — the result is identical regardless of where you invoke it.
+- **Scope-local variable** → references are the uses within the binding's `valid_range`; a same-named outer or inner binding is a *different* symbol ([E07](../foundations/E07-data-model.md) REQ-DATA-11) and is never mixed in.
+- **A scope-local used outside its `valid_range`** (a loop var after `{% endfor %}`) → resolves to no binding there; empty result (§5.4).
+- **A host-injected / un-hinted context variable** (`{{ request }}`) → empty result; the host LSP owns it (§5.4).
 - **Inline templates** ([E31](../foundations/E31-inline-templates.md)) → references inside inline regions are collected too, reported in host-file coordinates.
 - **Unresolved macro call** → no definition to anchor on; returns an empty result (and [F01](F01-diagnostics.md) `JINJA-E103` flags the call).
 
@@ -174,11 +178,14 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 | `includeDeclaration: true` on `post_url` → declaration range present alongside the 5 usages (6 total) | integration | starlette-blog | REQ-REF-03 |
 | `includeDeclaration: false` on `post_url` → only the 5 usages, declaration absent | integration | starlette-blog | REQ-REF-03 |
 | Declaration range is the name range of the `MacroDefinition`/`BlockDefinition`/`ImportAlias`, not the whole construct | integration | starlette-blog | REQ-REF-03 |
+| **REQ-REF-01 — scope-local variables** | | | |
+| Scope-local loop variable — cursor on `c` in `{% for c in post.comments %}…{{ c.body }}` returns every use of `c` within the loop body, selected by `valid_range` | integration | starlette-blog | REQ-REF-01 |
+| Scope-local `{% set %}` / `{% with %}` / macro-param variable returns its in-scope uses; an inner same-named binding is a distinct symbol, not mixed in | integration | synthetic doc (`{% set x = … %}{{ x }}`, nested shadow) | REQ-REF-01 |
 | **REQ-REF-04 — negative contract** | | | |
-| Bare context variable (`{{ post }}`) returns an empty result, not an error | integration | starlette-blog | REQ-REF-04 |
-| Attribute access (`{{ user.email }}`) returns an empty result | integration | synthetic doc (`{{ user.email }}`) | REQ-REF-04 |
-| Loop variable (`{% for c in post.comments %}` → cursor on `c`) returns an empty result | integration | starlette-blog | REQ-REF-04 |
-| `{% set %}` variable returns an empty result | integration | synthetic doc (`{% set x = … %}{{ x }}`) | REQ-REF-04 |
+| Host-injected context variable (`{{ request }}`) returns an empty result, not an error | integration | starlette-blog | REQ-REF-04 |
+| Attribute access on an un-hinted receiver (`{{ user.email }}`) returns an empty result | integration | synthetic doc (`{{ user.email }}`) | REQ-REF-04 |
+| A scope-local used outside its `valid_range` (`c` after `{% endfor %}`) returns an empty result | integration | synthetic doc | REQ-REF-04 |
+| A built-in/pack callable (`truncate`) has no workspace definition → empty result | integration | starlette-blog | REQ-REF-04 |
 | **§10 edges & §6 states** | | | |
 | Macro never used, `includeDeclaration: true` → just the declaration | integration | unused-symbols | REQ-REF-01, REQ-REF-03 |
 | Macro never used, `includeDeclaration: false` → empty list | integration | unused-symbols | REQ-REF-03, REQ-REF-04 |
@@ -197,10 +204,10 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 | Requirement | Covered by |
 |---|---|
-| REQ-REF-01 | macro-kind tests (`{{ m() }}`, `{% call %}`, `from … import` binding), block-kind tests (overrides incl. deep chain), import-kind tests (`from`-import name + alias slot) |
-| REQ-REF-02 | workspace-span, identifier-range `Location`, URI-then-position ordering, and multi-folder isolation tests |
+| REQ-REF-01 | macro-kind tests (`{{ m() }}`, `{% call %}`, `from … import` binding), block-kind tests (overrides incl. deep chain), import-kind tests (`from`-import name + alias slot), **scope-local-variable tests** (loop/`set`/`with`/macro-param in-scope uses + shadowing) |
+| REQ-REF-02 | workspace-span, identifier-range `Location`, `Location[]`/empty-array shape, (URI, range) dedup, URI-then-position ordering, and multi-folder isolation tests |
 | REQ-REF-03 | includeDeclaration true/false toggle + declaration-name-range tests |
-| REQ-REF-04 | negative-contract tests (bare var, attribute, loop var, `{% set %}` var, unresolved call) |
+| REQ-REF-04 | negative-contract tests (host-injected var, attribute on un-hinted receiver, scope-local-out-of-range, built-in callable, unresolved call) |
 
 ## 12. End-to-End Test Plan
 
@@ -217,7 +224,8 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 | E2E-03 | References on the `post_url` macro from a **usage** site (a call in `post.html`), `includeDeclaration: true` (starlette-blog) | happy | identical 6-location set as E2E-01 — invocation point doesn't change the result |
 | E2E-04 | References on the `content` **base block** in `base.html` (starlette-blog) | happy | declaration + the `post.html` and `digest.html` overrides, each tagged distinctly |
 | E2E-05 | References on a `{% call comment_card(c) %}` site collected alongside `{{ }}` calls (synthetic `didOpen` doc with a `{% macro %}` + `{% call %}` pair) | happy | both the `{% call %}` and any `{{ }}` invocation returned as references |
-| E2E-06 | References on a generic context variable (`{{ post }}`) (starlette-blog) | negative | empty result, no error |
+| E2E-06 | References on a host-injected context variable (`{{ request }}`) (starlette-blog) | negative | empty result, no error |
+| E2E-06b | References on a loop variable `c` in `{% for c in post.comments %}{{ c.body }}` (starlette-blog) | happy | every in-scope use of `c` returned; uses outside the loop excluded (REQ-REF-01) |
 | E2E-07 | References on an attribute access (`{{ user.email }}`) (synthetic `didOpen` doc) | negative | empty result, no error |
 | E2E-08 | References on a macro that is never called, `includeDeclaration: false` (unused-symbols) | negative | empty list (no usages), no error |
 | E2E-09 | References on an unresolved macro call — no definition to anchor on (call-and-paths) | error | empty result; the call is flagged separately by F01 `JINJA-E103` |

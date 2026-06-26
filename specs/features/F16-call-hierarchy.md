@@ -52,7 +52,7 @@ The hierarchy starts at the macro under the cursor.
 
 **REQ-CALL-01 — Prepare resolves a macro from the cursor.**
 
-`textDocument/prepareCallHierarchy` at a position over a macro — at its definition (`{% macro post_url(post) %}`), a call site (`{{ post_url(post) }}`), or an imported-name usage — returns a single `CallHierarchyItem` for that `MacroDefinition`: `kind = Function`, `name` the macro name, `detail` the source template's relative path, ranges spanning the definition. The item is always anchored to the *definition*, regardless of which usage the cursor sat on, so incoming/outgoing expansion is stable. A position over a non-macro (a plain variable, a block, host text) returns nothing — macros are the only callable (P4/P5).
+`textDocument/prepareCallHierarchy` at a position over a macro — at its definition (`{% macro post_url(post) %}`), a call site (`{{ post_url(post) }}`), or an imported-name usage — returns a **list of `CallHierarchyItem` (`CallHierarchyItem[]`), typically exactly one**, for that `MacroDefinition`: `kind = Function`, `name` the macro name, `detail` the source template's relative path, ranges spanning the definition. The LSP shape is a list (`CallHierarchyItem[] | null`), so the common single-macro case returns a one-element list, and the rare position that resolves to more than one macro (an ambiguous imported name) may return several. The item is always anchored to the *definition*, regardless of which usage the cursor sat on, so incoming/outgoing expansion is stable. A position over a non-macro (a plain variable, a block, host text) returns nothing (`null` or an empty list) — macros are the only callable (P4/P5).
 
 ### 5.2 Incoming calls
 
@@ -66,14 +66,17 @@ Expanding upward lists everyone who calls the macro.
 
 Expanding downward lists what the macro calls — and what it pulls in.
 
-**REQ-CALL-03 — Outgoing calls include called macros and template edges.**
+**REQ-CALL-03 — Outgoing calls include called macros, terminal globals, and template edges.**
 
-`callHierarchy/outgoingCalls` for a macro item returns one `CallHierarchyOutgoingCall` per dependency, of two kinds:
+`callHierarchy/outgoingCalls` for a macro item returns one `CallHierarchyOutgoingCall` per dependency, drawn strictly from the references the macro's **own body** contains — the macro's enclosing-owner scope ([E07](../foundations/E07-data-model.md) REQ-DATA-12: the enclosing owner of a span is the innermost macro/block body containing it). Outgoing edges are *not* attributed from the macro's whole template; a sibling macro's calls or a template-level directive outside this body do not appear here. Edges are of three kinds:
 
-- **Called macro** — every macro invoked inside this macro's body; the `to` item is that macro's definition (`kind = Function`), `fromRanges` the call sites within the body.
-- **Template edge** — every `{% include %}` and `{% import %}` reachable from this macro's body or its template; the `to` item is the target template (`kind = Module`), `fromRanges` the directive's range. This is what makes the outgoing view a true dependency tree rather than just a call list — it captures the composition edges Jinja relies on.
+- **Called macro** — every macro invoked inside this macro's body; the `to` item is that macro's definition (`kind = Function`), `fromRanges` the call sites within the body. This is the only **expandable** kind — its `to` item is a real `MacroDefinition` you can `prepare` and walk further.
+- **Terminal global** — a pack/registry global or built-in callable invoked in the body (e.g. `url_for` from the Starlette pack) that has **no workspace definition**. We surface it as an edge with `kind = Function` and a **synthetic/registry range** (the pack/registry entry, not a template span), `fromRanges` the call sites within the body. It is **terminal and non-expandable**: there is no `MacroDefinition` to anchor on, so you can't `prepareCallHierarchy` on it and it has no further outgoing level. This is the documented asymmetry — an outgoing edge may point at something you could never have *prepared* a hierarchy on.
+- **Template edge** — every `{% include %}` and `{% import %}` reachable from this macro's body; the `to` item is the target template (`kind = Module`), `fromRanges` the directive's range. This is what makes the outgoing view a true dependency tree rather than just a call list — it captures the composition edges Jinja relies on. Template edges are also **terminal** as call-hierarchy items (a template is not a callable you `prepare`), though the client may re-issue `outgoingCalls` on the target to walk its own body one level further. Template-level `include`/`import`/`extends` directives that sit *outside* any macro body belong to the **template** item, not to a macro, and are never duplicated onto every macro defined in that template.
 
 A dynamic or `ignore missing` template reference whose path can't be resolved statically ([E07](../foundations/E07-data-model.md) `is_dynamic` / `ignore_missing`) is omitted — we never fabricate an edge we can't prove (P4).
+
+The outgoing tree **omits the `{% extends %}` inheritance chain.** Inheritance (`extends` and block overrides) is the inheritance lens's domain ([F15](F15-code-lens.md) §5.2); a macro's outgoing view shows what it *calls* and *pulls in*, not the template's parent. Don't expect the base template to appear as an outgoing edge.
 
 ### 5.4 Graph reuse and cycles
 

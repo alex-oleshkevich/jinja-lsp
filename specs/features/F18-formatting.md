@@ -2,9 +2,9 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-25
 >
-> **Purpose:** The Jinja-only formatter — one engine behind two front-ends (the LSP `formatting`/`rangeFormatting` requests and the `jinja-lsp format` CLI) that normalizes delimiter spacing, block indentation, whitespace-control markers, and filter pipes while never touching a host-language byte.
+> **Purpose:** The Jinja-only formatter — one engine behind two front-ends (the LSP `formatting`/`rangeFormatting` requests and the `jinja-lsp format` CLI) that normalizes delimiter spacing, whitespace-control markers, and filter pipes — always on — and optionally re-indents stand-alone Jinja-tag lines, all while never touching a host-language byte.
 
 > **Depends on:** [constitution](../constitution.md), [E16-conventions](../foundations/E16-conventions.md), [E01-architecture](../foundations/E01-architecture.md), [E07-data-model](../foundations/E07-data-model.md)   ·   **Related:** [ADR-007-formatting-strategy](../decisions/ADR-007-formatting-strategy.md), [F19-cli-linter](F19-cli-linter.md), [F17-code-actions](F17-code-actions.md)
 

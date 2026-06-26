@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-25
 >
 > **Purpose:** The symbols, scopes, and indexes that every feature reads — the precise shape of the facts extraction produces and diagnostics, navigation, and editing consume.
 
@@ -21,6 +21,7 @@ This spec covers:
 - The six symbol kinds (macros, blocks, variables, import aliases, from-imports, template references).
 - References — the usage sites those symbols are read at.
 - The nine variable scopes.
+- Reference resolution (a use → its binding) and the enclosing owner of a span.
 - `TemplateIndex` (per-file) and `WorkspaceIndex` (cross-file).
 - The template chain.
 
@@ -59,7 +60,7 @@ A `BlockDefinition` records the block's `name`, its body span, and two booleans:
 
 **REQ-DATA-03 — `VariableDefinition` carries name, scope, and definition span.**
 
-A `VariableDefinition` records a `name`, the `VariableScope` it lives in, and the span where it was defined (a `{% set %}`, a `for` target, a `with` binding, a macro parameter, and so on). The scope determines visibility for the undefined- and unused-variable checks.
+A `VariableDefinition` records a `name`, the `VariableScope` it lives in, the `span` where it was defined (a `{% set %}`, a `for` target, a `with` binding, a macro parameter, …), and its **`valid_range`** — the lexical region over which the binding is live: the loop body for a `for` target, the `with`/macro/block body for those scopes, the remainder of the template for a top-level `{% set %}`. The scope and `valid_range` determine visibility for the undefined-/unused-variable checks and let a reference resolve to the right binding under shadowing (REQ-DATA-11). `valid_range` is what go-to-definition ([F08](../features/F08-go-to-definition.md)), document-highlight ([F11](../features/F11-document-highlight.md)), and scope-local rename ([F17](../features/F17-code-actions.md)) bound their work to.
 
 **REQ-DATA-04 — Imports are `ImportAlias` or `FromImport`.**
 
@@ -76,9 +77,9 @@ Both flags are load-bearing for [F01](../features/F01-diagnostics.md)'s path-che
 
 **REQ-DATA-06 — `Reference` records every usage site.**
 
-A `Reference` is a *use* of a name, not a definition. It records the referenced name, its `kind` (identifier, attribute access, filter, function call, or test), and its span. References are what `find-references` ([F09](../features/F09-find-references.md)), `document-highlight` ([F11](../features/F11-document-highlight.md)), and the undefined-* / unused-* checks consume. They are the single most-read field in the model.
+A `Reference` is a *use* of a name, not a definition. It records the referenced name, its `kind` (identifier, attribute access, filter, function call, or test), and its span. References are what `find-references` ([F09](../features/F09-find-references.md)), `document-highlight` ([F11](../features/F11-document-highlight.md)), and the undefined-* / unused-* checks consume. They are the single most-read field in the model. How a reference resolves to the binding it names is REQ-DATA-11.
 
-### 5.2 Variable scopes
+### 5.2 Variable scopes and reference resolution
 
 Jinja introduces variables in nine distinct ways, and each defines its own scope. A name is visible only within its scope's span, which is what lets the undefined- and unused-variable checks be precise rather than guessy.
 
@@ -97,6 +98,20 @@ The `VariableScope` enum has exactly nine variants:
 | `Trans` | `{% trans count=… %}` variables |
 | `Filter` | a `{% filter %}` block's scope |
 | `Autoescape` | an `{% autoescape %}` block's scope |
+
+**REQ-DATA-11 — A reference resolves to the binding its name and position select.**
+
+A `Reference` resolves to the definition it binds to:
+
+- a **variable** use → the `VariableDefinition` of the same `name` whose `valid_range` contains the reference's span; the **innermost** such binding wins, so an inner `{% for post %}` shadows an outer `post`;
+- a **call** → the local or imported `MacroDefinition`;
+- an **attribute / filter / test / function** → the registry or hint entry ([F02](../features/F02-builtin-registry.md) / [F04](../features/F04-user-hints.md)).
+
+A reference that resolves to **no** template-owned (or hint-backed) binding — a host-injected context variable, an un-hinted name — is host-owned: this is the single negative contract shared by go-to-definition ([F08](../features/F08-go-to-definition.md)), find-references ([F09](../features/F09-find-references.md)), document-highlight ([F11](../features/F11-document-highlight.md)), and rename ([F17](../features/F17-code-actions.md)). Resolution is computed from the `TemplateIndex` (and, for cross-file calls/imports, the `WorkspaceIndex`); Pass 2 may cache it. **The corollary those features rely on:** a loop / `{% set %}` / `{% with %}` / macro-param variable *is* template-owned and resolvable — it is **not** a host variable — so F08 jumps it, F09/F11 find its uses, and F17 renames it; only the un-hinted host context variable returns nothing.
+
+**REQ-DATA-12 — Every reference and definition has an enclosing owner.**
+
+The **enclosing owner** of a span is the innermost `MacroDefinition` or `BlockDefinition` whose `body` contains it, or the template top level when none does. It is computed by body-span containment (no stored field required). The owner powers call-hierarchy ([F16](../features/F16-call-hierarchy.md)) — grouping incoming calls by the caller's enclosing macro, and collecting a macro's outgoing calls from the references *its own body* contains (not its whole template) — and bounds scope-local rename ([F17](../features/F17-code-actions.md)).
 
 ### 5.3 `TemplateIndex` — per-file facts
 
@@ -155,6 +170,7 @@ pub struct VariableDefinition {
     pub name: String,
     pub scope: VariableScope,         // REQ-DATA-07
     pub span: Span,                   // the definition site
+    pub valid_range: Span,            // REQ-DATA-03 — region the binding is live over
 }
 
 pub struct ImportAlias {
@@ -225,7 +241,9 @@ Take `blog/post.html` from the `starlette-blog` cast. It `extends "base.html"`, 
 - **Dynamic extends path** (`{% extends layout_var %}`) → `TemplateReference.is_dynamic = true`; the template chain stops here and `JINJA-E601` does not fire.
 - **`include … ignore missing`** → `ignore_missing = true`; a missing target is silent.
 - **A symbol with no usages** → it simply has no matching `Reference`s; the unused-* checks read that absence, no special flag needed.
-- **A reference to a name defined in no scope** → no matching `VariableDefinition`; `JINJA-E101` fires unless a hint suppresses it ([F04](../features/F04-user-hints.md)).
+- **A reference to a name defined in no scope** → resolves to no `VariableDefinition` (REQ-DATA-11); it is host-owned (a hint may name it — [F04](../features/F04-user-hints.md)), and `JINJA-E101` fires unless a hint suppresses it.
+- **A reference inside a shadowing inner scope** (`{% for post %}…{{ post }}` nested under an outer `post`) → resolves to the **innermost** binding whose `valid_range` contains it (REQ-DATA-11), never the outer same-named one.
+- **A reference outside every binding's `valid_range`** (a loop variable used after `{% endfor %}`) → resolves to no scope-local binding; host-owned.
 
 ## 11. Testing
 
@@ -242,6 +260,9 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-DATA-NN` maps to
 | Macro params extracted in order with defaults | unit | [starlette-blog](E17-testing.md#starlette-blog) | REQ-DATA-01 |
 | `scoped`/`required` flags set from block modifiers | unit | [inheritance](E17-testing.md#inheritance) | REQ-DATA-02 |
 | Each of the nine scopes is assigned correctly | unit | [undefined-vars](E17-testing.md#undefined-vars) | REQ-DATA-07 |
+| `valid_range` spans the binding's live region (loop body, `with`/macro body, rest-of-template for top-level `set`) | unit | [undefined-vars](E17-testing.md#undefined-vars) | REQ-DATA-03 |
+| A variable reference resolves to the innermost binding whose `valid_range` contains it (shadowing); an un-hinted name resolves to nothing | unit | [undefined-vars](E17-testing.md#undefined-vars) | REQ-DATA-11 |
+| A reference's/definition's enclosing owner is the innermost macro/block body containing it, else the template | unit | [starlette-blog](E17-testing.md#starlette-blog) | REQ-DATA-12 |
 | `ignore_missing` and `is_dynamic` set on the right refs | unit | [call-and-paths](E17-testing.md#call-and-paths) | REQ-DATA-05 |
 | WorkspaceIndex resolves extends/import targets | integration | [inheritance](E17-testing.md#inheritance) | REQ-DATA-09 |
 | Template chain ordered child→root | integration | [inheritance](E17-testing.md#inheritance) | REQ-DATA-10 |
@@ -260,6 +281,8 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-DATA-NN` maps to
 | REQ-DATA-08 | per-file index test |
 | REQ-DATA-09 | workspace-resolution test |
 | REQ-DATA-10 | template-chain test |
+| REQ-DATA-11 | reference-resolution + shadowing test |
+| REQ-DATA-12 | enclosing-owner test |
 
 ## 13. Non-Functional Requirements
 
@@ -280,5 +303,6 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-DATA-NN` maps to
 
 ## 17. Changelog
 
+- **2026-06-25** — v0.2: added `valid_range` to `VariableDefinition` (REQ-DATA-03), and the reference-resolution (REQ-DATA-11) and enclosing-owner (REQ-DATA-12) rules — the shared backing that go-to-definition (F08), find-references (F09), document-highlight (F11), call-hierarchy (F16), and rename (F17) depend on, and that establishes scope-local variables as template-owned (not host-owned).
 - **2026-06-24** — Initial draft: six symbol types with the `scoped`/`required`/`ignore_missing`/`is_dynamic` flags, the nine variable scopes, `TemplateIndex`/`WorkspaceIndex`, and the template chain.
 - **2026-06-24** — §1 scope list now states the six symbol kinds correctly and lists references separately (a reference is a usage site, not a symbol — REQ-DATA-06).
