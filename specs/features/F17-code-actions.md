@@ -1,6 +1,6 @@
 # F17 — Code Actions
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -359,6 +359,7 @@ Each journey requests `codeAction` (or `executeCommand`) over the protocol, asse
 - **Related:** [F02-builtin-registry](F02-builtin-registry.md) — the names spelling suggestions draw from; [F08-go-to-definition](F08-go-to-definition.md) — resolving where to import from; [F18-formatting](F18-formatting.md) — the indentation model wraps reuse.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-26** — Spec-review fixes: §5 now advertises `codeActionProvider.resolveProvider` to back the `codeAction/resolve` path, matched in [E01](../foundations/E01-architecture.md) (jinja-lsp-bv6); REQ-ACT-01/T-03 remove only the unused name from a multi-name from-import instead of deleting the still-used line (jinja-lsp-frg); reworded the `executeCommand`→`workspace/applyEdit` round-trip to match the §7 flow (jinja-lsp-phz); pinned the rename-refusal channel to `window/showMessage` in §5.2/T-30/E2E-14 (jinja-lsp-g6b); softened this changelog's rename wording against constitution §4.7 (jinja-lsp-xvw); noted §6.1's selection so "Extract to macro" qualifies (jinja-lsp-fcs); clarified wrap cursor placement as a snippet/best-effort client concern, not a `WorkspaceEdit` field (jinja-lsp-8hp); clarified `isPreferred` ranks only within same-kind quickfixes (jinja-lsp-5et).
 - **2026-06-25** — Expanded the §11.2 test plan (T-01..T-40) and §12.2 E2E scenarios (E2E-01..E2E-17) to concrete, full-combination coverage: every quick-fix REQ-ACT × its triggering diagnostic(s), every refactor incl. split-selection and the three wraps, the full rename matrix (macro/block/import/local + collision + non-renameable negatives), and every §10 edge and §6 mockup state, both polarities. Synced §11.3 fixtures note and §11.4 requirement-coverage bijection.

@@ -1,6 +1,6 @@
 # F13 — Semantic Tokens
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -342,6 +342,7 @@ for constructs not present in a registered fixture (§11.3).
 - **Related:** [F12-folding-range](F12-folding-range.md) — another tree-driven feature; [F04-user-hints](F04-user-hints.md) — the `user` modifier's source; [F06-hover](F06-hover.md) — the docs behind a resolved token; [F01-diagnostics](F01-diagnostics.md) — squiggling what tokens color `unknown`.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — v0.2 (review fixes): removed the `keyword` token type — the editor grammar owns statement keywords and re-colouring them violates §2 (REQ-SEM-01; index 7 retired/tombstoned). Added REQ-SEM-06 (append-only, tombstone-on-retire legend). Defined the bare-call resolution order macro-in-index → registry-function → `variable {unknown}` (§5.3.1) and reconciled `request` as a `variable`, `url_for` as a `function`, with no F02 user-function category (the `{user}` function modifier comes from F04 hints). Cited E07 REQ-DATA-12/01 for the parameter-vs-variable derivation (§5.3.2). Reworded `range` from "strict subset" to a decoded-tuple subset re-encoded from the range start (REQ-SEM-03), asserting subset on decoded tuples. Added a §3 note framing `unknown` as F01's quiet complement and the `builtin`/`user`/`macro` axes as the real value. Removed `function` from the `unknown` modifier's appliers (unresolved calls fall to `variable {unknown}`). Updated the §6.1 legend mockup, §11.2 tests, §11.4 coverage (added REQ-SEM-06), and E2E-01/02/03 to match.

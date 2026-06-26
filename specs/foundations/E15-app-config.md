@@ -1,6 +1,6 @@
 # E15 — App Configuration
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -288,6 +288,7 @@ Live reload is exercised end to end through the running server against the `conf
 - **Related:** [E16-conventions](E16-conventions.md) — `ConfigError` handling; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — consumes `templates`/`extensions`; [F01-diagnostics](../features/F01-diagnostics.md) — the `lint.*` codes; [F02-builtin-registry](../features/F02-builtin-registry.md) — `custom_builtins`; [F03-extension-packs](../features/F03-extension-packs.md) — `extras`; [F04-user-hints](../features/F04-user-hints.md) — `hints`; [F20-editor-integrations](../features/F20-editor-integrations.md) — forwards editor settings as the `initializationOptions` this spec defines (REQ-CFG-11 ↔ REQ-EDIT-10).
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: TOML-only discovery, zero-config fallback (incl. `<project-name>/templates`), the `"..."` sentinel, the full key set, validation rules, and live reload (REQ-CFG-10).
 - **2026-06-24** — Added the `inline_patterns` key (default `["render_template_string"]`) so E31's configurable host patterns have a defined home, including its live-reload behavior.

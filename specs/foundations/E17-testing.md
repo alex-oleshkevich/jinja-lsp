@@ -1,6 +1,6 @@
 # E17 — Testing
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -167,6 +167,7 @@ Every load-bearing requirement (`REQ-<TAG>-NN`) is named in the test that verifi
 - **Related:** [E29-e2e-testing](E29-e2e-testing.md) — the two e2e branches that consume the golden files; [E03-tech-stack](E03-tech-stack.md) — pinned test tooling; [F01-diagnostics](../features/F01-diagnostics.md) — the codes each fixture triggers; [F19-cli-linter](../features/F19-cli-linter.md) — the `--format json` shape the golden file mirrors.
 
 ## 9. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: the coverage policy, three test categories, the `expected-diagnostics.json` golden shape, and the fixtures registry with a deep-link anchor per fixture.
 - **2026-06-24** — `starlette-blog` fixture description reconciled with the constitution cast: `base.html` owns `content`; `post.html` calls `post_url` and `comment_card`; `digest.html` extends base and imports `post_url`.

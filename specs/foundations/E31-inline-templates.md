@@ -1,6 +1,6 @@
 # E31 — Inline Templates
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -168,6 +168,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-INLN-NN` maps to
 - **Related:** [E01-architecture](E01-architecture.md) — the lifecycle that triggers host-file extraction; [E15-app-config](E15-app-config.md) — configurable host patterns.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: the inline/expression grammar, embedded-template detection by host pattern, host-coordinate range mapping, the no-host-AST scope boundary, and feature uniformity via ordinary `TemplateIndex` entries.
 - **2026-06-24** — Bound the configurable host patterns to E15's `inline_patterns` config key.

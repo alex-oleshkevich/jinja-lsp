@@ -1,6 +1,6 @@
 # F18 — Formatting
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -439,6 +439,7 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 - **Related:** [ADR-007-formatting-strategy](../decisions/ADR-007-formatting-strategy.md) — the Jinja-only decision; [F19-cli-linter](F19-cli-linter.md) — the sibling CLI with the same exit-code scheme and discovery; [F17-code-actions](F17-code-actions.md) — shares the indentation model for its wrap refactors.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 test plan to concrete per-rule `input → expected output` rows (T-01–T-42) covering every formatting rule, idempotence + tree equivalence, syntax-error skip, range vs whole-document, FormattingOptions/indent-unit, CLI vs LSP paths, all CLI modes (`--check`/`--diff`/combined), exit codes 0/1/2, and host-byte safety; rebuilt §11.4 traceability and expanded §12.2 to E2E-01–E2E-10 (both front-ends, happy + negative, with explicit Path and Verifies).

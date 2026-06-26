@@ -1,6 +1,6 @@
 # E30 — Extraction & Indexing
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -220,6 +220,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-EXTR-NN` maps to
 - **Related:** [E03-tech-stack](E03-tech-stack.md) — the grammar and `.scm` queries; [E15-app-config](E15-app-config.md) — `templates`/`extensions` resolution; [E16-conventions](E16-conventions.md) — extraction recovery and tracing; [E31-inline-templates](E31-inline-templates.md) — inline-region detection feeding discovery.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: the 17 `.scm` queries, the extraction pipeline, discovery, the relink, `../`-rejecting path resolution, multi-folder isolation, and the < 2 s / 500-template budget.
 - **2026-06-24** — Cast example: `digest.html` extends `base.html` (overrides `content`) alongside its `from`-import, matching F09/F15's two-child inheritance examples.

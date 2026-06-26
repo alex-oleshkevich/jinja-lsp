@@ -1,6 +1,6 @@
 # E16 — Engineering Conventions
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -147,5 +147,6 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CONV-NN` maps to
 - **Related:** [E03-tech-stack](E03-tech-stack.md) — `tracing` and `tree-sitter`; [E15-app-config](E15-app-config.md) — `ConfigError` handling; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — where extraction recovery happens.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: partial-parse recovery, the never-panic discipline, the four-type error taxonomy, and `tracing` spans on slow paths.

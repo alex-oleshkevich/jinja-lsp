@@ -1,6 +1,6 @@
 # E02 — Folder Structure
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -197,6 +197,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-FOLD-NN` maps to
 - **Related:** [E03-tech-stack](E03-tech-stack.md) — the crates each layer uses; [E07-data-model](E07-data-model.md) — the types `workspace/` owns; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — what `parsing/` and `workspace/` run; [E31-inline-templates](E31-inline-templates.md) — inline-range detection in `workspace/`; [F01-diagnostics](../features/F01-diagnostics.md) — the `diagnostics/checks/` catalog.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: `src/` module layout, the full feature-handler list, and the downward-dependency rule.
 - **2026-06-24** — Corrected the check-module count to 20 non-syntax codes (was 18; the two new codes W106/W107 were uncounted).

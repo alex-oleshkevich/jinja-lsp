@@ -1,6 +1,6 @@
 # F10 — Symbols (Document & Workspace)
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -318,6 +318,7 @@ Each row names the construct or condition, the fixture (or `synthetic doc` — a
 
 ## 17. Changelog
 
+- **2026-06-26** — Status: Draft → Approved.
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outline example names the `blog/macros.html` import (a `from`-import shown as a `Namespace`, §5.1), not an alias namespace, matching how `post.html` imports.
 - **2026-06-25** — Expanded §11.2 test plan to cover every REQ sub-case, §10 edge, and §6 state in both happy and negative polarities (per-construct `SymbolKind` rows incl. keyword-default detail and alias-import slot, range/selectionRange, the three local-exclusion negatives, deep block▸macro▸block nesting, duplicate-name-in-file, cross-file same-name, inline/E31 in both views, variable/import workspace negatives, fuzzy ranking + stability + no-match); rewrote §11.4 to map each REQ to its grouped rows; expanded §12.2 E2E scenarios to 9 covering both requests, all symbol kinds, ranking, empties, and the broken-file and no-match paths.

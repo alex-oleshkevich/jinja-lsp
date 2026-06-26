@@ -1,6 +1,6 @@
 # F16 — Call Hierarchy
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -352,6 +352,7 @@ Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarit
 - **Related:** [F09-find-references](F09-find-references.md) — the reference graph this views; [F08-go-to-definition](F08-go-to-definition.md) — single-jump navigation; [F15-code-lens](F15-code-lens.md) — the inline reference count.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outgoing example drops the non-cast `blog/_meta.html` include; `post_url`'s only outgoing edge is the `url_for` global, matching its body in F08/F15.

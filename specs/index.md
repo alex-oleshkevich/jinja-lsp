@@ -32,16 +32,16 @@ jinja-lsp is a specialist language server for Jinja2 templates: static, editor-a
 
 | Spec | Purpose | Load this when | Status |
 |---|---|---|---|
-| [E01-architecture](foundations/E01-architecture.md) | Three front-ends, two-pass pipeline, capabilities | Understanding how it all fits | ✏️ |
-| [E02-folder-structure](foundations/E02-folder-structure.md) | `src/` module layout, downward-dependency rule | Placing new code | ✏️ |
-| [E03-tech-stack](foundations/E03-tech-stack.md) | Dependencies, upstream tree-sitter grammar, Rust edition, test deps | Setting up the crate | ✏️ |
-| [E07-data-model](foundations/E07-data-model.md) | Symbol types, scopes, TemplateIndex/WorkspaceIndex | Touching the index | ✏️ |
-| [E15-app-config](foundations/E15-app-config.md) | Config discovery, protocol config (`initializationOptions`), zero-config fallback, live reload | Touching config | ✏️ |
-| [E16-conventions](foundations/E16-conventions.md) | Error handling, parse recovery, tracing | Writing engine code | ✏️ |
-| [E17-testing](foundations/E17-testing.md) | Coverage policy, fixtures registry, golden files | Writing any test plan | ✏️ |
-| [E29-e2e-testing](foundations/E29-e2e-testing.md) | The two E2E branches (golden `check` + pytest-lsp) | Writing an E2E plan | ✏️ |
-| [E30-extraction-and-indexing](foundations/E30-extraction-and-indexing.md) | Tree-sitter queries, discovery, relink | Touching extraction | ✏️ |
-| [E31-inline-templates](foundations/E31-inline-templates.md) | Inline grammar, embedded-template detection | Supporting inline Jinja | ✏️ |
+| [E01-architecture](foundations/E01-architecture.md) | Three front-ends, two-pass pipeline, capabilities | Understanding how it all fits | ✅ |
+| [E02-folder-structure](foundations/E02-folder-structure.md) | `src/` module layout, downward-dependency rule | Placing new code | ✅ |
+| [E03-tech-stack](foundations/E03-tech-stack.md) | Dependencies, upstream tree-sitter grammar, Rust edition, test deps | Setting up the crate | ✅ |
+| [E07-data-model](foundations/E07-data-model.md) | Symbol types, scopes, TemplateIndex/WorkspaceIndex | Touching the index | ✅ |
+| [E15-app-config](foundations/E15-app-config.md) | Config discovery, protocol config (`initializationOptions`), zero-config fallback, live reload | Touching config | ✅ |
+| [E16-conventions](foundations/E16-conventions.md) | Error handling, parse recovery, tracing | Writing engine code | ✅ |
+| [E17-testing](foundations/E17-testing.md) | Coverage policy, fixtures registry, golden files | Writing any test plan | ✅ |
+| [E29-e2e-testing](foundations/E29-e2e-testing.md) | The two E2E branches (golden `check` + pytest-lsp) | Writing an E2E plan | ✅ |
+| [E30-extraction-and-indexing](foundations/E30-extraction-and-indexing.md) | Tree-sitter queries, discovery, relink | Touching extraction | ✅ |
+| [E31-inline-templates](foundations/E31-inline-templates.md) | Inline grammar, embedded-template detection | Supporting inline Jinja | ✅ |
 
 ## Tier 4 — Features
 
@@ -58,19 +58,19 @@ Numbered in build order: the meaning layer (diagnostics, registry, packs, hints)
 | [F06-hover](features/F06-hover.md) | Hover docs for symbols and attributes | Working on hover | ✅ |
 | [F07-signature-help](features/F07-signature-help.md) | Param hints in macro/filter calls | Working on signatures | ✅ |
 | [F08-go-to-definition](features/F08-go-to-definition.md) | Jump to macro/template/block defs | Working on navigation | ✅ |
-| [F09-find-references](features/F09-find-references.md) | Workspace-wide usages of a symbol | Working on references | ✏️ |
-| [F10-symbols](features/F10-symbols.md) | Document outline + workspace symbol search | Working on symbols | ✏️ |
-| [F11-document-highlight](features/F11-document-highlight.md) | In-file occurrence highlighting | Working on highlights | ✏️ |
-| [F12-folding-range](features/F12-folding-range.md) | Fold blocks/loops/macros/comments | Working on folding | ✏️ |
-| [F13-semantic-tokens](features/F13-semantic-tokens.md) | Semantic coloring beyond tree-sitter | Working on highlighting | ✏️ |
-| [F14-inlay-hints](features/F14-inlay-hints.md) | Param-name + endblock-echo hints | Working on inlay hints | ✏️ |
-| [F15-code-lens](features/F15-code-lens.md) | Reference/inheritance counts above symbols | Working on code lens | ✏️ |
-| [F16-call-hierarchy](features/F16-call-hierarchy.md) | Incoming/outgoing macro calls | Working on call hierarchy | ✏️ |
-| [F17-code-actions](features/F17-code-actions.md) | Quick-fixes (from F01) + refactors | Working on fixes/refactors | ✏️ |
-| [F18-formatting](features/F18-formatting.md) | Jinja-only formatter (LSP + `format` CLI) | Working on formatting | ✏️ |
-| [F19-cli-linter](features/F19-cli-linter.md) | `check` with rich/compact/json output | Working on the CLI | ✏️ |
-| [F20-editor-integrations](features/F20-editor-integrations.md) | VS Code, Zed, Neovim, generic clients | Shipping an editor extension | ✏️ |
-| [F21-release-ci](features/F21-release-ci.md) | CI, cross-compiled binaries, distribution | Working on releases | ✏️ |
+| [F09-find-references](features/F09-find-references.md) | Workspace-wide usages of a symbol | Working on references | ✅ |
+| [F10-symbols](features/F10-symbols.md) | Document outline + workspace symbol search | Working on symbols | ✅ |
+| [F11-document-highlight](features/F11-document-highlight.md) | In-file occurrence highlighting | Working on highlights | ✅ |
+| [F12-folding-range](features/F12-folding-range.md) | Fold blocks/loops/macros/comments | Working on folding | ✅ |
+| [F13-semantic-tokens](features/F13-semantic-tokens.md) | Semantic coloring beyond tree-sitter | Working on highlighting | ✅ |
+| [F14-inlay-hints](features/F14-inlay-hints.md) | Param-name + endblock-echo hints | Working on inlay hints | ✅ |
+| [F15-code-lens](features/F15-code-lens.md) | Reference/inheritance counts above symbols | Working on code lens | ✅ |
+| [F16-call-hierarchy](features/F16-call-hierarchy.md) | Incoming/outgoing macro calls | Working on call hierarchy | ✅ |
+| [F17-code-actions](features/F17-code-actions.md) | Quick-fixes (from F01) + refactors | Working on fixes/refactors | ✅ |
+| [F18-formatting](features/F18-formatting.md) | Jinja-only formatter (LSP + `format` CLI) | Working on formatting | ✅ |
+| [F19-cli-linter](features/F19-cli-linter.md) | `check` with rich/compact/json output | Working on the CLI | ✅ |
+| [F20-editor-integrations](features/F20-editor-integrations.md) | VS Code, Zed, Neovim, generic clients | Shipping an editor extension | ✅ |
+| [F21-release-ci](features/F21-release-ci.md) | CI, cross-compiled binaries, distribution | Working on releases | ✅ |
 
 ## Decisions
 

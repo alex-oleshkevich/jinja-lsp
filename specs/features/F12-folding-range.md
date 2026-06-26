@@ -1,6 +1,6 @@
 # F12 — Folding Range
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -358,6 +358,7 @@ Tests are organized by REQ. The structural model (§5.1) is exercised across bui
 - **Related:** [F10-symbols](F10-symbols.md) — the named-symbol structure; [F13-semantic-tokens](F13-semantic-tokens.md) — another tree-driven, span-based feature; [F01-diagnostics](F01-diagnostics.md) — `JINJA-E001` on the unclosed tag a fold declines to range.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 to one row per foldable construct kind (block, for, comment, macro, if, call, raw) in both polarities, plus rows for every §10 edge (unclosed-tag negatives, deep nesting, raw-literal, inline host-coords) and §6 states; rewrote §11.4 so each REQ lists its covering rows; expanded §12.2 to seven sequential E2E scenarios spanning happy, negative, and error paths.

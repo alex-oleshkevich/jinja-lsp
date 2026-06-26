@@ -1,6 +1,6 @@
 # E29 — End-to-End Testing
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -103,5 +103,6 @@ Branch A runs as part of `cargo nextest run` — no separate step. Branch B runs
 - **Related:** [E01-architecture](E01-architecture.md) — the lifecycle the conformance journeys traverse; [E03-tech-stack](E03-tech-stack.md) — the `pytest-lsp`/`lsprotocol` deps; [F19-cli-linter](../features/F19-cli-linter.md) — the `--format json` output Branch A diffs.
 
 ## 10. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: the two e2e branches (golden-file `check` and `pytest-lsp`), the coverage policy, the Branch B test cases, and the shared protocol-conformance journeys.

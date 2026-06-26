@@ -1,6 +1,6 @@
 # F21 — Release & CI
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -490,6 +490,7 @@ Releases are versioned and immutable; there is no flag/ramp surface. Rollout *is
 - **Related:** [F19-cli-linter](F19-cli-linter.md) — `check` is the gate the golden tests drive; [F20-editor-integrations](F20-editor-integrations.md) — the extensions and binaries this pipeline builds and ships.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-26** — Spec-review pass (beads jinja-lsp-68i, -2t4, -v4s, -ebz, -x7d, -9ne, -f4f, -si7, -cr7, -b40, -1y4, -ops, -rwf, -hfh, -bfl): added REQ-REL-11 (`--locked`/committed `Cargo.lock`, cross/glibc-2.28 baseline), REQ-REL-12 (crates.io vendors the git-pinned grammar — ADR-002), REQ-REL-13 (signed build-provenance attestations backing the "signed binaries" header claim), REQ-REL-14 (build→publish ordering); reclassified REQ-REL-07 SemVer as review-only policy and softened the coverage claim to "100% of automatable behavior"; marked E2E-05 as a post-publish smoke; added the yank/rollback path and §14 Rollout note, macOS Gatekeeper/notarization edge, and pre-release-tag clarification; recorded Intel-macOS as a §2 Non-Goal and the release-on-demand cadence; documented signing-key handling and marketplace token rotation/least-privilege in §13.1; new OQ-REL-2..4; coverage tables and cross-refs updated.
 - **2026-06-25** — Expanded §11.2 test plan and §12.2 E2E scenarios to full combinatorial coverage: every gate × OS, every binary + wheel target, all four channels from one tag, version/CHANGELOG gates pass+abort, retry-once flake, golden-diff and partial-publish paths; §11.4 lists each REQ-REL once.

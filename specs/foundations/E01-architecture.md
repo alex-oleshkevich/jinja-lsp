@@ -1,6 +1,6 @@
 # E01 — Architecture
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -222,6 +222,7 @@ The protocol-conformance journeys in [E29-e2e-testing](E29-e2e-testing.md) exerc
 - **Related:** [E02-folder-structure](E02-folder-structure.md) — where these layers live; [E07-data-model](E07-data-model.md) — the index types; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — what the passes run; [E15-app-config](E15-app-config.md) — config reload; [E16-conventions](E16-conventions.md) — error handling & tracing.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-26** — Marked `codeActionProvider` as `(+ resolve)`, matching the `codeAction/resolve` path F17 relies on (REQ-ACT-09) and the other resolve-capable providers (jinja-lsp-bv6).
 - **2026-06-24** — Initial draft: three front-ends, two-pass pipeline, lifecycle, watched-files dispatch, capability set, protocol conduct.

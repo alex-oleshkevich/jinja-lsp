@@ -1,6 +1,6 @@
 # F15 — Code Lens
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -335,6 +335,7 @@ Rows are organized by lens kind and branch so every count branch (1 / N, with 0 
 - **Related:** [F09-find-references](F09-find-references.md) — the reference counts (the lens count is F09 with `includeDeclaration: false`); [F08-go-to-definition](F08-go-to-definition.md) — the inheritance jump targets; [F01-diagnostics](F01-diagnostics.md) — `JINJA-W202`/`W203` own "unused", which is why a zero-count lens is suppressed (REQ-LENS-05); [F16-call-hierarchy](F16-call-hierarchy.md) — the deeper call view; [F20-editor-integrations](F20-editor-integrations.md) — where the toggles are configured.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — `post_url`'s lens reads `5 references` (the F09 usage count per REQ-LENS-01), reconciled across §6.1/§6.2/§11; `comment_card(comment, show_actions)` is imported and called in `post.html`, so its lens reads `2 references`; the second `content` overrider named as `email/digest.html`.

@@ -1,6 +1,6 @@
 # E03 — Tech Stack
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.1   ·   **Last updated:** 2026-06-24
 >
@@ -191,5 +191,6 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-STACK-NN` maps t
 - **Related:** [E01-architecture](E01-architecture.md) — how `tower-lsp`/`tokio` are used; [E02-folder-structure](E02-folder-structure.md) — where each crate is used; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — the `.scm` queries and grammar; [E31-inline-templates](E31-inline-templates.md) — the inline grammar; [E29-e2e-testing](E29-e2e-testing.md) — the Python e2e deps; [F02-builtin-registry](../features/F02-builtin-registry.md) — the `serde_yaml` frontmatter use.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft: Rust 2024 / MSRV 1.85, core crates, the upstream block+inline grammar, the Rust and confined Python test toolchains, MIT license.

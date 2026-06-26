@@ -1,6 +1,6 @@
 # F14 — Inlay Hints
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -295,6 +295,7 @@ Each row names the concrete call/construct, the fixture (or a synthetic `didOpen
 - **Related:** [F02-builtin-registry](F02-builtin-registry.md) — the source of **filter** param names (REQ-INLAY-07) and the docs tooltips resolve to; [F04-user-hints](F04-user-hints.md) — the docs tooltips resolve to; [F07-signature-help](F07-signature-help.md) — the richer call-site surface and the shared receiver-handling rule, which resolves against the same receiver-less F02 `params` list (REQ-SIG-03); [F20-editor-integrations](F20-editor-integrations.md) — where the toggles are configured.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-26** — v0.3: spec-review reconciliation pass (jinja-lsp-rv1, -eou, -r4f, -nb2, -7r2, -15v, -sko). **Fixed the filter off-by-one** (rv1): F02's `params` list *already excludes* the receiver, so the first explicit filter arg maps to `params[0]` with **no `+1` offset** — corrected REQ-INLAY-07, the §4 concept, §3/§6.1/§9 prose, T-23/T-24 and E2E-07 (the `length:` label is unchanged; only the reasoning was wrong). **Pinned the resolve `data` index basis** (eou): the parameter index is the **declared-param index** into the source's `parameters`/`params` list (the same receiver-less index that picks the label), not the explicit-arg index — REQ-INLAY-05 and T-25. **Deferred the loop-variable type category** (r4f, P1): F04 models a scalar `type` and an `attributes` tree but no iterable element type, so REQ-INLAY-03 became **OQ-INLAY-2** (intended design retained, `loopVariableTypes` reserved as a no-op) — updated §1/§2/§3 scope, §5.4, §5.5, §6.2, §10, T-10/T-11/T-14/T-15, §11.4 and E2E-03. **Reinforced** that the loop-type echo would carry only the F04-declared type, never an inferred one (nb2, P1, §5.4). **Specified `endblock` echo anchoring** under whitespace-control: the position is fixed to the end of the `endblock` keyword token regardless of `{%-`/`-%}` markers or padding (7r2) — REQ-INLAY-02, a new §10 edge and T-26. **Extended arg-equals-param suppression to subscript access** `post["author"]` (final segment = the string-literal key; non-literal keys emit) per the glossary's attribute-access definition (15v) — REQ-INLAY-06, a §10 edge and T-27. **Reframed OQ-INLAY-1** (sko): the over-arity *inlay parameter hint* behavior is decided (silent); the residual question is narrowed to a possible future *diagnostic-style* inlay vs leaving it to `JINJA-E501`.

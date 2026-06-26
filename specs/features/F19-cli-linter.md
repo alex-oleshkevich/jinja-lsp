@@ -1,6 +1,6 @@
 # F19 — CLI Linter
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -444,6 +444,7 @@ N/A — `check` is a plain-text CLI; per constitution §4.6 Accessibility is N/A
 - **Shared exit contract:** `check` and [F18](F18-formatting.md) `format` share exit code `2` = config or I/O error (F18 §5.8 defines the same scheme). The two commands differ only on the success codes — `check` uses `1` for "findings present", `format` uses `1` for "files changed / would change" — but a `2` means the same thing in both: the run couldn't start, not that the templates were wrong.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 to concrete invocation-level rows (T-01–T-34) and §12.2 to E2E-01–E2E-18, covering every format, flag and combination, all three exit codes, the golden-file identity, `select`/`ignore` filtering and overlap, `noqa` suppression and invalid-`noqa`, CLI↔server parity, and `NO_COLOR`/TTY-vs-pipe color gating; rebuilt the §11.4 requirement-coverage map; added the `noqa`/`JINJA-W107` §10 edge.

@@ -1,6 +1,6 @@
 # E07 — Data Model
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-25
 >
@@ -302,6 +302,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-DATA-NN` maps to
 - **Related:** [E02-folder-structure](E02-folder-structure.md) — these types live in `workspace/`; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — how the types are populated; [E31-inline-templates](E31-inline-templates.md) — inline regions produce ordinary `TemplateIndex` entries; [F01-diagnostics](../features/F01-diagnostics.md) — the checks that read these fields; [F02-builtin-registry](../features/F02-builtin-registry.md) — the separate registry store.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-25** — v0.2: added `valid_range` to `VariableDefinition` (REQ-DATA-03), and the reference-resolution (REQ-DATA-11) and enclosing-owner (REQ-DATA-12) rules — the shared backing that go-to-definition (F08), find-references (F09), document-highlight (F11), call-hierarchy (F16), and rename (F17) depend on, and that establishes scope-local variables as template-owned (not host-owned).
 - **2026-06-24** — Initial draft: six symbol types with the `scoped`/`required`/`ignore_missing`/`is_dynamic` flags, the nine variable scopes, `TemplateIndex`/`WorkspaceIndex`, and the template chain.

@@ -1,6 +1,6 @@
 # F09 — Find References
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -273,6 +273,7 @@ Target: **100% of this spec's behavior.** Every `REQ-REF-NN` maps to at least on
 
 ## 17. Changelog
 
+- **2026-06-26** — Status: Draft → Approved.
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — `digest.html` references `post_url` via `from … import` (was an alias); mockup and §9 now count both import bindings plus three calls (6 with declaration), consistent with F15/F16.
 - **2026-06-25** — Expanded §11.2 and §12.2 to full combinatorial coverage: each REQ-REF sub-behavior (macro `{{ }}`/`{% call %}`/`from … import` kinds, block deep-chain overrides, import alias slot, identifier-range `Location`, multi-folder isolation, declaration-name-range, every §5.4 variable form), every §10 edge (never-used, multi-alias, deep override, cursor-on-usage, inline, unresolved call), and both §6 panel states now map to concrete test rows; §11.4 lists every REQ once; §12.2 adds happy/negative/error journeys (E2E-01–09).

@@ -1,6 +1,6 @@
 # F11 — Document Highlight
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
@@ -284,6 +284,7 @@ Each row is a concrete cursor position over a named construct, with the exact ex
 - **Related:** [F09-find-references](F09-find-references.md) — the workspace-wide counterpart, sharing the same reference data and the same host-owned negative contract (REQ-REF-04); [F08-go-to-definition](F08-go-to-definition.md) — jumping to the write; [F10-symbols](F10-symbols.md) — the file's symbols as an outline.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 to 19 concrete rows and §12.2 to 12 E2E scenarios for full combinatorial coverage (Write/Read kinds; loop var / set target / macro param / local macro / block / import alias; defined-in-file vs imported-elsewhere; scope-distinct names; single-occurrence write & read; host-text / delimiter / whitespace negatives; broken-template and inline §10 edges). Rebuilt §11.4 as a one-row-per-REQ bijection.

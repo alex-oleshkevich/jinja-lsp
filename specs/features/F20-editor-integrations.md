@@ -1,6 +1,6 @@
 # F20 — Editor Integrations
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
@@ -437,6 +437,7 @@ Each editor gets a happy launch (binary discovered or overridden → diagnostics
 - **Related:** [F21-release-ci](F21-release-ci.md) — building and publishing the extensions and binaries, and the source of the Zed download's published checksum (REQ-EDIT-12); [ADR-010](../decisions/ADR-010-pypi-distribution.md) — the pip/uv install channels surfaced in the not-found UX and onboarding; [E03-tech-stack](../foundations/E03-tech-stack.md) — the upstream grammar and `zed_extension_api`.
 
 ## 17. Changelog
+- **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 test plan and §12.2 e2e scenarios to full combination coverage: each editor (VS Code, Zed, Neovim, generic/Helix) × {PATH discovery, `server.path` override, binary-not-found} happy + negative, the stdio-only/TCP-rejection contract (ADR-009), the Zed grammar + release-binary download + checksum (and mismatch) path, settings→`InitializationOptions` mapping with `didChangeConfiguration`, capability negotiation, and every §6 state and §10 edge. Rebuilt §11.4 so every REQ-EDIT maps to its concrete test IDs.
