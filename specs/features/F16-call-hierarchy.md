@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** The incoming/outgoing call graph for a macro — who calls it, and what it calls (including `include`/`import` targets as outgoing edges) — built over the [F09](F09-find-references.md) reference graph.
 
@@ -28,6 +28,7 @@ This spec covers:
 - The flat reference list — owned by [F09-find-references](F09-find-references.md).
 - The inline reference-count annotation — owned by [F15-code-lens](F15-code-lens.md).
 - Single-jump navigation — owned by [F08-go-to-definition](F08-go-to-definition.md).
+- The `extends` inheritance chain in the outgoing view (§5.3) — owned by [F15-code-lens](F15-code-lens.md)'s inheritance lens.
 - A call hierarchy over host-language functions — we model Jinja macros and template edges only (P5); we never execute templates (P1).
 
 ## 3. Background & Rationale
@@ -60,7 +61,7 @@ Expanding upward lists everyone who calls the macro.
 
 **REQ-CALL-02 — Incoming calls are the macro's call sites.**
 
-`callHierarchy/incomingCalls` for a macro item returns one `CallHierarchyIncomingCall` per **calling template**: the `from` item is the calling template (or the enclosing macro, when the call sits inside another macro body), and `fromRanges` lists every call-site range within it. Counting is grouped by caller, so a template that calls `post_url` three times appears once with three ranges. The call sites are exactly the function-call `Reference`s the [F09](F09-find-references.md) graph resolves to this macro.
+`callHierarchy/incomingCalls` for a macro item returns one `CallHierarchyIncomingCall` per **enclosing owner** of the call sites — the grouping key is the call site's enclosing owner ([E07](../foundations/E07-data-model.md) REQ-DATA-12: the innermost macro/block body containing the span, falling back to the template when no body encloses it). So a call at template top level groups under the **template** item, and a call inside a macro body groups under that **enclosing macro** item. The `from` item is that owner; `fromRanges` lists every call-site range within it. Counting is grouped by owner, not by file: a template that calls `post_url` three times at top level appears once with three ranges, but if template `T` calls `post_url` from inside two different macros `A` and `B`, that is **two** `IncomingCall`s (`from=A`, `from=B`) — never one merged `from=T`. The call sites are exactly the function-call `Reference`s the [F09](F09-find-references.md) graph resolves to this macro.
 
 ### 5.3 Outgoing calls
 
@@ -71,7 +72,7 @@ Expanding downward lists what the macro calls — and what it pulls in.
 `callHierarchy/outgoingCalls` for a macro item returns one `CallHierarchyOutgoingCall` per dependency, drawn strictly from the references the macro's **own body** contains — the macro's enclosing-owner scope ([E07](../foundations/E07-data-model.md) REQ-DATA-12: the enclosing owner of a span is the innermost macro/block body containing it). Outgoing edges are *not* attributed from the macro's whole template; a sibling macro's calls or a template-level directive outside this body do not appear here. Edges are of three kinds:
 
 - **Called macro** — every macro invoked inside this macro's body; the `to` item is that macro's definition (`kind = Function`), `fromRanges` the call sites within the body. This is the only **expandable** kind — its `to` item is a real `MacroDefinition` you can `prepare` and walk further.
-- **Terminal global** — a pack/registry global or built-in callable invoked in the body (e.g. `url_for` from the Starlette pack) that has **no workspace definition**. We surface it as an edge with `kind = Function` and a **synthetic/registry range** (the pack/registry entry, not a template span), `fromRanges` the call sites within the body. It is **terminal and non-expandable**: there is no `MacroDefinition` to anchor on, so you can't `prepareCallHierarchy` on it and it has no further outgoing level. This is the documented asymmetry — an outgoing edge may point at something you could never have *prepared* a hierarchy on.
+- **Terminal global** — a pack/registry global or built-in callable invoked in the body (e.g. `url_for` from the Starlette pack) that has **no workspace definition**. Because an LSP `CallHierarchyItem` *requires* a real `uri` + `range` + `selectionRange`, and a registry entry has no document, we emit a **protocol-valid synthetic item**: `uri` uses the `jinja-builtin:` scheme (e.g. `jinja-builtin:starlette/url_for`) and both `range` and `selectionRange` are the **zero range** (`0:0–0:0`). `kind = Function`, `fromRanges` the call sites within the body. It is **terminal and non-expandable**: there is no `MacroDefinition` to anchor on, so you can't `prepareCallHierarchy` on it and it has no further outgoing level; a client that follows the `jinja-builtin:` URI gets no document (the scheme has no backing file), which is why these items are leaves. This is the documented asymmetry — an outgoing edge may point at something you could never have *prepared* a hierarchy on. The verbatim shape is in §8.
 - **Template edge** — every `{% include %}` and `{% import %}` reachable from this macro's body; the `to` item is the target template (`kind = Module`), `fromRanges` the directive's range. This is what makes the outgoing view a true dependency tree rather than just a call list — it captures the composition edges Jinja relies on. Template edges are also **terminal** as call-hierarchy items (a template is not a callable you `prepare`), though the client may re-issue `outgoingCalls` on the target to walk its own body one level further. Template-level `include`/`import`/`extends` directives that sit *outside* any macro body belong to the **template** item, not to a macro, and are never duplicated onto every macro defined in that template.
 
 A dynamic or `ignore missing` template reference whose path can't be resolved statically ([E07](../foundations/E07-data-model.md) `is_dynamic` / `ignore_missing`) is omitted — we never fabricate an edge we can't prove (P4).
@@ -119,6 +120,30 @@ Call Hierarchy — outgoing from  post_url   (blog/macros.html:6)
    ⮞ = outgoing   ƒ = called macro/global   ▤ = include/import edge (when present)
 ```
 
+### 6.3 Outgoing tree with template edges (editor)
+
+The synthetic `card` macro (T12 / E2E-06) calls a macro, includes a
+partial, and imports a module — so the outgoing tree shows all three edge
+kinds: a `ƒ` called macro, and two `▤` `include`/`import` Module edges.
+
+```
+Call Hierarchy — outgoing from  card   (blog/widgets.html:3)
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │  ⮞  card                                  blog/widgets.html            │
+ │     ├─ ƒ post_url                         blog/macros.html             │
+ │     │     • line 4   {{ post_url(post) }}                              │
+ │     ├─ ▤ base.html                        (include)                    │
+ │     │     • line 5   {% include "base.html" %}                         │
+ │     └─ ▤ blog/macros.html                 (import as m)                │
+ │           • line 6   {% import "blog/macros.html" as m %}              │
+ └──────────────────────────────────────────────────────────────────────┘
+   ⮞ = outgoing   ƒ = called macro/global   ▤ = include/import edge
+```
+
+Each `▤` edge is a `kind = Module` item, terminal as a call-hierarchy
+node; the client may re-issue `outgoingCalls` on the target to walk one
+level further.
+
 ## 7. Visualizations
 
 The three-step prepare → expand protocol, both directions reading one graph.
@@ -128,18 +153,106 @@ stateDiagram-v2
     [*] --> Root: prepareCallHierarchy (cursor on macro)
     Root --> Incoming: incomingCalls (one level up)
     Root --> Outgoing: outgoingCalls (one level down)
-    Incoming --> [*]: callers grouped by template
-    Outgoing --> [*]: called macros + include/import edges
+    Incoming --> [*]: callers grouped by enclosing owner
+    Outgoing --> [*]: called macros + globals + include/import edges
+    classDef root fill:#d1ecf1,stroke:#17a2b8;
+    classDef up fill:#d4edda,stroke:#28a745;
+    classDef down fill:#fff3cd,stroke:#ffc107;
+    class Root root
+    class Incoming up
+    class Outgoing down
 ```
+
+## 8. Data Shapes
+
+The three payloads crossing the LSP boundary, drawn from the `starlette-blog`
+graph. These are the contract; ranges are zero-based LSP `Position`s.
+
+The root `CallHierarchyItem` from `prepareCallHierarchy` on `post_url`:
+
+```json
+{
+  "name": "post_url",
+  "kind": 12,
+  "uri": "file:///proj/templates/blog/macros.html",
+  "detail": "blog/macros.html",
+  "range": { "start": { "line": 5, "character": 0 }, "end": { "line": 7, "character": 12 } },
+  "selectionRange": { "start": { "line": 5, "character": 9 }, "end": { "line": 5, "character": 17 } }
+}
+```
+
+One `CallHierarchyIncomingCall` — `from` is the enclosing owner (here the
+calling template `blog/post.html`), `fromRanges` its two call sites:
+
+```json
+{
+  "from": {
+    "name": "blog/post.html",
+    "kind": 11,
+    "uri": "file:///proj/templates/blog/post.html",
+    "detail": "blog/post.html",
+    "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+    "selectionRange": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }
+  },
+  "fromRanges": [
+    { "start": { "line": 3, "character": 6 }, "end": { "line": 3, "character": 14 } },
+    { "start": { "line": 8, "character": 6 }, "end": { "line": 8, "character": 14 } }
+  ]
+}
+```
+
+A `CallHierarchyOutgoingCall` for the **terminal global** `url_for` — the
+`to` item uses the synthetic `jinja-builtin:` URI with a zero range, since a
+registry entry has no document (REQ-CALL-03; see §5.3):
+
+```json
+{
+  "to": {
+    "name": "url_for",
+    "kind": 12,
+    "uri": "jinja-builtin:starlette/url_for",
+    "detail": "global — starlette pack",
+    "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+    "selectionRange": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }
+  },
+  "fromRanges": [
+    { "start": { "line": 6, "character": 6 }, "end": { "line": 6, "character": 13 } }
+  ]
+}
+```
+
+A `CallHierarchyOutgoingCall` for a `▤` **template edge** — the `to` item is
+`kind = Module` (11), anchored at the target template's start:
+
+```json
+{
+  "to": {
+    "name": "base.html",
+    "kind": 11,
+    "uri": "file:///proj/templates/base.html",
+    "detail": "include",
+    "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+    "selectionRange": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }
+  },
+  "fromRanges": [
+    { "start": { "line": 4, "character": 0 }, "end": { "line": 4, "character": 28 } }
+  ]
+}
+```
+
+`kind` values are the LSP `SymbolKind` enum: `12` = Function (macro / global),
+`11` = Module (template).
 
 ## 9. Examples & Use Cases
 
-In `starlette-blog`, you prepare a call hierarchy on `post_url` in `blog/macros.html`. The **incoming** view groups callers by template: `blog/post.html` (two call sites) and `email/digest.html` (one, via its `from "blog/macros.html" import post_url`). Before renaming `post_url`'s `post` parameter, you scan this tree and know exactly which three call sites to check. The **outgoing** view shows `post_url` calls the `url_for` global (from the Starlette pack); a macro that also included or imported another template would surface those as `▤` edges, each expandable one level further via `outgoingCalls`.
+In `starlette-blog`, you prepare a call hierarchy on `post_url` in `blog/macros.html`. The **incoming** view groups callers by enclosing owner: `blog/post.html` (two top-level call sites) and `email/digest.html` (one, via its `from "blog/macros.html" import post_url`). Before renaming `post_url`'s `post` parameter, you scan this tree and know exactly which three call sites to check. The **outgoing** view shows `post_url` calls the `url_for` global (from the Starlette pack); a macro that also included or imported another template would surface those as `▤` edges, each expandable one level further via `outgoingCalls`.
+
+The canonical cast macro `post_url`'s body is exactly `{{ url_for(...) }}` — it includes and imports nothing — so the flagship `▤` template-edge feature can never be demonstrated on a constitution-cast macro. This is intentional: the include/import outgoing-edge case is covered by **synthetic `didOpen` documents** (§6.3 mockup, tests T12 / E2E-06), not by extending the cast. The cast stays as the constitution defines it.
 
 ## 10. Edge Cases & Failure Modes
 
 - **Prepare over a non-macro** (variable, block, host text) → empty result; macros are the only callable.
-- **Macro with no callers** → `incomingCalls` returns an empty list (the dead-macro case `JINJA-W202` also catches).
+- **Macro with no callers** → `prepare` still succeeds and pins the root; `incomingCalls` returns an empty list. An empty incoming tree under a valid root is a normal non-error UX state — "no incoming calls", not a failure (the dead-macro case `JINJA-W202` also catches, as [F15](F15-code-lens.md) cross-refs for "unused").
 - **Macro that calls nothing and includes nothing** → `outgoingCalls` returns an empty list.
 - **Dynamic / `ignore missing` include** → omitted from outgoing edges (unresolvable — P4).
 - **Import/call cycle** → one level per request means no infinite recursion (matches `JINJA-E404`).
@@ -168,6 +281,7 @@ Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarit
 | T06 | Prepare inside an **inline template region** reports host-file coordinates (§10 E31 edge) | unit | a `didOpen` host doc embedding a `{% macro m() %}` region ([E31](../foundations/E31-inline-templates.md)) · synthetic | one item: `kind=Function`, ranges in **host-file** line/col, not region-local | REQ-CALL-01 |
 | T07 | **Incoming** groups callers by template with all ranges (6.1 tree, happy) | unit | prepared `post_url` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | two `IncomingCall`s: `from=blog/post.html` with `fromRanges=[line 4, line 9]` (2), `from=email/digest.html` with `fromRanges=[line 12]` (1) | REQ-CALL-02 |
 | T08 | **Incoming** `from` is the **enclosing macro** when the call sits inside another macro body | unit | a `didOpen` doc where `{% macro wrapper() %}` calls `post_url(p)` in its body · synthetic | one `IncomingCall` whose `from` item is `wrapper` (the enclosing macro), not the template | REQ-CALL-02 |
+| T08b | **Incoming** grouping is **per enclosing owner**: two macros in one template each calling the macro yield two entries (§5.2 grouping key) | unit | a `didOpen` template `T` whose macros `a()` and `b()` both call `post_url(p)` · synthetic | two `IncomingCall`s, `from=a` and `from=b` — not one merged `from=T` | REQ-CALL-02 |
 | T09 | **Incoming** on a macro with **no callers** returns an empty list (negative; §10 dead-macro edge) | unit | prepared `comment_card` after removing its call site, or a `didOpen` macro never called · synthetic | `incomingCalls` → `[]` | REQ-CALL-02 |
 | T10 | **Outgoing** lists the **called global** as a `ƒ` edge (6.2 tree, happy) | unit | prepared `post_url` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) | one `OutgoingCall`: `to=url_for` (`kind=Function`, global — starlette pack), `fromRanges=[line 7]` | REQ-CALL-03 |
 | T11 | **Outgoing** lists a **called macro** as a `ƒ` edge | unit | a `didOpen` macro `{% macro a() %}{{ post_url(p) }}{% endmacro %}` · synthetic | one `OutgoingCall`: `to=post_url` (`kind=Function`, def `blog/macros.html:6`), `fromRanges` = call site in `a`'s body | REQ-CALL-03 |
@@ -187,7 +301,7 @@ Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarit
 | Requirement | Covered by |
 |---|---|
 | REQ-CALL-01 | T01–T06 (prepare at def/call/import-name, non-macro, block/host text, inline region) |
-| REQ-CALL-02 | T07–T09 (grouped-by-template incoming, enclosing-macro `from`, no-callers empty) |
+| REQ-CALL-02 | T07–T09 (grouped-by-owner incoming, enclosing-macro `from`, two-macros-one-template grouping T08b, no-callers empty) |
 | REQ-CALL-03 | T10–T14 (called global/macro `ƒ`, include/import `▤` edges, empty outgoing, dynamic/`ignore missing` omission) |
 | REQ-CALL-04 | T15–T17 (one level per request, cycle termination, F09 graph reuse) |
 
@@ -208,9 +322,9 @@ Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarit
 | E2E-05 | `outgoingCalls` on the prepared `post_url` item | happy | one `Function` edge `url_for` (global, starlette pack) at line 7; one level only — `url_for` not expanded |
 | E2E-06 | `outgoingCalls` on a prepared macro that **includes/imports** another template | happy | a `Module` template edge for the `include`/`import` target appears alongside any called-macro edges |
 | E2E-07 | `outgoingCalls` across a **recursive import** chain returns one level and terminates | happy | direct neighbor returned once; no hang/recursion (matches `JINJA-E404`) |
-| E2E-08 | `prepareCallHierarchy` over a **plain variable** | error | empty result (no item) |
-| E2E-09 | `prepareCallHierarchy` over **host text / a block keyword** | error | empty result (no item) |
-| E2E-10 | `incomingCalls` on a macro with **no callers** | error | empty list returned |
+| E2E-08 | `prepareCallHierarchy` over a **plain variable** | negative | empty result (no item) |
+| E2E-09 | `prepareCallHierarchy` over **host text / a block keyword** | negative | empty result (no item) |
+| E2E-10 | `incomingCalls` on a macro with **no callers** | negative | empty list returned (valid empty incoming tree) |
 
 ## 13. Non-Functional Requirements
 
@@ -242,3 +356,4 @@ Concrete rows trace each REQ, sub-case, §6 state, and §10 edge in both polarit
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outgoing example drops the non-cast `blog/_meta.html` include; `post_url`'s only outgoing edge is the `url_for` global, matching its body in F08/F15.
 - **2026-06-25** — §11.2 and §12.2 rewritten to concrete rows covering every REQ sub-case, §6 state, and §10 edge in both polarities: prepare at def/call-site/import-name/inline-region, non-macro & block/host-text negatives, incoming grouped-by-template and enclosing-macro & no-callers, outgoing called-global/called-macro/include-import edges, empty-outgoing & dynamic/`ignore missing` omission, one-level-per-request, cycle termination, and F09 graph reuse. §11.4 updated to the full T01–T17 mapping; E2E expanded to E2E-01…E2E-10.
+- **2026-06-26** — Spec-review pass (jinja-lsp-uul, -7is, -vl6, -rxj, -yzx, -fma, -lfo, -vib, -rle): §5.3 terminal globals now emit a protocol-valid synthetic item (`jinja-builtin:` URI, zero range) instead of an undefined "registry range" (uul); added §8 Data Shapes with verbatim JSON for the root item, incoming call, terminal-global edge, and template edge (rxj); §5.2 + §9 redefine the incoming grouping key as the call site's **enclosing owner** (E07 REQ-DATA-12), with a two-macros-one-template test T08b (yzx); new §6.3 mockup renders a `▤` include/import outgoing tree (7is); §9 notes the `▤` template-edge feature is synthetic-only by design, leaving the cast untouched (vl6); §10 adds the empty-incoming-tree non-error UX note cross-ref'd to JINJA-W202 (fma); §2 Non-Goals records the `extends`-chain exclusion owned by F15 (vib); §7 Mermaid given constitution §6 styling — labeled arrows + colored nodes, no `%%{init}%%` (rle); §12.2 E2E-08/09/10 Path relabeled `error → negative` (lfo).

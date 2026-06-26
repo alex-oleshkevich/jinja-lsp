@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-25
+> **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** Two views of the same extracted symbols — a hierarchical outline of the current template, and a fuzzy search for every macro and block across the whole workspace.
 
@@ -75,6 +75,13 @@ A block or macro defined inside another block or macro becomes a *child* of the 
 
 Nesting is **not** a stored field. The `TemplateIndex` holds macros and blocks in two *flat* vectors (`macros`, `blocks` — [E07](../foundations/E07-data-model.md) §8); the tree is computed **at request time** by `span`-containment across both vectors together: a symbol whose `span` falls inside another symbol's `span` becomes that symbol's child, regardless of which vector either came from. So a `{% macro %}` (from `macros`) nests under an enclosing `{% block %}` (from `blocks`) — the two vectors are merged, sorted, and folded into one tree by containment alone.
 
+The containment fold is deterministic:
+
+- **Strict containment.** A child's `span` must be **strictly inside** the parent's — `parent.start ≤ child.start` and `child.end ≤ parent.end`, with at least one inequality strict. A symbol nests under the **innermost** symbol that strictly contains it.
+- **Boundary rule.** Spans are half-open `[start, end)`; a child sharing exactly one boundary with its parent is still contained, but two symbols with the **identical** span are *not* containment-related and stay **siblings** (this is the duplicate-name `W302` case, §10).
+- **Tie-break.** Merge the two vectors and sort by `span.start` ascending, then by `span` length **descending** (longer — i.e. enclosing — first). Equal-span symbols keep their original vector order. This ordering makes the parent precede its children and makes sibling order deterministic.
+- **Partial-parse fallback (P3).** On a broken parse, spans may overlap without strict containment. Such a symbol is **not** forced under a partial overlap; it attaches to the nearest strictly-containing ancestor or, failing that, becomes a top-level sibling. The outline degrades to a flatter-but-valid tree rather than erroring.
+
 ### 5.3 Workspace symbol search
 
 The workspace search is the document outline's sibling, scaled to every file.
@@ -89,9 +96,9 @@ The workspace search is the document outline's sibling, scaled to every file.
 
 The query rarely matches exactly; it's a few letters of the name.
 
-**REQ-SYM-04 — Match is fuzzy and ranked by a deterministic order.**
+**REQ-SYM-04 — Match is fuzzy, returned in a stable deterministic order; tightness ranking is best-effort.**
 
-Matching is subsequence-based and case-insensitive: `pu` matches `post_url`. Results are ranked by the following **total order**, applied in sequence; each tier breaks ties left by the previous one:
+Matching is subsequence-based and case-insensitive: `pu` matches `post_url`. The **stable deterministic order** below is normative — repeated runs are byte-for-byte identical — while the **tightness ranking** within it is best-effort: most LSP clients (VS Code, Zed) re-sort `workspace/symbol` results client-side, so the server's tier ordering is partly unobservable in-editor. We still rank server-side because it is observable and load-bearing for the CLI and for deterministic golden tests, and it gives clients that *don't* re-rank a sensible default. Results are ordered by the following **total order**, applied in sequence; each tier breaks ties left by the previous one:
 
 1. **Match tightness** (primary, best first): **exact** (the whole name equals the query, case-insensitively) > **prefix** (the name starts with the query) > **contiguous substring** (the query appears as an unbroken run somewhere inside the name) > **scattered subsequence** (the query's characters appear in order but not contiguously).
 2. **Name length** (secondary, shorter first): among equal-tightness matches, the shorter name ranks higher — `pub` outranks `pub_notice` for query `pu`.
@@ -114,25 +121,31 @@ Imports come in two shapes, and `extends`/`include` are anonymous landmarks. Eac
 
 Rationale (see §15): an alias-import binds a single name (`macros`), so that name is the natural label and selection target. A from-import binds *several* names with no single identifier to title the entry, so it is titled by its **source path** and its `selectionRange` spans the source-path string literal — the one span common to the whole import. `extends`/`include` are likewise anonymous, so they too are named and selection-anchored by their path literal. The imported *names* of a from-import (`a`, `b`) are not surfaced as child symbols — they are file-local bindings, not outline structure.
 
+> **Invariant — `selectionRange ⊆ range`.** Every `selectionRange` is a real token range fully contained within its symbol's `range`, as LSP requires. Where the `name`/`detail` is an *unquoted* path (`base.html`, `blog/macros.html`), that string is only the display label — the `selectionRange` still spans the **path string literal including its surrounding quotes** (the `"base.html"` token, quotes included), never a synthetic unquoted sub-range. The same holds for the alias identifier (`macros`) and source-path literal of imports.
+
 ## 6. UI Mockups
 
 ### 6.1 Document outline — the `post.html` tree
 
-The outline of `templates/blog/post.html`: the `extends` landmark and the `macros` import at the top, then the `content` block with a nested macro and a top-level `set` underneath.
+The outline of `templates/blog/post.html`: the `extends` landmark, then the
+`blog/macros.html` from-import (named by its source path, §5.5/D5), then the
+`content` block this template fills.
 
 ```
 ┌─ OUTLINE — templates/blog/post.html ─────────────────────────────────────┐
 │                                                                            │
-│  ☖ base.html                            {% extends "base.html" %} [Module] │
-│  ◇ macros                               from "blog/macros.html" [Namespace]│
-│  ⬡ content                              {% block content %}    [Class]     │
-│     ƒ excerpt(post, words)              {% macro … %}          [Function]  │
-│     𝑥 page_title                        {% set page_title %}   [Variable]  │
+│  ☖ base.html                          {% extends "base.html" %}  [Module]  │
+│  ◇ blog/macros.html                   from "blog/macros.html"  [Namespace] │
+│  ⬡ content                            {% block content %}       [Class]    │
 │                                                                            │
 └───────────────────────────────────────────────────────────────────────────┘
   ☖ Module (extends/include)   ◇ Namespace (import)   ⬡ Class (block)
   ƒ Function (macro)   𝑥 Variable (top-level set)
 ```
+
+Nesting (§5.2), the `Function` macro kind, and the top-level `Variable` `set`
+kind are exercised by `blog/macros.html` and the synthetic-doc test rows in
+§11.2, not by this cast file.
 
 ### 6.2 Workspace symbol search — typing "pu"
 
@@ -275,8 +288,10 @@ Each row names the construct or condition, the fixture (or `synthetic doc` — a
 
 ### 13.1 Security & Privacy
 
+- **Access & authorization** — a read-only LSP handler over stdio (P2); single-user developer tool; no host execution (P1). The trust boundary is the workspace index — both requests are pure reads of it (§3).
 - **Input & validation** — all template content is untrusted; symbols are read from the index only, never by executing templates (P1).
 - **Data sensitivity** — symbol names and locations point only into the user's own workspace; nothing leaves the machine.
+- **Baseline** — meets OWASP ASVS L1. STRIDE: the only untrusted input is template text, handled by static tree-sitter parsing (P1, P3) with no execution path to threaten.
 
 ### 13.2 Accessibility
 
@@ -298,11 +313,13 @@ Each row names the construct or condition, the fixture (or `synthetic doc` — a
 ## 16. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — P1, P3, P6; [E07-data-model](../foundations/E07-data-model.md) — the symbol types shaped into responses; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the workspace index; [E01-architecture](../foundations/E01-architecture.md) — pure-read handlers.
-- **Related:** [F08-go-to-definition](F08-go-to-definition.md) — jumping to a symbol; [F09-find-references](F09-find-references.md) — the same workspace-resolvable symbols, as usages; [F12-folding-range](F12-folding-range.md) — the file's structure as collapsible regions.
+- **Related:** [F08-go-to-definition](F08-go-to-definition.md) — jumping to a symbol; [F09-find-references](F09-find-references.md) — for **macros and blocks only**, the same definitions, as usages (F10's outline additionally surfaces `extends`/`include` landmarks and top-level `set`, which F09 does not resolve); [F12-folding-range](F12-folding-range.md) — the file's structure as collapsible regions.
+- **Roadmap:** ships in **M3 — Read features** ([roadmap](../roadmap.md)), alongside the other navigation features (F08/F09, F11–F16).
 
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — Outline example names the `blog/macros.html` import (a `from`-import shown as a `Namespace`, §5.1), not an alias namespace, matching how `post.html` imports.
 - **2026-06-25** — Expanded §11.2 test plan to cover every REQ sub-case, §10 edge, and §6 state in both happy and negative polarities (per-construct `SymbolKind` rows incl. keyword-default detail and alias-import slot, range/selectionRange, the three local-exclusion negatives, deep block▸macro▸block nesting, duplicate-name-in-file, cross-file same-name, inline/E31 in both views, variable/import workspace negatives, fuzzy ranking + stability + no-match); rewrote §11.4 to map each REQ to its grouped rows; expanded §12.2 E2E scenarios to 9 covering both requests, all symbol kinds, ranking, empties, and the broken-file and no-match paths.
-- **2026-06-25** — v0.2: remapped `block → Class` (was `Module`) and made imports consistently `Namespace`; added `{% extends %}`/`{% include %}` as outline-only `Module` landmarks; added **REQ-SYM-05** pinning the `name`/`detail`/`range`/`selectionRange` of both import shapes and of `extends`/`include` (new §5.5); replaced the §5.4 ranking prose with a concrete total order (exact > prefix > contiguous-substring > scattered-subsequence; length secondary; stable workspace-order final tiebreak); stated nesting is computed at request time by span-containment across the flat `macros`/`blocks` vectors and added a cross-vector nesting test; corrected the §5.3 Note to call workspace search a deliberate *subset* of F09's resolvable set, not a mirror; added §15 Open Questions & Decisions (D1–D6); updated §6 mockups, §9, §11.2/§11.4/§12.2, and the bijection.
+- **2026-06-26** — v0.3 (spec-review fixes): fixed the §6.1 outline mockup to the cast — from-import row named by its source path `blog/macros.html` (jinja-lsp-5ze), and dropped the non-cast `excerpt()` macro and `page_title` set, noting those kinds are exercised by `macros.html`/synthetic rows (jinja-lsp-5fc); added the `selectionRange ⊆ range` invariant and clarified path string literals include their quotes (jinja-lsp-a7g); defined the §5.2 span-containment fold — strict containment, half-open boundary rule, start-then-length tie-break, partial-parse fallback (jinja-lsp-464); softened REQ-SYM-04 to "stable deterministic order; tightness ranking best-effort", acknowledging client re-sort (jinja-lsp-rr1); scoped the §16 F09 equivalence to macros/blocks only (jinja-lsp-29e); replaced "bijection" with "requirement coverage" (jinja-lsp-rx8); added an M3 roadmap reference (jinja-lsp-6by); added the required §13.1 Access & authorization and Baseline bullets (jinja-lsp-9ix).
+- **2026-06-25** — v0.2: remapped `block → Class` (was `Module`) and made imports consistently `Namespace`; added `{% extends %}`/`{% include %}` as outline-only `Module` landmarks; added **REQ-SYM-05** pinning the `name`/`detail`/`range`/`selectionRange` of both import shapes and of `extends`/`include` (new §5.5); replaced the §5.4 ranking prose with a concrete total order (exact > prefix > contiguous-substring > scattered-subsequence; length secondary; stable workspace-order final tiebreak); stated nesting is computed at request time by span-containment across the flat `macros`/`blocks` vectors and added a cross-vector nesting test; corrected the §5.3 Note to call workspace search a deliberate *subset* of F09's resolvable set, not a mirror; added §15 Open Questions & Decisions (D1–D6); updated §6 mockups, §9, §11.2/§11.4/§12.2, and the requirement coverage (REQ↔test mapping).

@@ -135,7 +135,7 @@ To keep examples concrete and consistent, every spec draws from the same world: 
 - **`templates/base.html`** — the base layout, defining the `head`, `body`, `content`, and `footer` blocks.
 - **`templates/blog/post.html`** — extends `base.html`, fills the `content` block, imports `post_url` and `comment_card` from `blog/macros.html`, and calls them.
 - **`templates/blog/macros.html`** — defines the `post_url(post)` and `comment_card(comment, show_actions)` macros.
-- **`templates/email/digest.html`** — extends `base.html`, imports `post_url` from `blog/macros.html`, and uses the Starlette `request` global.
+- **`templates/email/digest.html`** — extends `base.html`, fills the `content` block, imports `post_url` from `blog/macros.html`, and uses the Starlette `request` global.
 - **`post`** — the recurring context variable: a blog post with `.title`, `.slug`, `.body`, `.author`.
 
 ## 6. Visualization Style Guide
@@ -152,3 +152,4 @@ To keep examples concrete and consistent, every spec draws from the same world: 
 
 - **2026-06-24** — Initial constitution: P1–P6, the 21-code diagnostic scheme (code + class-prefix input, slug output label), §4.6 non-functional scope, suite-wide Non-Goals, and the `starlette-blog` example cast.
 - **2026-06-24** — Cast reconciliation: `base.html` now lists the `content` block it owns; `post.html` imports and calls both `post_url` and `comment_card`; `comment_card` takes `(comment, show_actions)`; `digest.html` extends `base.html` and imports `post_url` (was loosely "includes"), matching the feature specs.
+- **2026-06-26** — Cast: `digest.html` now explicitly fills the `content` block, grounding the "extended by 2" overrider count in [F09](features/F09-find-references.md)/[F15](features/F15-code-lens.md) — `post.html` and `digest.html` both override `content`.

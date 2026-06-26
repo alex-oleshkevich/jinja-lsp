@@ -113,7 +113,7 @@ The `initialize` response declares exactly the providers backed by a feature spe
 | `inlayHintProvider` (+ resolve) | [F14](../features/F14-inlay-hints.md) |
 | `codeLensProvider` (+ resolve) | [F15](../features/F15-code-lens.md) |
 | `callHierarchyProvider` | [F16](../features/F16-call-hierarchy.md) |
-| `codeActionProvider` + `executeCommandProvider` | [F17](../features/F17-code-actions.md) |
+| `codeActionProvider` (+ resolve) + `executeCommandProvider` | [F17](../features/F17-code-actions.md) |
 | `documentFormattingProvider` + `documentRangeFormattingProvider` | [F18](../features/F18-formatting.md) |
 
 ### 5.6 Protocol conduct
@@ -223,4 +223,5 @@ The protocol-conformance journeys in [E29-e2e-testing](E29-e2e-testing.md) exerc
 
 ## 17. Changelog
 
+- **2026-06-26** — Marked `codeActionProvider` as `(+ resolve)`, matching the `codeAction/resolve` path F17 relies on (REQ-ACT-09) and the other resolve-capable providers (jinja-lsp-bv6).
 - **2026-06-24** — Initial draft: three front-ends, two-pass pipeline, lifecycle, watched-files dispatch, capability set, protocol conduct.

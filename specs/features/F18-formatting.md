@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-25
+> **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** The Jinja-only formatter — one engine behind two front-ends (the LSP `formatting`/`rangeFormatting` requests and the `jinja-lsp format` CLI) that normalizes delimiter spacing, whitespace-control markers, and filter pipes — always on — and optionally re-indents stand-alone Jinja-tag lines, all while never touching a host-language byte.
 
@@ -14,7 +14,7 @@
 
 ## 1. Purpose & Scope
 
-Formatting makes a template look consistent without changing what it renders. We tidy the Jinja layer — `{{x}}` becomes `{{ x }}`, a `{% if %}` body gets indented under its tag, `x|e` becomes `x | e` — and we leave the surrounding HTML, SQL, or text exactly as the author wrote it. That host-language restraint is the whole point: we own the Jinja layer end-to-end ([ADR-007](../decisions/ADR-007-formatting-strategy.md)), and we don't compete with djLint or Prettier.
+Formatting makes a template look consistent without changing what it renders. We tidy the Jinja layer — `{{x}}` becomes `{{ x }}`, a `{% if %}` body gets indented under its tag, `x|e` becomes `x | e` — and we leave the surrounding HTML, SQL, or text exactly as the author wrote it. Re-indentation only ever rewrites the leading indentation of a Jinja-tag line that begins its own line, which is provably non-rendered whitespace (REQ-FMT-06); it never touches whitespace a renderer would emit, so it cannot alter inter-tag literal output. That host-language restraint is the whole point: we own the Jinja layer end-to-end ([ADR-007](../decisions/ADR-007-formatting-strategy.md)), and we don't compete with djLint or Prettier.
 
 This spec covers:
 
@@ -39,7 +39,7 @@ Templates are a sandwich: Jinja delimiters embedded in host text. A formatter th
 - **Formatter engine** — the single `src/format/` module that turns a parse tree + source into normalized source. Both front-ends call it.
 - **Round-trip safe** — formatting an already-formatted file is a no-op, and the output parses to a tree equivalent to the input's. (See P3 in the [constitution](../constitution.md).)
 - **Idempotent** — `format(format(x)) == format(x)`.
-- **Host-language bytes** — every byte outside a Jinja delimiter; the formatter never moves, trims, or rewrites them (P5).
+- **Host-language bytes** — every byte outside a Jinja delimiter; the formatter never moves, trims, or rewrites them (P5), with the single scoped carve-out of a Jinja-tag line's leading indentation, which §5.2 re-indents (REQ-FMT-05).
 - **Whitespace-control marker** — the `-` in `{%- … -%}` / `{{- … -}}`. (Canonical definition in [glossary](../glossary.md).)
 
 ## 5. Detailed Specification
@@ -62,6 +62,8 @@ The engine re-indents the body of each Jinja block one level deeper than its ope
 
 For each paired tag (`{% block %}…{% endblock %}`, `{% for %}`, `{% if %}`, `{% macro %}`, `{% call %}`, `{% with %}`, …), lines that are Jinja-tag lines within the body are indented one unit (the configured indent — default two spaces) past the opening tag's indentation; the matching `{% end… %}` aligns back with the opener. Host-language lines inside the body keep their own indentation untouched (P5) — the engine re-indents Jinja tag lines, not the markup between them. Nested blocks compound one level each.
 
+**A Jinja-tag line's target indentation is a pure function of its Jinja ancestor chain, never of the surrounding host indentation or of the formatter's own previous output.** The depth is the count of open paired Jinja tags enclosing the line; the column is `depth × indent-unit`, measured from the column of the outermost enclosing tag (the top-level construct sits at its own column). Because the target is derived solely from the tree's nesting and not read back from emitted text, applying it is a one-pass fixed point: a tag line already at `depth × indent-unit` is left exactly where it is, even when a flush-left `{% for %}` sits inside an indented `<ul>` and the host and Jinja indentation interleave. This is what makes re-indentation idempotent (REQ-FMT-06).
+
 ### 5.3 Whitespace-control markers
 
 The engine normalizes spacing *around* the `-` markers without ever adding or removing a marker.
@@ -76,15 +78,17 @@ The engine pads filter pipes and argument separators consistently.
 
 **REQ-FMT-04 — Normalize filter-pipe and `is`-test spacing.**
 
-A filter pipe gets one space on each side: `x|e` → `x | e`, `name|upper|trim` → `name | upper | trim`. A test keyword gets one space on each side: `post is  defined` → `post is defined`. Filter-call argument commas get one space after, none before: `truncate( 20,true )` → `truncate(20, true)`. This pass owns interior expression spacing for pipes, tests, and call args; it leaves other operators alone (we're a formatter, not an expression beautifier).
+A filter pipe gets one space on each side: `x|e` → `x | e`, `name|upper|trim` → `name | upper | trim`. A test keyword gets one space on each side: `post is  defined` → `post is defined`. Filter-call argument commas get one space after, none before: `truncate( 20,true )` → `truncate(20, true)`.
+
+**Which commas this owns.** A "filter-call argument comma" is precisely a comma that is a direct child of the argument list of a *filter invocation* — the `( … )` attached to a filter name on the right-hand side of a `|` pipe (e.g. `x | truncate(20, true)`). The pass normalizes only those commas. Every other comma is **left exactly as the author wrote it**: commas in dict literals (`{{ {'a': 1,'b': 2} }}`), list/tuple literals (`{{ (1,2,3) }}`), function/macro *call* arguments that are not filter invocations (`{{ post_url(post,absolute=true) }}`), and macro *definition* parameter lists. The boundary is the syntax node, not the character: identify the filter-call argument list in the tree, normalize its top-level commas, and touch nothing else. This pass owns interior expression spacing for pipes, tests, and filter-call args; it leaves other operators and other commas alone (we're a formatter, not an expression beautifier).
 
 ### 5.5 Host-language untouchability
 
 Whatever sits outside a Jinja delimiter is reproduced byte-for-byte.
 
-**REQ-FMT-05 — Never alter host-language bytes.**
+**REQ-FMT-05 — Never alter host-language bytes, except the leading indentation of a Jinja-tag line.**
 
-Every byte outside a `{{ }}` / `{% %}` / `{# #}` span — HTML tags, SQL, plain text, attribute values, blank lines between markup — is emitted unchanged. The formatter neither reflows, re-wraps, nor re-indents host content (its only interaction with host indentation is reading the opening tag's column to compute Jinja body indentation, §5.2). This is P5 made literal and is the line that separates us from djLint/Prettier ([ADR-007](../decisions/ADR-007-formatting-strategy.md)).
+Every byte outside a `{{ }}` / `{% %}` / `{# #}` span — HTML tags, SQL, plain text, attribute values, blank lines between markup — is emitted unchanged, with **one scoped carve-out**: the leading indentation whitespace of a line whose first non-whitespace content is a Jinja tag. That whitespace is host-language bytes by the definition above, but §5.2 rewrites it to re-indent the tag, so REQ-FMT-02 owns it. The carve-out is deliberately narrow: it is *only* the run of spaces/tabs from the start of the line up to the opening delimiter of a Jinja-tag line, and nothing else — never indentation on a host-content line, never trailing or inter-token host whitespace. The formatter neither reflows, re-wraps, nor re-indents host content. Its interaction with host indentation is two-fold: it **reads** a tag's leading column to compute body indentation (§5.2), and it **writes** the leading indentation of Jinja-tag lines (the carve-out above). This is P5 made literal — softened by exactly the indentation carve-out ADR-007 takes for re-indentation — and is the line that separates us from djLint/Prettier ([ADR-007](../decisions/ADR-007-formatting-strategy.md)).
 
 ### 5.6 Round-trip safety
 
@@ -95,7 +99,9 @@ The two guarantees that make this formatter safe to run on save.
 Two invariants hold for every input:
 
 - **Idempotence** — `format(format(x)) == format(x)`. A formatted file formats to itself.
-- **Tree equivalence** — the parse tree of `format(x)` is equivalent to the parse tree of `x` (same nodes, same structure, ignoring the normalized whitespace). Formatting never changes what a template renders.
+- **Tree equivalence** — the parse tree of `format(x)` is equivalent to the parse tree of `x` (same nodes, same structure, ignoring only the whitespace the engine is permitted to normalize). Formatting never changes what a template renders.
+
+The whitespace this invariant is allowed to ignore is **provably non-rendered whitespace only**: delimiter-inner padding (§5.1), whitespace-control marker spacing (§5.3), interior pipe/test/call-arg spacing (§5.4), and the leading indentation of a Jinja-tag line **that begins its line** (preceded by a line break, so the indentation sits between the prior newline and the opening delimiter, §5.2). Re-indentation rewrites *only* this leading indentation — it never touches whitespace that a renderer would emit as literal output, such as a space or newline that sits between an inline tag and adjacent host text on the same line. Inter-tag literal whitespace that is rendered is therefore never altered, so changing a tag's indentation cannot change rendered output, and the tree-equivalence check cannot mask a render change. (This is the same boundary REQ-FMT-05's carve-out draws; both stop at provably non-rendered indentation.)
 
 If, for any input, the engine cannot produce output that satisfies both invariants (e.g. a tree with `ERROR` nodes from invalid syntax), it makes **no change** to that file and reports it as skipped — degrade, don't corrupt (P3, [E16](../foundations/E16-conventions.md)). These invariants are enforced by the golden-test suite (§11).
 
@@ -129,6 +135,8 @@ jinja-lsp format [PATH] [-c|--config FILE] [--check] [--diff]
 **REQ-FMT-09 — Exit codes mirror `check`.**
 
 `0` = nothing to do (every file already formatted); `1` = files changed (in place) or would change (under `--check`/`--diff`); `2` = config or I/O error ([F19](F19-cli-linter.md) uses the same scheme). A parse error on a single file skips that file (REQ-FMT-06) and does not by itself force exit `2` — only config/IO failure does.
+
+A `PATH` that escapes the resolved templates root via `../` is **silently skipped, not an error**: it is excluded from the set the command operates on, exactly as F17's "Create template" action silently refuses an escaping path (F17 §13.1) and as §13.1 below requires. The skip produces no diagnostic and does not raise exit `2`; if nothing else is left to format, the run is a no-op and exits `0`. This keeps path-escape handling uniform across the suite (silent refusal, never an error).
 
 ## 6. UI Mockups
 
@@ -190,6 +198,36 @@ would reformat: templates/blog/post.html
 would reformat: templates/email/digest.html
 2 files would be reformatted, 2 unchanged.     (exit code 1)
 ```
+
+### 6.5 Format-on-save — no distinct editor surface
+
+Format-on-save is the headline scenario (§1, §9), but **jinja-lsp owns no editor surface for it** — the editor owns the trigger and the rendering. The user enables format-on-save in their client (`editor.formatOnSave`, `gopls`-style on-save hooks, etc.); on save the client sends `textDocument/formatting` and applies the returned `TextEdit[]` itself (REQ-FMT-07). We never paint a popup, banner, progress toast, or lightbulb. The only observable outcomes are the document's own bytes changing (or not):
+
+```
+  on save (editor calls textDocument/formatting)
+  ──────────────────────────────────────────────
+  unformatted buffer   →  edits applied in place by the editor (no jinja-lsp UI)
+  already-formatted    →  empty TextEdit[] returned → editor applies nothing; buffer unchanged
+  syntax error present →  empty TextEdit[] (file skipped, REQ-FMT-06) → buffer unchanged; no error surfaced by the formatter
+```
+
+There is therefore no mockup to draw: the before/after of §6.1 *is* what the user sees in their own editor, and the trigger, partial-range selection, and no-op cases are all client-rendered. (Constitution §6 requires a mockup for every editor surface jinja-lsp introduces; this flow introduces none.)
+
+### 6.6 Range formatting — snap-outward
+
+When the user selects part of a construct and requests range formatting, REQ-FMT-07 snaps the range **outward to whole Jinja constructs**, so the applied edits can reach beyond the literal selection (e.g. up to the enclosing `{% block %}`). This is deliberate — a partial-tag edit would risk corruption (P3) — but it can surprise a "never surprise me" user, so it is called out here. The editor renders the resulting edits; jinja-lsp adds no UI of its own.
+
+```
+  selection (⌶ = selected lines)            edits actually applied (snapped outward)
+  ────────────────────────────────         ─────────────────────────────────────────
+  {% block content %}                       {% block content %}        ← snapped up to opener
+  ⌶ {%if posts%}                              {% if posts %}
+  ⌶ <li>{{post.title}}</li>                     <li>{{ post.title }}</li>
+    {% endif %}                               {% endif %}              ← snapped down to closer
+  {% endblock %}                            {% endblock %}
+```
+
+The selection covered two lines; the snapped range covers the whole `{% if %}` construct so no tag is left half-formatted.
 
 ## 7. Visualizations
 
@@ -255,6 +293,7 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | T-08 | Indent unit honors config: default 2 spaces; `tabSize=4` yields 4-space body indent | unit-snapshot | format-goldens (two snapshots) | REQ-FMT-02, REQ-FMT-07 |
 | T-09 | Host-language lines between Jinja tags keep their own indentation; only Jinja tag lines move (P5) | unit-snapshot | format-goldens (matches §6.1 `<ul>`/`<li>`) | REQ-FMT-02, REQ-FMT-05 |
 | T-10 | Opener offset from host column: body indents relative to the tag's column, never the host markup | unit-snapshot | format-goldens | REQ-FMT-02 |
+| T-43 | Fixed-point on interleaved host/Jinja: `format(format(x)) == format(x)` for a flush-left `{% for %}` nested inside an indented `<ul>` — indentation derived from the Jinja ancestor chain converges in one pass | unit-snapshot (property) | format-goldens (interleaved pair) | REQ-FMT-02, REQ-FMT-06 |
 
 **Whitespace-control markers (§5.3, REQ-FMT-03, §6.2, §10)**
 
@@ -274,6 +313,7 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | T-17 | `post is  defined` → `post is defined` (`is`-test spacing) | unit-snapshot | format-goldens | REQ-FMT-04 |
 | T-18 | `truncate( 20,true )` → `truncate(20, true)` (call-arg commas: space after, none before) | unit-snapshot | starlette-blog `post.html` `truncate(60)` | REQ-FMT-04 |
 | T-19 | Negative: non-pipe/test operators left alone — `{{ a==b }}` unchanged (formatter, not beautifier) | unit-snapshot | format-goldens | REQ-FMT-04 |
+| T-44 | Negative: non-filter commas untouched — dict/tuple literal and a non-filter call (`{{ {'a': 1,'b': 2} }}`, `{{ post_url(post,absolute=true) }}`) emit their commas exactly as written; only filter-call arg commas (`x \| truncate(20,true)` → `x \| truncate(20, true)`) are normalized | unit-snapshot | format-goldens | REQ-FMT-04 |
 
 **Host-language untouchability (§5.5, REQ-FMT-05, §10)**
 
@@ -320,12 +360,12 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 |---|---|---|---|---|
 | T-39 | Exit 0 — every file already formatted (nothing to do), in-place and under `--check` | integration | format-goldens (`.out` corpus) | REQ-FMT-09 |
 | T-40 | Exit 1 — files changed in place / would change under `--check`/`--diff` | integration | starlette-blog | REQ-FMT-09 |
-| T-41 | Exit 2 — config or I/O error (unreadable config / path escape) | integration | config (invalid) | REQ-FMT-09 |
+| T-41 | Exit 2 — config or I/O error (unreadable/invalid config); a `PATH` escaping the templates root (`../`) is silently skipped, NOT exit 2 (aligns with F17 §13.1) | integration | config (invalid) | REQ-FMT-09 |
 | T-42 | A per-file parse-error skip alone does NOT force exit 2 (exit reflects only changed/unchanged) | integration | syntax-errors + format-goldens mix | REQ-FMT-09, REQ-FMT-06 |
 
 ### 11.3 Fixtures
 
-- **format-goldens** — the `<name>.in`/`<name>.out` corpus exercising every pass and the host-untouchability cases, with at least one pair per `REQ-FMT-0[1-5]`. Reused by the LSP-parity and CLI tests above. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
+- **format-goldens** — the `<name>.in`/`<name>.out` corpus exercising every pass and the host-untouchability cases, with at least one pair per `REQ-FMT-0[1-5]` and an **interleaved** pair (flush-left `{% for %}` inside an indented `<ul>`) for the fixed-point test (T-43). Reused by the LSP-parity and CLI tests above. Registered in [E17-testing](../foundations/E17-testing.md#5-fixtures-registry).
 - Reuses [syntax-errors](../foundations/E17-testing.md#5-fixtures-registry) for the skip-on-error case.
 
 ### 11.4 Requirement coverage
@@ -333,11 +373,11 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | Requirement | Covered by |
 |---|---|
 | REQ-FMT-01 | T-01–T-05 (delimiter spacing) |
-| REQ-FMT-02 | T-06–T-10 (block-body indentation) |
+| REQ-FMT-02 | T-06–T-10, T-43 (block-body indentation + interleaved fixed-point) |
 | REQ-FMT-03 | T-11–T-14 (whitespace-control markers) |
-| REQ-FMT-04 | T-12, T-15–T-19 (filter-pipe / test / call-arg spacing) |
+| REQ-FMT-04 | T-12, T-15–T-19, T-44 (filter-pipe / test / call-arg spacing + non-filter-comma negative) |
 | REQ-FMT-05 | T-09, T-20–T-23 (host untouchability) |
-| REQ-FMT-06 | T-14, T-24–T-27, T-42 (idempotence + tree-equivalence + skip-on-error); E2E-03, E2E-05 |
+| REQ-FMT-06 | T-14, T-24–T-27, T-42, T-43 (idempotence + tree-equivalence + skip-on-error + interleaved fixed-point); E2E-03, E2E-05 |
 | REQ-FMT-07 | T-08, T-23, T-28–T-31 (LSP formatting/rangeFormatting + range snap + options); E2E-01, E2E-02 |
 | REQ-FMT-08 | T-32–T-38 (CLI in-place / PATH / config / --check / --diff / combined); E2E-03, E2E-04 |
 | REQ-FMT-09 | T-27, T-38, T-39–T-42 (exit codes 0/1/2 + skip-doesn't-force-2); E2E-03, E2E-04, E2E-05 |
@@ -369,7 +409,7 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 
 ### 13.1 Security & Privacy
 
-- **Access & authorization** — the CLI formats only files under the resolved templates roots (or the given `PATH`); it never follows `../` escapes out of a root ([E30](../foundations/E30-extraction-and-indexing.md)).
+- **Access & authorization** — the CLI formats only files under the resolved templates roots (or the given `PATH`); a `PATH` that escapes a root via `../` is silently skipped, not an error (REQ-FMT-09), matching F17's silent refusal (F17 §13.1) ([E30](../foundations/E30-extraction-and-indexing.md)).
 - **Input & validation** — all template content is untrusted; the engine reads and rewrites the syntax tree only and never executes a template (P1). Invalid syntax is skipped, never coerced.
 - **Data sensitivity** — formatting reads and writes only the user's own files; nothing leaves the machine (stdio LSP / local CLI, P2).
 - **Integrity** — the round-trip invariants (REQ-FMT-06) are themselves a safety control: an edit that could change rendered output is never emitted.
@@ -402,3 +442,4 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 test plan to concrete per-rule `input → expected output` rows (T-01–T-42) covering every formatting rule, idempotence + tree equivalence, syntax-error skip, range vs whole-document, FormattingOptions/indent-unit, CLI vs LSP paths, all CLI modes (`--check`/`--diff`/combined), exit codes 0/1/2, and host-byte safety; rebuilt §11.4 traceability and expanded §12.2 to E2E-01–E2E-10 (both front-ends, happy + negative, with explicit Path and Verifies).
+- **2026-06-26** — Spec-review reconciliation (jinja-lsp-0ec, -nmq, -yjl, -bn1, -9gw, -eb5, -n2n): scoped REQ-FMT-05/P5 to acknowledge re-indentation's narrow leading-indentation carve-out and corrected its "reads the opening column" claim to also write it (0ec); stated REQ-FMT-02 indentation as a pure function of the Jinja ancestor chain (a one-pass fixed point) and added the interleaved fixed-point golden T-43 (nmq); restricted REQ-FMT-06 tree-equivalence to provably non-rendered whitespace so re-indentation cannot mask a render change, with a §1 reconciliation — no ADR-007 change needed (yjl); defined filter-call argument commas precisely vs dict/tuple/non-filter-call commas in REQ-FMT-04 and added non-filter-comma golden T-44 (bn1); added §6.5 justifying no distinct format-on-save editor surface (editor owns the trigger) (9gw); added §6.6 range-formatting snap-outward note/mockup (eb5); clarified REQ-FMT-09 + §13.1 that a path-escaping `PATH` is silently skipped (not exit 2), aligned with F17 §13.1, and fixed T-41 phrasing (n2n). Bumped to 0.3.

@@ -68,6 +68,7 @@ This is a living document — add a term the first time a spec needs it. Terms a
 - **Capability** — a feature the server advertises in its `initialize` response (e.g. `hoverProvider`).
 - **Quick-fix / code action** — an editor-offered edit resolving a diagnostic or refactoring code. See [F17-code-actions](features/F17-code-actions.md).
 - **Refactor** — a cursor- or selection-triggered transformation (extract-to-macro, wrap-in-block).
+- **Code lens** — an actionable annotation rendered above a line (e.g. a macro's reference count or a block's inheritance-overrider count) that runs a command when clicked. See [F15-code-lens](features/F15-code-lens.md).
 - **Folding range** — a collapsible region (block, loop, macro, comment). See [F12-folding-range](features/F12-folding-range.md).
 - **Semantic token** — a classification attached to a span so the editor colors it by meaning (known macro vs unknown variable). See [F13-semantic-tokens](features/F13-semantic-tokens.md).
 - **Inlay hint** — inline ghost text (a parameter name, an `endblock` echo). See [F14-inlay-hints](features/F14-inlay-hints.md).
@@ -76,3 +77,4 @@ This is a living document — add a term the first time a spec needs it. Terms a
 ## Changelog
 
 - **2026-06-24** — Initial glossary covering the Jinja language, inheritance, server/analysis, configuration, diagnostics, and editor/protocol domains.
+- **2026-06-26** — Added the **Code lens** term (referenced by [F15-code-lens](features/F15-code-lens.md) §4).

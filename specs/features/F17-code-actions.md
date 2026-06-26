@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** The lightbulb menu — quick-fixes derived mechanically from the [F01](F01-diagnostics.md) diagnostic catalog, plus cursor-triggered refactors (extract-to-macro, wrap-in-block/if/for) — all applied as a `WorkspaceEdit`.
 
@@ -44,7 +44,7 @@ Code actions are designed from first principles ([ADR-008](../decisions/ADR-008-
 
 ## 5. Detailed Specification
 
-The server advertises `codeActionProvider` (with the kinds in §5.4) and `executeCommandProvider`, and relies on `workspace.applyEdit` ([E01](../foundations/E01-architecture.md)). On `textDocument/codeAction`, the handler receives the cursor range and the diagnostics overlapping it; it returns quick-fixes for those diagnostics (§5.1) and any refactors valid at the range (§5.2). Every action carries either an inline `WorkspaceEdit` or a `command` for the executeCommand path (§5.3).
+The server advertises `codeActionProvider` (with the kinds in §5.4 and `resolveProvider: true`, so heavier edits resolve through `codeAction/resolve`) and `executeCommandProvider`, and relies on `workspace.applyEdit` ([E01](../foundations/E01-architecture.md)). On `textDocument/codeAction`, the handler receives the cursor range and the diagnostics overlapping it; it returns quick-fixes for those diagnostics (§5.1) and any refactors valid at the range (§5.2). Every action carries either an inline `WorkspaceEdit` or a `command` for the executeCommand path (§5.3).
 
 ### 5.1 Quick-fixes (diagnostic-driven)
 
@@ -52,7 +52,7 @@ Each quick-fix is offered only when its triggering diagnostic overlaps the reque
 
 **REQ-ACT-01 — Remove unused imports and macros.**
 
-For `JINJA-W203 unused-import` and `JINJA-W202 unused-macro`, offer **"Remove unused …"**. The edit deletes the whole offending construct — the entire `{% import … %}` / `{% from … import … %}` line for `W203`, the whole `{% macro %}…{% endmacro %}` region for `W202` — including the trailing newline so no blank line is left behind.
+For `JINJA-W203 unused-import` and `JINJA-W202 unused-macro`, offer **"Remove unused …"**. The edit deletes the whole offending construct — the entire `{% import … %}` line (or single-name `{% from … import name %}` line) for `W203`, the whole `{% macro %}…{% endmacro %}` region for `W202` — including the trailing newline so no blank line is left behind. **Multi-name from-imports** are the exception: when a `{% from … import a, b %}` binds several names and only some are unused, the edit removes **only the unused name and its adjacent separator (a comma, or the `as` alias)**, leaving the still-used names and the line intact; the whole-line delete is offered only when the import binds a single name (or all its names are unused).
 
 **REQ-ACT-02 — Resolve undefined functions by import or suggestion.**
 
@@ -84,7 +84,7 @@ When a non-empty selection covers a contiguous run of template nodes, offer **"E
 
 **REQ-ACT-08 — Wrap selection in a block, if, or for.**
 
-When a selection covers a well-formed run of nodes, offer three wrap refactors: **"Wrap in `{% block %}`"**, **"Wrap in `{% if %}`"**, and **"Wrap in `{% for %}`"**. The block wrap prompts for a block name (executeCommand); the `if`/`for` wraps insert a placeholder condition/loop (`{% if condition %}` / `{% for item in items %}`) for the user to fill, with the cursor positioned on the placeholder via the returned edit's selection. Each wrap re-indents the wrapped body one level (consistent with [F18](F18-formatting.md)'s indentation model) without touching host-language bytes outside the wrap (P5).
+When a selection covers a well-formed run of nodes, offer three wrap refactors: **"Wrap in `{% block %}`"**, **"Wrap in `{% if %}`"**, and **"Wrap in `{% for %}`"**. The block wrap prompts for a block name (executeCommand); the `if`/`for` wraps insert a placeholder condition/loop (`{% if condition %}` / `{% for item in items %}`) for the user to fill. Because a `WorkspaceEdit` carries no cursor or selection, placing the caret on the placeholder is a client concern: when the client supports snippet edits, the wrap emits a snippet-style edit with a tabstop on the placeholder; otherwise it is best-effort (the placeholder text is inserted, but the caret is left where the client puts it). Each wrap re-indents the wrapped body one level (consistent with [F18](F18-formatting.md)'s indentation model) without touching host-language bytes outside the wrap (P5).
 
 **REQ-ACT-11 — Rename a symbol (workspace-wide for definitions, scope-local for locals).**
 
@@ -94,9 +94,9 @@ When the cursor is on a renameable symbol, offer a rename whose label and blast 
 - A **local import binding** — the `as`-alias of `{% import "…" as y %}` or a *local* name in `{% from "…" import name %}`, with the cursor on that binding (not threaded through to the macro definition). Offer **"Rename import `<name>` (this template)…"**. Like [F09](F09-find-references.md) REQ-REF-01's import kind, this rewrites **only this template's** binding plus its in-template uses — it does *not* touch the macro definition or other importers. Renaming through to the macro definition (the workspace-wide blast radius above) happens only when the cursor is on the macro's own definition or a call to it.
 - A **local variable** — a `{% for %}` loop variable, a `{% set %}` / `{% with %}` binding, a macro parameter, or a `{% call(arg) %}` argument. Offer **"Rename `<name>` (local)…"**. Its rewrite set is the variable's references collected via [F09](F09-find-references.md) (REQ-REF-01, which returns scope-local uses) — the same [E07](../foundations/E07-data-model.md) REQ-DATA-11 resolution — **bounded by the binding's `valid_range`** ([E07](../foundations/E07-data-model.md) REQ-DATA-03), never beyond it. The local rename is *not* sourceless: it uses the identical resolution as the workspace rename, just scoped to a single `valid_range`.
 
-Because rename needs the new name, the action carries a `command`: on invocation the client prompts for a name via `executeCommand` (§5.3); the server validates it as a legal Jinja identifier, computes the `WorkspaceEdit` (multi-file for definitions, single-template for import bindings and locals), and applies it through `applyEdit`.
+Because rename needs the new name, the action carries a `command`: on invocation the client prompts for a name via `executeCommand` (§5.3); the server validates it as a legal Jinja identifier, computes the `WorkspaceEdit` (multi-file for definitions, single-template for import bindings and locals), and applies it by issuing a separate `workspace/applyEdit` request mid-command (`executeCommand` itself returns no edit).
 
-**Capture avoidance and collision refusal.** The rename rewrites **only the references that resolve to *this* binding** under [E07](../foundations/E07-data-model.md) REQ-DATA-11 (innermost binding wins), so an inner same-named binding inside the `valid_range` is a *different* symbol and is left untouched. The rename is **refused with a message** — no edit produced — when the new name **already binds in an overlapping `valid_range`** (the new name would collide with, or be captured by, an existing binding in the same scope), rather than producing a shadowing or colliding edit (P3/P4). A cursor on a non-renameable target — a built-in filter/test, a hinted context variable, or host text — offers no rename: we only rename symbols whose definition jinja-lsp owns (P5). This whole-symbol rename is distinct from the single-occurrence disambiguation fix in REQ-ACT-06, which only suffixes one shadowing binding.
+**Capture avoidance and collision refusal.** The rename rewrites **only the references that resolve to *this* binding** under [E07](../foundations/E07-data-model.md) REQ-DATA-11 (innermost binding wins), so an inner same-named binding inside the `valid_range` is a *different* symbol and is left untouched. The rename is **refused with a message** — surfaced over the protocol as a `window/showMessage` notification, no edit produced — when the new name **already binds in an overlapping `valid_range`** (the new name would collide with, or be captured by, an existing binding in the same scope), rather than producing a shadowing or colliding edit (P3/P4). A cursor on a non-renameable target — a built-in filter/test, a hinted context variable, or host text — offers no rename: we only rename symbols whose definition jinja-lsp owns (P5). This whole-symbol rename is distinct from the single-occurrence disambiguation fix in REQ-ACT-06, which only suffixes one shadowing binding.
 
 ### 5.3 Applying edits
 
@@ -104,7 +104,7 @@ Simple actions ship their edit inline; actions needing input use the command rou
 
 **REQ-ACT-09 — `WorkspaceEdit` for direct fixes; `executeCommand` for input.**
 
-A quick-fix with no required input returns its `WorkspaceEdit` directly on the `codeAction` response (or via `codeAction/resolve` for the heavier ones), and the client applies it through `workspace/applyEdit`. A refactor that needs a name or condition (extract-to-macro, wrap-in-block) returns a `Command`; invoking it triggers `workspace/executeCommand`, the server gathers the input, and **then** returns the `WorkspaceEdit` via `applyEdit`. Every resulting edit must be round-trip safe — the file re-parses to a valid tree (P3).
+A quick-fix with no required input returns its `WorkspaceEdit` directly on the `codeAction` response (or via `codeAction/resolve` for the heavier ones), and the client applies it through `workspace/applyEdit`. A refactor that needs a name or condition (extract-to-macro, wrap-in-block) returns a `Command`; invoking it triggers `workspace/executeCommand`, the server gathers the input, and **then** issues a separate `workspace/applyEdit` request carrying the `WorkspaceEdit` (the `executeCommand` response itself returns no edit). Every resulting edit must be round-trip safe — the file re-parses to a valid tree (P3).
 
 ### 5.4 Action kinds
 
@@ -112,13 +112,13 @@ The server tags each action with a standard `CodeActionKind` so editors group an
 
 **REQ-ACT-10 — Report standard `CodeActionKind`s.**
 
-Quick-fixes are tagged `quickfix`; the three wraps and extract are tagged `refactor.extract` (extract-to-macro, wrap-in-block) and `refactor.rewrite` (wrap-in-if/for) appropriately; the rename command (REQ-ACT-11) is tagged `refactor.rewrite`. Each quick-fix sets `diagnostics` to the diagnostic it resolves so the editor can show it in the problem's context menu. The most directly-applicable fix per diagnostic is marked `isPreferred` (e.g. the import fix for `E103` over the spelling suggestions).
+Quick-fixes are tagged `quickfix`; the three wraps and extract are tagged `refactor.extract` (extract-to-macro, wrap-in-block) and `refactor.rewrite` (wrap-in-if/for) appropriately; the rename command (REQ-ACT-11) is tagged `refactor.rewrite`. Each quick-fix sets `diagnostics` to the diagnostic it resolves so the editor can show it in the problem's context menu. The most directly-applicable fix per diagnostic is marked `isPreferred` (e.g. the import fix for `E103` over the spelling suggestions). `isPreferred` ranks **only among the same-kind quickfixes for that diagnostic** — it never ranks a quickfix against a refactor (the editor honors `isPreferred` only within a single action kind), so the co-listed "Extract to macro" refactor is outside its scope.
 
 ## 6. UI Mockups
 
 ### 6.1 Lightbulb menu at an undefined-function diagnostic (editor)
 
-The cursor is on the `post_url` call that `JINJA-E103` flagged; the lightbulb lists its quick-fixes, preferred fix first.
+The `post_url` call that `JINJA-E103` flagged is selected (the line is highlighted, so the selection-driven "Extract to macro…" refactor also qualifies — REQ-ACT-07); the lightbulb lists its quick-fixes, preferred fix first, with the refactor below the separator.
 
 ```
 templates/blog/post.html
@@ -134,7 +134,9 @@ templates/blog/post.html
  │    │      │  Extract to macro…                                   │   │
  │    │      ╰──────────────────────────────────────────────────────╯   │
  └──────────────────────────────────────────────────────────────────────┘
-   ★ = isPreferred (quickfix)   "Extract to macro…" = refactor (… ⇒ prompts)
+   ★ = isPreferred — ranks only among the E103 quickfixes (import over the
+       did-you-mean), not against the refactor below the separator
+   "Extract to macro…" = refactor (… ⇒ prompts)
 ```
 
 ### 6.2 Quick-fix result (before / after)
@@ -229,7 +231,7 @@ Every row is concrete: a named diagnostic / selection / cursor on a specific fix
 | **REQ-ACT-01 — remove unused** | | | | |
 | T-01 | `W203` on `{% import "shared.html" as shared %}` → "Remove unused import" deletes the whole `{% import … %}` line **incl. trailing newline** (no blank line left) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
 | T-02 | `W202` on an unused `{% macro foo() %}…{% endmacro %}` → "Remove unused macro" deletes the whole macro region incl. trailing newline | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
-| T-03 | `W203` on a `{% from "x.html" import a, b %}` where only `b` is unused → the offered "Remove unused import" still deletes the construct the diagnostic targets (whole line for a single-name import) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
+| T-03 | `W203` on a `{% from "x.html" import a, b %}` where only `b` is unused → "Remove unused import" removes **only `b` and its separator**, yielding `{% from "x.html" import a %}` with the still-used `a` intact (the whole-line delete is reserved for single-name imports) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-01 |
 | **REQ-ACT-02 — resolve undefined function** | | | | |
 | T-04 | `E103` on `{{ post_url(post) }}` in `blog/post.html` (no import) → "Import `post_url` from "blog/macros.html"" inserts `{% from "blog/macros.html" import post_url %}` **after the `extends` line**; diagnostic clears | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02 |
 | T-05 | `E103` on a near-miss call (`post_ur(post)`) → import fix **plus** "Did you mean `post_url`?" replacing the call identifier; near-matches ranked by edit distance over the index + registry | unit (synthetic `didOpen`) | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-02 |
@@ -255,8 +257,8 @@ Every row is concrete: a named diagnostic / selection / cursor on a specific fix
 | T-20 | **Negative (§10):** selection that **splits a tag** (`{% if` … without `%}`) → extract not offered (would corrupt — P3) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-07 |
 | **REQ-ACT-08 — wrap refactors** | | | | |
 | T-21 | Well-formed selection → "Wrap in `{% block %}`" offered, carries a `command` (prompts for block name); body re-indented one level, host bytes outside the wrap untouched (P5) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
-| T-22 | Well-formed selection → "Wrap in `{% if %}`" inserts `{% if condition %}` placeholder, cursor on the placeholder, body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
-| T-23 | Well-formed selection → "Wrap in `{% for %}`" inserts `{% for item in items %}` placeholder, cursor on the placeholder, body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| T-22 | Well-formed selection → "Wrap in `{% if %}`" inserts `{% if condition %}` placeholder (snippet tabstop on `condition` when the client supports snippets, else best-effort), body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
+| T-23 | Well-formed selection → "Wrap in `{% for %}`" inserts `{% for item in items %}` placeholder (snippet tabstop when supported, else best-effort), body re-indented one level | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
 | T-24 | **Negative (§10):** selection splitting a tag → none of the three wraps offered (P3) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-08 |
 | **REQ-ACT-11 — rename symbol** | | | | |
 | T-25 | Cursor on the `post_url` **macro definition** in `blog/macros.html` → "Rename `post_url`…" rewrites the declaration + every reference **across the workspace** (`post.html` call site + `email/digest.html` from-import & use) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
@@ -264,7 +266,7 @@ Every row is concrete: a named diagnostic / selection / cursor on a specific fix
 | T-27 | Cursor on a **block** name → rename rewrites the `{% block %}`/`{% endblock %}`-keyed name across the inheritance chain | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
 | T-28 | Cursor on an **import** binding (`{% from "blog/macros.html" import post_url %}` in `digest.html`) → rename rewrites the from-import binding + its uses + the definition + other importers | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
 | T-29 | Cursor on a **local variable** — a `{% for c in post.comments %}` loop var (also `{% set %}`/`{% with %}`) → rename rewrites uses **within that scope only**, never beyond it (`VariableScope`) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
-| T-30 | **Negative:** rename to a name that **already binds in the same scope** → refused with a message, no edit produced (P3/P4) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
+| T-30 | **Negative:** rename to a name that **already binds in the same scope** → refused via a `window/showMessage` notification, no edit produced (P3/P4) | unit | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
 | T-31 | **Negative:** cursor on a **non-renameable target** — a built-in filter/test, a hinted context variable, or host text → no "Rename" action offered (we only rename symbols jinja-lsp owns — P5) | unit (synthetic `didOpen` + hint) | [starlette-blog](../foundations/E17-testing.md#starlette-blog) | REQ-ACT-11 |
 | **REQ-ACT-09 — apply path & commands** | | | | |
 | T-32 | A no-input quick-fix returns its `WorkspaceEdit` inline (or via `codeAction/resolve`); the edit is round-trip safe — the file re-parses to a valid tree (P3) | unit | [unused-symbols](../foundations/E17-testing.md#unused-symbols) | REQ-ACT-09 |
@@ -320,12 +322,12 @@ Each journey requests `codeAction` (or `executeCommand`) over the protocol, asse
 | E2E-06 | Apply "Remove duplicate macro" at `W302` | happy | the later macro is deleted; `W302` clears (REQ-ACT-06) |
 | E2E-07 | Apply "Rename to `<suggestion>`" at `W305` | happy | only the shadowing binding's scope is rewritten (`post` → `post_2`); `W305` clears (REQ-ACT-06) |
 | E2E-08 | Extract-to-macro via `executeCommand` | happy | prompt → name → macro appended, selection replaced with `{{ <name>() }}`, tree still valid (REQ-ACT-07, REQ-ACT-09) |
-| E2E-09 | Wrap-in-block via `executeCommand`; wrap-in-if/for inline | happy | prompt → block name → body wrapped and re-indented; `if`/`for` insert placeholder conditions with the cursor positioned (REQ-ACT-08) |
+| E2E-09 | Wrap-in-block via `executeCommand`; wrap-in-if/for inline | happy | prompt → block name → body wrapped and re-indented; `if`/`for` insert placeholder conditions (snippet tabstop when the client supports snippets, else best-effort) (REQ-ACT-08) |
 | E2E-10 | `codeAction` at an `E601` with an escaping path | error | no "Create template" action offered (REQ-ACT-05) |
 | E2E-11 | Apply "Create template `<path>`" at an `E601` with an in-root path | happy | a `CreateFile` operation creates the seeded file; `E601` clears (REQ-ACT-05) |
 | E2E-12 | Rename a macro via `executeCommand` | happy | prompt → name → def + every reference rewritten across `post.html` + `email/digest.html`; trees still valid (REQ-ACT-11) |
 | E2E-13 | Rename a local `{% for %}` variable via `executeCommand` | happy | only uses within the loop scope are rewritten; bindings of the same name outside the scope are untouched (REQ-ACT-11) |
-| E2E-14 | Rename to a name already bound in scope | error | rename refused with a message; document unchanged (REQ-ACT-11) |
+| E2E-14 | Rename to a name already bound in scope | error | rename refused via a `window/showMessage` notification; document unchanged (REQ-ACT-11) |
 | E2E-15 | `codeAction` with the cursor on a non-renameable target (built-in filter / hinted variable / host text) | error | no "Rename" action offered (REQ-ACT-11) |
 | E2E-16 | Extract-to-macro `executeCommand` cancelled (empty name) | error | no edit applied; document unchanged (REQ-ACT-09) |
 | E2E-17 | `codeAction` asserts reported `CodeActionKind`s and `isPreferred` over the wire | happy | quick-fixes `quickfix` with `diagnostics` set; extract/wrap-in-block `refactor.extract`; wrap-in-if/for + rename `refactor.rewrite`; import fix `isPreferred` (REQ-ACT-10) |
@@ -358,6 +360,7 @@ Each journey requests `codeAction` (or `executeCommand`) over the protocol, asse
 
 ## 17. Changelog
 
+- **2026-06-26** — Spec-review fixes: §5 now advertises `codeActionProvider.resolveProvider` to back the `codeAction/resolve` path, matched in [E01](../foundations/E01-architecture.md) (jinja-lsp-bv6); REQ-ACT-01/T-03 remove only the unused name from a multi-name from-import instead of deleting the still-used line (jinja-lsp-frg); reworded the `executeCommand`→`workspace/applyEdit` round-trip to match the §7 flow (jinja-lsp-phz); pinned the rename-refusal channel to `window/showMessage` in §5.2/T-30/E2E-14 (jinja-lsp-g6b); softened this changelog's rename wording against constitution §4.7 (jinja-lsp-xvw); noted §6.1's selection so "Extract to macro" qualifies (jinja-lsp-fcs); clarified wrap cursor placement as a snippet/best-effort client concern, not a `WorkspaceEdit` field (jinja-lsp-8hp); clarified `isPreferred` ranks only within same-kind quickfixes (jinja-lsp-5et).
 - **2026-06-25** — Expanded the §11.2 test plan (T-01..T-40) and §12.2 E2E scenarios (E2E-01..E2E-17) to concrete, full-combination coverage: every quick-fix REQ-ACT × its triggering diagnostic(s), every refactor incl. split-selection and the three wraps, the full rename matrix (macro/block/import/local + collision + non-renameable negatives), and every §10 edge and §6 mockup state, both polarities. Synced §11.3 fixtures note and §11.4 requirement-coverage bijection.
-- **2026-06-25** — Added the rename command (REQ-ACT-11): cursor-driven, workspace-wide for macro/block/import definitions (via [F09](F09-find-references.md)) and scope-local for local variables, delivered through `executeCommand`. Rename promoted from a suite-wide Non-Goal to a goal landing here.
+- **2026-06-25** — Added the rename command (REQ-ACT-11): cursor-driven, workspace-wide for macro/block/import definitions (via [F09](F09-find-references.md)) and scope-local for local variables, delivered through `executeCommand`. The rename *capability* is delivered here as a code-action command; the constitution §4.7 Non-Goal — the dedicated `textDocument/rename` / `prepareRename` protocol method — remains in force and is still honored (that method is not advertised).
 - **2026-06-24** — Initial draft.

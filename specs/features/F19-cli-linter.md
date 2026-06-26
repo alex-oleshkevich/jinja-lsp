@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-24
+> **Version:** 0.2   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** The `jinja-lsp check` command — a one-shot linter that runs the same diagnostic engine as the LSP server and prints findings in one of three formats (rich, compact, json), so the same checks you see in your editor also gate CI.
 >
@@ -33,6 +33,7 @@ This spec covers:
 - The shared extraction and indexing pipeline — owned by [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md).
 - The `jinja-lsp format` command — owned by [F18-formatting](F18-formatting.md).
 - Golden-file E2E testing of the json format — owned by [E29-e2e-testing](../foundations/E29-e2e-testing.md) (Branch A).
+- **Stdin input.** `check` reads files and directories from the filesystem only — there is no `-`/stdin mode. A finding's `file` field and the cross-file index both need a real on-disk path to resolve (REQ-LINT-09, REQ-LINT-10), which a stdin stream lacks; editors get diagnostics from the LSP server, not by piping into `check`.
 
 ## 3. Background & Rationale
 
@@ -56,7 +57,7 @@ That's the whole reason `--format` exists: it lets a test diff the linter's outp
 `jinja-lsp check` runs the diagnostics engine over a path and reports the findings.
 
 ```
-jinja-lsp check [PATH]
+jinja-lsp check [PATH...]
                 [-c | --config FILE]
                 [-v | --verbose]
                 [--select CODE...]
@@ -64,9 +65,11 @@ jinja-lsp check [PATH]
                 [--format FMT]
 ```
 
-**REQ-LINT-01 — `PATH` is an optional positional.**
+**REQ-LINT-01 — `PATH` is an optional, repeatable positional.**
 
-`PATH` may be a single template file or a directory. When it names a directory, `check` scans it for files matching the configured `extensions` ([E15](../foundations/E15-app-config.md)). When `PATH` is omitted, `check` lints the configured `templates` directories (or the zero-config discovered set). A `PATH` outside the workspace is linted in isolation — config still applies, but cross-file checks resolve only against what's reachable from it.
+Each `PATH` may be a single template file or a directory. When it names a directory, `check` scans it for files matching the configured `extensions` ([E15](../foundations/E15-app-config.md)). When `PATH` is omitted, `check` lints the configured `templates` directories (or the zero-config discovered set). A `PATH` outside the workspace is linted in isolation — config still applies, but cross-file checks resolve only against what's reachable from it.
+
+**Multiple positionals are accepted; the shell does the globbing.** `check a.html b.html` and `check templates/**/*.html` both work: the command takes one or more `PATH` arguments and lints their union, de-duplicated, with findings still globally ordered by `file`/`line`/`col` (REQ-LINT-07). `check` does **not** expand glob patterns itself — `**/*.html` is the shell's job, and an unmatched pattern is whatever the shell passes through (typically a literal path that then fails as a nonexistent `PATH`, §10). Directory arguments still filter by configured `extensions`; explicitly-named files are linted as given.
 
 **REQ-LINT-02 — Flags, with `--format` added.**
 
@@ -81,6 +84,15 @@ jinja-lsp check [PATH]
 **REQ-LINT-03 — `--select` / `--ignore` accept a code or class prefix only.**
 
 Both flags take a full code (`JINJA-E101`) or a class prefix (`JINJA-E1` = all 1xx, `JINJA-W` = all warnings) — never a slug (constitution §4.2, [ADR-003](../decisions/ADR-003-diagnostic-code-scheme.md)). This is the same input grammar as the config keys and `noqa`. CLI flags take precedence over the matching config key for that invocation. When the two overlap, `ignore` wins for the overlapping code, mirroring [F01](F01-diagnostics.md) §5.3.
+
+**REQ-LINT-11 — Config discovery is anchored per `PATH` case.**
+
+The discovery *mechanics* (upward search, file name, precedence) are owned by [E15](../foundations/E15-app-config.md); this rule fixes only the **anchor** discovery starts from:
+
+- `--config FILE` given → that file is used; no discovery, anchor irrelevant.
+- `PATH` omitted → discovery is anchored at the **current working directory**.
+- `PATH` inside the workspace → discovery is anchored at the **workspace root** (the same config the LSP server and `format` would find for those files), so a finding's config is independent of which sub-path you named.
+- `PATH` outside the workspace (isolated single file) → discovery is anchored at **that file's own directory**; if none is found, `check` runs zero-config. The CWD is not consulted for an out-of-workspace file.
 
 ### 5.2 Output formats
 
@@ -104,7 +116,11 @@ file, line, col, code, slug, severity, message
 
 **REQ-LINT-07 — `json` shape equals `expected-diagnostics.json`.**
 
-The object shape is byte-for-byte the shape of the `expected-diagnostics.json` golden files in [E17](../foundations/E17-testing.md). This is not a coincidence to be maintained by hand — it is the contract that lets [E29](../foundations/E29-e2e-testing.md) Branch A diff `check --format json` against the golden file directly. `file` is workspace-relative (forward slashes), `line` and `col` are 1-based, `severity` is one of `error | warning | info | hint`. Findings are ordered by `file`, then `line`, then `col`.
+The object shape is byte-for-byte the shape of the `expected-diagnostics.json` golden files in [E17](../foundations/E17-testing.md). This is not a coincidence to be maintained by hand — it is the contract that lets [E29](../foundations/E29-e2e-testing.md) Branch A diff `check --format json` against the golden file directly. The golden identity is asserted on **stdout only**; stderr is excluded from the byte-for-byte comparison, so the non-deterministic `-v` timing/progress lines (§13.5) never break the diff (this is what lets `-v --format json` stay golden-identical — T-13, E2E-13). `file` is the normalized path (REQ-LINT-10), `line` and `col` are 1-based, `severity` is one of `error | warning | info | hint`. Findings are ordered by `file`, then `line`, then `col`.
+
+**REQ-LINT-10 — Paths are normalized identically across all three formats.**
+
+The path printed for a finding is the same string in `rich`, `compact`, and `json` — there is no per-format path rule. A finding inside the workspace prints **workspace-relative with forward slashes**, regardless of how `PATH` was typed (`templates/blog/post.html` and `./templates/blog/post.html` both print `blog/post.html`). A finding in a file **outside** the workspace — the isolated single-file case (REQ-LINT-01) — has no workspace to relativize against, so it prints the path **as the user typed it on the command line** (forward-slashed), neither absolutized nor invented. The ordering key in REQ-LINT-07 sorts on this same normalized string.
 
 ### 5.3 Exit codes
 
@@ -130,7 +146,7 @@ Both call the same extraction → indexing → diagnostics pipeline ([E30](../fo
 
 ## 6. UI Mockups
 
-> The three subsections below render **the same two diagnostics** in `starlette-blog`'s `templates/blog/post.html`: a `JINJA-E101 undefined-variable` (a bare `post` used with no hint) and a `JINJA-W203 unused-import` (an imported `macros` alias never referenced). Compare them line for line.
+> The three subsections below render **the same two diagnostics** in `starlette-blog`'s `templates/blog/post.html`: a `JINJA-E101 undefined-variable` (`post.titel`, a typo of the hinted `post.title` — the same case [F01](F01-diagnostics.md) §5 uses) and a `JINJA-W203 unused-import` (an imported `macros` alias never referenced). Compare them line for line.
 
 ### 6.1 `--format rich` (default)
 
@@ -139,12 +155,12 @@ The rustc-style report a developer reads at a terminal. Each finding is a multi-
 ```
 $ jinja-lsp check templates/blog/post.html
 
-JINJA-E101 undefined-variable: 'post' is not defined
- --> blog/post.html:4:6
+JINJA-E101 undefined-variable: 'post.titel' is not defined
+ --> blog/post.html:4:9
   |
-4 | {{ post.title }}
-  |    ^^^^
-  = help: did you mean `posts`? (in scope)
+4 | {{ post.titel }}
+  |         ^^^^^
+  = help: did you mean `title`?
 
 JINJA-W203 unused-import: 'macros' imported but never used
  --> blog/post.html:1:1
@@ -155,7 +171,7 @@ JINJA-W203 unused-import: 'macros' imported but never used
 2 problems (1 error, 1 warning)
 ```
 
-States: clean run prints `No problems found.` and exits `0` · a `2` prints the error to stderr (e.g. `error: config file not found: ./nope.toml`).
+States: clean run prints `No problems found.` and exits `0` · the exit-`2` error state is format-independent and shown once in §6.4.
 
 ### 6.2 `--format compact`
 
@@ -163,11 +179,11 @@ One line per finding — `path:line:col: code slug: message`. Built for editor p
 
 ```
 $ jinja-lsp check templates/blog/post.html --format compact
-blog/post.html:4:6: JINJA-E101 undefined-variable: 'post' is not defined
+blog/post.html:4:9: JINJA-E101 undefined-variable: 'post.titel' is not defined
 blog/post.html:1:1: JINJA-W203 unused-import: 'macros' imported but never used
 ```
 
-States: clean run prints nothing to stdout and exits `0`.
+States: clean run prints nothing to stdout and exits `0` · the exit-`2` error state is format-independent and shown once in §6.4.
 
 ### 6.3 `--format json`
 
@@ -176,14 +192,49 @@ A structured array — identical shape to `expected-diagnostics.json` ([E17](../
 ```
 $ jinja-lsp check templates/blog/post.html --format json
 [
-  {"file":"blog/post.html","line":4,"col":6,"code":"JINJA-E101",
-   "slug":"undefined-variable","severity":"error","message":"'post' is not defined"},
+  {"file":"blog/post.html","line":4,"col":9,"code":"JINJA-E101",
+   "slug":"undefined-variable","severity":"error","message":"'post.titel' is not defined"},
   {"file":"blog/post.html","line":1,"col":1,"code":"JINJA-W203",
    "slug":"unused-import","severity":"warning","message":"'macros' imported but never used"}
 ]
 ```
 
-States: clean run prints `[]` and exits `0`.
+States: clean run prints `[]` and exits `0` · the exit-`2` error state is format-independent and shown once in §6.4.
+
+### 6.4 Exit-`2` error state (format-independent)
+
+The exit-`2` error state does **not** vary by `--format`. The error line is written to **stderr** in one fixed shape regardless of `--format`, and stdout stays empty — no report, no `[]`, no partial array (§5.3, §10). A `json` or `compact` consumer therefore sees nothing on stdout and the same `error:` line on stderr as a `rich` user.
+
+```
+$ jinja-lsp check --config ./nope.toml --format json
+error: config file not found: ./nope.toml
+                                          (stdout empty · exit code 2)
+```
+
+### 6.5 Multi-file output
+
+When `check` lints more than one file (a directory or omitted `PATH`), every format simply **concatenates findings in `file`, then `line`, then `col` order** (REQ-LINT-07) — there are no per-file section headers, no banners, no interleaving; each finding already carries its own `file`. `rich` ends with **one** global summary line counting across all files; `compact` and `json` add no summary at all.
+
+```
+$ jinja-lsp check templates/
+
+JINJA-E101 undefined-variable: 'post.titel' is not defined
+ --> blog/post.html:4:9
+  |
+4 | {{ post.titel }}
+  |         ^^^^^
+  = help: did you mean `title`?
+
+JINJA-W203 unused-import: 'request' imported but never used
+ --> email/digest.html:2:1
+  |
+2 | {% import "blog/macros.html" as macros %}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+2 problems (1 error, 1 warning) in 2 files
+```
+
+States: the summary line counts across every linted file; a clean multi-file run still prints `No problems found.` and exits `0`.
 
 ## 7. Visualizations
 
@@ -212,17 +263,17 @@ A single finding object in `--format json`. This is the contract; it equals the 
 {
   "file": "blog/post.html",
   "line": 4,
-  "col": 6,
+  "col": 9,
   "code": "JINJA-E101",
   "slug": "undefined-variable",
   "severity": "error",
-  "message": "'post' is not defined"
+  "message": "'post.titel' is not defined"
 }
 ```
 
 ## 9. Examples & Use Cases
 
-You're working on `starlette-blog` and want a pre-commit gate. You run `jinja-lsp check` with no path, so it lints the configured `templates` dir. It finds the undefined `post` and the unused `macros` import, prints them in `rich`, and exits `1` — your hook blocks the commit.
+You're working on `starlette-blog` and want a pre-commit gate. You run `jinja-lsp check` with no path, so it lints the configured `templates` dir. It finds the `post.titel` typo and the unused `macros` import, prints them in `rich`, and exits `1` — your hook blocks the commit.
 
 In CI you'd rather diff structured output, so the workflow runs `jinja-lsp check --format json templates/ > out.json` and compares against a committed baseline. To silence a known-and-accepted warning class for the whole run, you add `--ignore JINJA-W2` and the unused-import finding drops out, leaving only the error and exit `1`.
 
@@ -231,11 +282,12 @@ In CI you'd rather diff structured output, so the workflow runs `jinja-lsp check
 - **`PATH` doesn't exist** → exit `2`, error to stderr; stdout stays empty (so `--format json` consumers see no array).
 - **`--config` points at a missing or malformed file** → exit `2`; the previous-config fallback is an LSP-only behavior ([E15](../foundations/E15-app-config.md)), not a CLI one.
 - **Directory with zero matching files** → clean run, exit `0` (`No problems found.` / `[]`).
+- **Finding in a file outside the workspace** → its path can't be made workspace-relative, so it prints **as typed** on the command line (forward-slashed), identically in all three formats (REQ-LINT-10).
 - **`--select` and `--ignore` overlap** → `ignore` wins for the overlapping code (mirrors [F01](F01-diagnostics.md) §5.3).
 - **Warnings only, no errors** → still exit `1` (any finding is non-zero).
 - **A slug passed to `--select`/`--ignore`** (e.g. `--ignore undefined-variable`) → rejected as an invalid filter, exit `2` (slugs are output labels, not input — [ADR-003](../decisions/ADR-003-diagnostic-code-scheme.md)).
 - **Output piped (not a TTY)** → `rich` drops color automatically; `compact`/`json` are already color-free.
-- **A `noqa`-suppressed finding** → the suppressed code is absent from every format's output exactly as in the server ([F01](F01-diagnostics.md) §5.4); an invalid `noqa` still surfaces its own `JINJA-W107 invalid-noqa` finding, so a file whose only "error" is a bad `noqa` still exits `1`.
+- **A `noqa`-suppressed finding** → the suppressed code is absent from every format's output exactly as in the server ([F01](F01-diagnostics.md) §5.4); an invalid `noqa` still surfaces its own `JINJA-W107 invalid-noqa` finding, so a file whose only finding is a bad-`noqa` warning still exits `1` (any finding is non-zero, even a warning).
 
 ## 11. Testing
 
@@ -257,6 +309,12 @@ Each row is a concrete invocation (with flags), the fixture it runs against, and
 | T-03 | `check` (PATH omitted → lints configured `templates` dirs) | integration | starlette-blog | findings over the discovered set · `1` | REQ-LINT-01 |
 | T-04 | `check ../outside/tpl.html` (PATH outside workspace, linted in isolation) | integration | call-and-paths | only checks reachable from it resolve; cross-file refs unresolved · `1` | REQ-LINT-01 |
 | T-05 | `check` over a directory with zero matching files (§10) | integration | starlette-blog (empty subdir) | `No problems found.` · `0` | REQ-LINT-01, REQ-LINT-08 |
+| T-04b | `check a.html b.html` (multiple positionals) and `check templates/**/*.html` (shell glob) → union linted, de-duplicated, globally ordered | integration | starlette-blog | findings over the union, file/line/col order · `1` | REQ-LINT-01 |
+| **Path normalization (REQ-LINT-10)** ||||||
+| T-04c | in-workspace finding prints workspace-relative forward-slash path identically in rich / compact / json, regardless of typed `PATH` (`./templates/…` ≡ `templates/…`) | unit (snapshot) | starlette-blog | same `blog/post.html` path in all three formats · `1` | REQ-LINT-10 |
+| T-04d | outside-workspace finding prints the path as typed (forward-slashed), not absolutized | integration | call-and-paths | `../outside/tpl.html` printed as typed · `1` | REQ-LINT-10, REQ-LINT-01 |
+| **Config-discovery anchor (REQ-LINT-11)** ||||||
+| T-04e | anchor per case: omitted → CWD; in-workspace `PATH` → workspace root; outside-workspace → file's own dir (else zero-config) | integration | starlette-blog + call-and-paths | each case discovers the expected config · per-findings | REQ-LINT-11 |
 | **Flags (REQ-LINT-02)** ||||||
 | T-06 | `--config ./jinja.toml` parses and is honored | unit | — | uses given config, not discovery · n/a | REQ-LINT-02 |
 | T-07 | `-v`/`--verbose` raises tracing to INFO on **stderr**; findings still on stdout | integration | undefined-vars | discovery/timing on stderr; findings unchanged on stdout · `1` | REQ-LINT-02 |
@@ -277,6 +335,7 @@ Each row is a concrete invocation (with flags), the fixture it runs against, and
 | **`compact` format (REQ-LINT-05) + §6 state** ||||||
 | T-20 | `--format compact` → one `path:line:col: CODE slug: message` line per finding, no blank lines, no color | unit (snapshot) | undefined-vars, unused-symbols | one line per finding, color-free · `1` | REQ-LINT-05 |
 | T-21 | `compact` clean run (§6.2 state) | integration | starlette-blog | empty stdout · `0` | REQ-LINT-05, REQ-LINT-08 |
+| T-21b | multi-file `rich` over a directory (§6.5) → findings concatenated in file/line/col order, one global summary line counting across files | unit (snapshot) | undefined-vars | concatenated blocks + single `N problems (…) in M files` · `1` | REQ-LINT-04 |
 | **`json` format (REQ-LINT-06 / 07) + §6 state + golden identity** ||||||
 | T-22 | `--format json` array has exactly the 7 keys (`file,line,col,code,slug,severity,message`), ordered by file/line/col | golden (check) | all diagnostic fixtures | well-formed 7-key array · `1` | REQ-LINT-06 |
 | T-23 | `--format json` output equals `expected-diagnostics.json` **byte-for-byte** (regression gate) | golden (check) | syntax-errors, undefined-vars, unused-symbols, duplicates, inheritance, call-and-paths | stdout ≡ golden file · `1` | REQ-LINT-07 |
@@ -286,8 +345,10 @@ Each row is a concrete invocation (with flags), the fixture it runs against, and
 | T-26 | findings present (any format) → exit `1` | integration | syntax-errors | report rendered · `1` | REQ-LINT-08 |
 | T-27 | warnings-only, no errors → still exit `1` (§10) | integration | unused-symbols | warning findings rendered · `1` | REQ-LINT-08 |
 | T-28 | bad `--config` (missing or malformed; no LSP fallback, §10) → error to **stderr**, stdout empty in every format → exit `2` | integration | config-reload (invalid variant) | `error: …` on stderr; stdout empty (`json` consumers see no array) · `2` | REQ-LINT-08 |
+| T-28b | exit-`2` error line is identical across `--format rich`/`compact`/`json` (§6.4, format-independent) | unit (snapshot) | — (`./nope.toml`) | same `error: …` stderr line, empty stdout in all three formats · `2` | REQ-LINT-08 |
 | T-29 | nonexistent `PATH` (§10) → error to stderr, stdout empty → exit `2` | integration | — (`./does-not-exist`) | `error: …` on stderr · `2` | REQ-LINT-08 |
 | T-30 | slug passed to `--select`/`--ignore` (e.g. `--ignore undefined-variable`, §10) → rejected as invalid filter → exit `2` | unit | — | `error: …` invalid filter on stderr · `2` | REQ-LINT-03, REQ-LINT-08 |
+| T-30b | `-` is not a stdin sentinel (§2 non-goal) → treated as a literal path, fails as nonexistent → exit `2` | unit | — (`check -`) | `error: …` on stderr; no stdin read · `2` | REQ-LINT-01, REQ-LINT-08 |
 | T-31 | `2>/dev/null` keeps the report intact (diagnostics never leak to stderr) | integration | undefined-vars | findings on stdout survive stderr redirect · `1` | REQ-LINT-08 |
 | **Parity + noqa (REQ-LINT-09)** ||||||
 | T-32 | `check` finding (code/slug/range/message) equals server `publishDiagnostics` for the same file | integration | starlette-blog | per-finding equality CLI ↔ server · matches | REQ-LINT-09 |
@@ -302,15 +363,17 @@ Each row is a concrete invocation (with flags), the fixture it runs against, and
 
 | Requirement | Covered by |
 |---|---|
-| REQ-LINT-01 | T-01–T-05 (file / directory / omitted / outside-workspace / empty-dir) |
+| REQ-LINT-01 | T-01–T-05, T-04b, T-04d, T-30b (file / directory / omitted / outside-workspace / empty-dir / multiple-positionals + glob / `-` not stdin) |
 | REQ-LINT-02 | T-06–T-08 (`--config`, `-v`/`--verbose`, `--format`/`--select`/`--ignore` parsing) |
 | REQ-LINT-03 | T-09–T-14, T-30 (code, class-prefix, overlap, CLI-over-config precedence, slug rejection) |
-| REQ-LINT-04 | T-15–T-19 (`rich` block + clean state + TTY/pipe/`NO_COLOR` color gating) |
+| REQ-LINT-04 | T-15–T-19, T-21b (`rich` block + clean state + TTY/pipe/`NO_COLOR` color gating + multi-file concatenation/summary) |
 | REQ-LINT-05 | T-20–T-21 (`compact` one-line-per-finding + clean state) |
 | REQ-LINT-06 | T-22 (7-key ordered array) |
-| REQ-LINT-07 | T-23–T-24 (byte-for-byte golden identity + `[]` clean) |
-| REQ-LINT-08 | T-05, T-16, T-21, T-25–T-31 (exit 0 / 1 / 2 across formats, edges) |
+| REQ-LINT-07 | T-23–T-24 (byte-for-byte golden identity, stdout-only + `[]` clean) |
+| REQ-LINT-08 | T-05, T-16, T-21, T-25–T-31, T-28b (exit 0 / 1 / 2 across formats, edges, format-independent error line) |
 | REQ-LINT-09 | T-32–T-34 (CLI ↔ server parity + `noqa` suppression + invalid-`noqa`) |
+| REQ-LINT-10 | T-04c, T-04d (path normalization identical across formats + outside-workspace as-typed) |
+| REQ-LINT-11 | T-04e (config-discovery anchor per `PATH` case) |
 
 ## 12. End-to-End Test Plan
 
@@ -369,13 +432,19 @@ N/A — `check` is a plain-text CLI; per constitution §4.6 Accessibility is N/A
 
 - **Decided** — `--format json` is the new flag and its shape is fixed to the golden-file shape ([ADR-003](../decisions/ADR-003-diagnostic-code-scheme.md), [E29](../foundations/E29-e2e-testing.md)).
 - **Decided** — slugs are never accepted as `--select`/`--ignore` input (output labels only).
+- **Decided** — paths are normalized identically across all three formats: workspace-relative forward-slashed inside the workspace, as-typed for the outside-workspace case (REQ-LINT-10).
+- **Decided** — no stdin mode; `check` reads paths only (§2 non-goal).
+- **Decided** — multiple positionals are accepted; globbing is the shell's job, not the tool's (REQ-LINT-01).
+- **Decided** — config-discovery anchor is fixed per `PATH` case (REQ-LINT-11); mechanics stay in [E15](../foundations/E15-app-config.md).
 
 ## 16. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — the code scheme and exit-contract philosophy; [F01-diagnostics](F01-diagnostics.md) — the catalog `check` renders; [E15-app-config](../foundations/E15-app-config.md) — config and `select`/`ignore`; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the shared engine.
 - **Related:** [E01-architecture](../foundations/E01-architecture.md) — one engine, three front-ends; [E17-testing](../foundations/E17-testing.md) — the golden-file shape; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — Branch A diffs this command's json; [F18-formatting](F18-formatting.md) — the sibling `format` command; [F21-release-ci](F21-release-ci.md) — CI runs `check` as a gate.
+- **Shared exit contract:** `check` and [F18](F18-formatting.md) `format` share exit code `2` = config or I/O error (F18 §5.8 defines the same scheme). The two commands differ only on the success codes — `check` uses `1` for "findings present", `format` uses `1` for "files changed / would change" — but a `2` means the same thing in both: the run couldn't start, not that the templates were wrong.
 
 ## 17. Changelog
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 to concrete invocation-level rows (T-01–T-34) and §12.2 to E2E-01–E2E-18, covering every format, flag and combination, all three exit codes, the golden-file identity, `select`/`ignore` filtering and overlap, `noqa` suppression and invalid-`noqa`, CLI↔server parity, and `NO_COLOR`/TTY-vs-pipe color gating; rebuilt the §11.4 requirement-coverage map; added the `noqa`/`JINJA-W107` §10 edge.
+- **2026-06-26** — Spec-review reconciliation (jinja-lsp-thx, -xay, -nst, -578, -ci5, -4dv, -na4, -33w, -6i3, -zcp): added §6.4 mocking the format-independent exit-`2` error state required by constitution §6 (thx); added REQ-LINT-10 fixing path normalization across all three formats and the outside-workspace as-typed case, with §10 edge and T-04c/T-04d (xay); added a §2 stdin non-goal and T-30b (nst); made `PATH` repeatable with shell-glob semantics in REQ-LINT-01 and T-04b (578); added REQ-LINT-11 fixing the config-discovery anchor per `PATH` case (deferring mechanics to E15) with T-04e (ci5); stated the golden identity is asserted on stdout only in REQ-LINT-07 (4dv); added §6.5 multi-file concatenation/summary rule and mockup with T-21b (na4); reworded the §10 bad-`noqa` edge from "error" to "finding/warning" (33w); aligned the undefined-variable mockups/§8/§9 with the F01 cast — `post.titel` → "did you mean `title`?" (6i3); added a shared-exit-contract cross-reference to F18 in §16 — F18 §5.8 already defines exit `2` = config/IO error, so no F18 edit was needed (zcp). Bumped to 0.2.

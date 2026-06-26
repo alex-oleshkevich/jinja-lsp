@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-25
+> **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** When the cursor rests on a Jinja symbol, highlight every occurrence of it in the current file — distinguishing the write (definition) from the reads (usages). The file-local, automatic counterpart to find-references.
 
@@ -62,7 +62,7 @@ Occurrences come from the file's own extracted facts, never from re-scanning tex
 
 **REQ-HL-02 — Collect occurrences from the current `TemplateIndex` only.**
 
-Occurrences are the binding plus every `Reference` that resolves to it within the same file ([E07](../foundations/E07-data-model.md) REQ-DATA-11). Collection never crosses into other files — that's [F09](F09-find-references.md)'s job. Each occurrence is a range at the symbol's name (for an attribute / filter / call reference, the head-identifier range only). A variable reference resolves to the `VariableDefinition` whose `valid_range` ([E07](../foundations/E07-data-model.md) REQ-DATA-03) contains it, innermost binding winning ([E07](../foundations/E07-data-model.md) REQ-DATA-11) — so an inner `{% for post %}` binding and an outer `post` are distinct symbols, and F11 highlights only the occurrences inside the resolved binding's `valid_range`. This is the mechanism that keeps the inner `post` from cross-highlighting the outer one.
+Occurrences are every `Reference` that resolves to the symbol within the same file, plus the binding itself **only when the binding lives in this file** ([E07](../foundations/E07-data-model.md) REQ-DATA-11). When the binding lives elsewhere (an imported macro defined in another file) or nowhere template-owned (a host-injected variable), no in-file binding occurrence exists and the result is reads-only — see REQ-HL-03 and REQ-HL-04. Collection never crosses into other files — that's [F09](F09-find-references.md)'s job. Each occurrence is a range at the symbol's name (for an attribute / filter / call reference, the head-identifier range only). A variable reference resolves to the `VariableDefinition` whose `valid_range` ([E07](../foundations/E07-data-model.md) REQ-DATA-03) contains it, innermost binding winning ([E07](../foundations/E07-data-model.md) REQ-DATA-11) — so an inner `{% for post %}` binding and an outer `post` are distinct symbols, and F11 highlights only the occurrences inside the resolved binding's `valid_range`. This is the mechanism that keeps the inner `post` from cross-highlighting the outer one.
 
 ### 5.3 Write vs read kinds
 
@@ -74,7 +74,7 @@ The kind is assigned per occurrence, by what the occurrence *does* to the symbol
 
 - a **definition / binding** — the `{% macro %}` / `{% block %}` / `{% set %}` / `{% for %}` target / `{% with %}` binding / macro-parameter name — is `kind = Write`;
 - a **usage** (a read of the value) is `kind = Read`;
-- a **child block that overrides a parent block** — it re-defines the block — is `kind = Write` (a re-definition, not a read);
+- a **child block that overrides a parent block** — it re-defines the block — is `kind = Write` (a re-definition, not a read). Because F11 is file-local, this only applies when both blocks live in the **same file** (rare — block override normally spans the child→parent template boundary, which is [F09](F09-find-references.md)'s domain). The optional `{% endblock name %}` name echo, when present, is **not** a separate highlightable occurrence — only the opening `{% block name %}` name range is collected;
 - **each `{% set x = … %}` re-assignment** of the same name is `kind = Write` (every re-assign writes);
 - a **local `from … import` binding** (the name introduced by `{% from "…" import name %}`) is `kind = Write` — it binds the name locally;
 - the **head of an attribute access** (`post` in `{{ post.title }}`) is `kind = Read` — reading the receiver.
@@ -113,6 +113,8 @@ The cursor rests on `post` inside the loop body; the loop variable's binding (th
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+States: active highlight (write + reads shown) · no-result (cursor off-symbol, §6.3).
+
 ### 6.2 A macro highlighted (definition + call)
 
 Resting on `excerpt` boxes the `{% macro %}` name and underlines its one call.
@@ -122,6 +124,36 @@ Resting on `excerpt` boxes the `{% macro %}` name and underlines its one call.
   2 │ {{ excerpt(post, 40) }}
        ▓▓▓▓▓▓▓ (write)        ‾‾‾‾‾‾‾ (read)
 ```
+
+States: active highlight (write + read shown) · no-result (cursor off-symbol, §6.3).
+
+### 6.3 No-result (cursor off a highlightable symbol)
+
+The cursor sits on host text, a delimiter, whitespace, or a host-owned variable (`request`); nothing lights up and the host LSP's own highlight wins (REQ-HL-04).
+
+```
+  1 │ {% for post in request.state.posts %}
+                     ▏  ◄── cursor on host-owned `request` → no Jinja highlight
+  2 │   <h2>Latest</h2>
+          ▏  ◄── cursor on host text → no highlight
+```
+
+States: no-result only (empty `DocumentHighlight[]`, no error).
+
+## 8. Data Shapes
+
+`textDocument/documentHighlight` returns a `DocumentHighlight[]`. Each element is a `{ range, kind }` where `kind` is the LSP `DocumentHighlightKind` enum — `Text = 1`, `Read = 2`, `Write = 3`. F11 emits only `Read` and `Write`, never `Text` (§4). The response for the `post` loop variable in §6.1:
+
+```json
+[
+  { "range": { "start": {"line": 0, "character": 8},  "end": {"line": 0, "character": 12} }, "kind": 3 },
+  { "range": { "start": {"line": 1, "character": 9},  "end": {"line": 1, "character": 13} }, "kind": 2 },
+  { "range": { "start": {"line": 2, "character": 8},  "end": {"line": 2, "character": 12} }, "kind": 2 },
+  { "range": { "start": {"line": 3, "character": 24}, "end": {"line": 3, "character": 28} }, "kind": 2 }
+]
+```
+
+A no-result position (REQ-HL-04) returns an empty array `[]`.
 
 ## 9. Examples & Use Cases
 
@@ -155,7 +187,7 @@ Each row is a concrete cursor position over a named construct, with the exact ex
 | 2 | Cursor on `{% set %}` target name · synthetic doc (`{% set total = 0 %}…{{ total }}`) | integration | highlights at the `set` target + each `total` read | REQ-HL-01 |
 | 3 | Cursor on a macro parameter inside its body · synthetic doc (`{% macro m(words) %}{{ words }}{% endmacro %}`) | integration | highlights at the parameter decl + each `words` use in the body | REQ-HL-01 |
 | 4 | Cursor on a locally-defined macro name `post_url` · `blog/macros.html` | integration | highlights at the `{% macro %}` name + any same-file call | REQ-HL-01 |
-| 5 | Cursor on a block name `content` · `base.html` | integration | highlights at the `{% block content %}` name (+ `endblock` label / overrides per Pass 1 facts) | REQ-HL-01 |
+| 5 | Cursor on a block name `content` · `base.html` | integration | highlights at the `{% block content %}` opening name only; the `{% endblock content %}` name echo is **not** a separate occurrence; same-file override would add a `Write` (§5.3) | REQ-HL-01 |
 | 6 | Cursor on an import alias `y` · synthetic doc (`{% import "x" as y %}{{ y.z }}`) | integration | highlights at the alias slot + each `y` use | REQ-HL-01 |
 | 6a | Cursor on the `loop` special var · synthetic doc (`{% for x in xs %}{{ loop.index }}{{ loop.first }}{% endfor %}`) | integration | highlights at each `loop` head only (`loop`, not `.index`/`.first`) within the loop body | REQ-HL-01 |
 | 6b | Cursor on one target of a tuple-unpack `{% for k, v in items %}{{ k }}:{{ v }}{% endfor %}` · synthetic doc | integration | only that target's uses highlight (`k` highlights `k`, leaves `v` dark; `Write` on its `for` slot) | REQ-HL-01 |
@@ -229,8 +261,10 @@ Each row is a concrete cursor position over a named construct, with the exact ex
 
 ### 13.1 Security & Privacy
 
+- **Access & authorization** — a read-only LSP handler over stdio; single-user; no host execution. Trust boundary = the open file and the workspace index.
 - **Input & validation** — all template content is untrusted; highlights read the index only and never execute templates (P1).
 - **Data sensitivity** — ranges point only into the open file; nothing leaves the machine.
+- **Baseline** — meets OWASP ASVS L1; STRIDE: the only untrusted input is template text, handled by static parse (P1).
 
 ### 13.2 Accessibility
 
@@ -239,6 +273,10 @@ Each row is a concrete cursor position over a named construct, with the exact ex
 ### 13.4 Performance & Scale
 
 - **Latency** — highlight runs on every cursor move, so it must be fast; reading one `TemplateIndex` keeps it well under the 100 ms budget (P6).
+
+### 13.5 Observability
+
+- **Logs / traces** — inherits the lightweight `tracing` baseline ([E16](../foundations/E16-conventions.md)); as a hot path (highlight runs on every cursor move), only slow resolutions emit a span — no dedicated metrics.
 
 ## 16. Cross-References
 
@@ -249,4 +287,5 @@ Each row is a concrete cursor position over a named construct, with the exact ex
 
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — Expanded §11.2 to 19 concrete rows and §12.2 to 12 E2E scenarios for full combinatorial coverage (Write/Read kinds; loop var / set target / macro param / local macro / block / import alias; defined-in-file vs imported-elsewhere; scope-distinct names; single-occurrence write & read; host-text / delimiter / whitespace negatives; broken-template and inline §10 edges). Rebuilt §11.4 as a one-row-per-REQ bijection.
+- **2026-06-26** — v0.3: spec-review fixes. Clarified REQ-HL-02 that the binding occurrence is included only when the binding lives in this file; otherwise occurrences are reads-only (jinja-lsp-1hy). Stated block-override `Write` applies same-file only and that the `{% endblock name %}` echo is not a separate occurrence (§5.3, row 5) (jinja-lsp-p46). Added a "States:" line to each §6 mockup plus a §6.3 no-result (cursor off-symbol) mockup (jinja-lsp-cuq). Added §8 Data Shapes pinning `DocumentHighlight{range, kind}` and the enum `Text=1`/`Read=2`/`Write=3` (jinja-lsp-ydv). Added a §13.5 Observability note inheriting E16's lightweight tracing on the hot path (jinja-lsp-d2u). Added the required §13.1 "Access & authorization" and "Baseline (OWASP ASVS L1 / STRIDE)" bullets (jinja-lsp-9ix).
 - **2026-06-25** — v0.2: grounded scope disambiguation in E07's `valid_range` (REQ-DATA-03) + reference resolution (REQ-DATA-11) — F11 now resolves the cursor's reference to its binding and highlights only that binding's occurrences within its `valid_range` (§3, §5.1, §5.2). Stated attribute/filter/call references highlight only the head identifier. Made REQ-HL-03 explicit per kind (binding/override/`set`-reassign/`from`-import → `Write`; usage/attribute-head → `Read`). Added `loop` special var + `{% for k, v %}` tuple-unpack handling (§5.1) with test rows 6a–6c / 14a–14d / 17a–17b and E2E-08b/08c/11b. Added the host-injected/un-hinted variable negative to REQ-HL-04 (consistent with F09 REQ-REF-04). Removed the never-produced `Text` kind from §4. Refreshed the §11.4 REQ↔rows bijection and the §6.1 mockup caption.

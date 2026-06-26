@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-25
+> **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** Color Jinja by *meaning*, not just syntax — a known macro distinct from an unknown variable, a built-in filter from a user filter — using a token legend the editor maps to theme colors.
 
@@ -81,6 +81,8 @@ Modifiers qualify a type; several can apply to one token (they're a bitset):
 
 So `truncate` is `filter` + `{builtin, defined}`; a hinted `markdown` filter is `filter` + `{user, defined}`; a misspelled `truncat` is `filter` + `{unknown}`. The theme can dim `unknown` and tint `user` filters differently from `builtin` ones.
 
+No modifier lists `parameter` or `block` under its *Applies to*: both token types carry **zero modifiers**. A `parameter` is a binding occurrence (§5.3.2) and a `block` is a definition (§5.3.3) — neither resolves against the index or registry, so the `defined`/`unknown` and `builtin`/`user` axes do not apply.
+
 **REQ-SEM-06 — The legend is append-only; retired indices are tombstoned, never reused.**
 
 Both lists above are now frozen. A token type or modifier may be **added** only by appending it at the next free index; an existing entry's index must never shift, because the wire encoding is positional — a token's type/modifier is the *index*, so reordering silently re-paints every token in flight. A retired entry's index is **permanently reserved (tombstoned)**: it is never reused for a different meaning and never removed (removal would re-pack the indices above it). Index 7 of the type list is the first such tombstone — it once held the `keyword` type (REQ-SEM-01), now retired; it stays empty rather than being filled by a future type. This append-only, tombstone-on-retire rule is what lets an editor cache the legend across server versions.
@@ -92,6 +94,8 @@ Editors ask for the whole file or just the visible viewport.
 **REQ-SEM-03 — Support `full` and `range`.**
 
 `semanticTokens/full` returns tokens for the entire document; `semanticTokens/range` returns tokens for a given range (the viewport), so large files stay responsive. Both encode tokens as the LSP delta-position integer array, relative to the legend declared at `initialize`. A `range` response emits the **same tokens** `full` would for the overlapping lines, but **re-encoded relative to the range start** — the first token's delta is measured from the range origin, not the document origin. The raw integer arrays are therefore *not* a literal subset of `full`'s array (the leading deltas differ); only the **decoded** `(absolute-position, type, modifiers)` tuples form a subset. Tests assert subset-ness on the decoded tuples, never on the wire integers.
+
+**Inclusion is by overlap; the first delta is never negative.** A token is emitted iff its span **overlaps** the requested range — including a token whose start falls *above* (before) the range start but whose span reaches into it. LSP deltas are unsigned, so the first emitted token cannot encode a position earlier than the range origin; the server therefore anchors the first token at its own **absolute** start (deltaLine/deltaStartChar measured from document origin `(0,0)`, the conventional baseline for the first entry), then encodes every subsequent token relative to its predecessor as usual. Decoding reconstructs each token's true file-absolute position regardless of where the range began, so the overlap-included token's decoded position equals the one `full` would report.
 
 ### 5.3 Token derivation
 
@@ -116,6 +120,10 @@ A call site `foo(args)` is, syntactically, just `identifier(args)` — the gramm
 #### 5.3.2 `parameter` vs `variable`: a binding occurrence vs a use
 
 `parameter` marks the *binding* occurrence of a name in a macro **signature** (`{% macro excerpt(post, words) %}` — `post` and `words`); `variable` marks a *use* of a name in a body. Syntax can't separate them — both are identifiers. The distinguishing fact comes from [E07](../foundations/E07-data-model.md): an occurrence is a `parameter` token iff its enclosing owner (REQ-DATA-12) is a `MacroDefinition` **and** the occurrence is one of that macro's `parameters` (REQ-DATA-01) at its signature span — not a reference inside the body. Every other identifier occurrence is a `variable` use, resolved per §5.3.1 / REQ-DATA-11. (This mirrors how [F06](F06-hover.md) reads E07 slots to type an occurrence.)
+
+#### 5.3.3 `block`: a name from a definition, not a resolved reference
+
+A `block` token marks a block name (`{% block content %}`) — unlike a call or a use, it is a *definition*, not a reference resolved against the index. The token comes straight from [E07](../foundations/E07-data-model.md): an occurrence is a `block` token iff it is the `name` span of a `BlockDefinition` (REQ-DATA-02 — the block's declared name at its definition span). No lookup runs, so the token carries no resolution modifier (§5.2) — the name *is* the definition. (Block usages elsewhere, e.g. an `extends` child re-declaring a block, are likewise the name spans of their own `BlockDefinition`s.)
 
 ### 5.4 Delta is deferred
 
@@ -147,6 +155,7 @@ The legend maps each token type + modifier to an example coloring an editor them
 │  filter {user,defined}           markdown          ● purple, italic      │
 │  filter {unknown}                truncat           ● red, dimmed         │
 │  function {builtin,defined}      url_for           ● gold                │
+│  function {user,defined}         csrf_token        ● gold, italic        │
 │  variable {builtin,defined}      request           ● blue (a var, §5.3.1)│
 │  test {builtin,defined}          defined           ● green               │
 │  block                           content           ● orange              │
@@ -162,10 +171,11 @@ The legend maps each token type + modifier to an example coloring an editor them
 `{{ post_url(post) | truncat }}` after semantic coloring: the macro is "defined," the variable resolves via a hint, and the misspelled filter is flagged "unknown."
 
 ```
-  4 │ {{ post_url ( post ) | truncat }}
-       ▔▔▔▔▔▔▔▔        ▔▔▔▔     ▔▔▔▔▔▔▔
-       macro{defined}  var      filter{unknown}
-                       {defined,user}   ← dimmed red; F01 also squiggles E102
+  4 │ {{ post_url(post) | truncat }}
+         ▔▔▔▔▔▔▔▔ ▔▔▔▔    ▔▔▔▔▔▔▔
+         macro    variable filter
+         {defined,{defined,{unknown}  ← dimmed red; F01 also squiggles E102
+          user}    user}
 ```
 
 ## 9. Examples & Use Cases
@@ -295,7 +305,7 @@ for constructs not present in a registered fixture (§11.3).
 
 ### 12.1 Coverage target
 
-**100% of the legend and both requests**, via `pytest-lsp` against the real stdio binary ([E29-e2e-testing](../foundations/E29-e2e-testing.md), Branch B).
+**100% of this feature's user-visible scope** — the declared legend, both requests (`full` and `range`), the resolved/`unknown`/`user`-override modifier paths, and the deferred-`delta` capability fallback — across all seven §12.2 scenarios, via `pytest-lsp` against the real stdio binary ([E29-e2e-testing](../foundations/E29-e2e-testing.md), Branch B).
 
 ### 12.2 Scenarios
 
@@ -313,8 +323,10 @@ for constructs not present in a registered fixture (§11.3).
 
 ### 13.1 Security & Privacy
 
+- **Access & authorization** — a read-only handler over stdio (P2); single-user developer tool; no host execution, no writes, no host-language analysis (P1, P5).
 - **Input & validation** — all template content is untrusted; tokens are derived from the index only and never by executing templates (P1).
 - **Data sensitivity** — tokens classify only the open file's own spans; nothing leaves the machine.
+- **Baseline** — OWASP ASVS L1; STRIDE: the only untrusted input is template text, handled by static parse (P1), so tampering/info-disclosure surfaces reduce to graceful degradation (P3).
 
 ### 13.2 Accessibility
 
@@ -334,3 +346,4 @@ for constructs not present in a registered fixture (§11.3).
 - **2026-06-24** — Initial draft.
 - **2026-06-25** — v0.2 (review fixes): removed the `keyword` token type — the editor grammar owns statement keywords and re-colouring them violates §2 (REQ-SEM-01; index 7 retired/tombstoned). Added REQ-SEM-06 (append-only, tombstone-on-retire legend). Defined the bare-call resolution order macro-in-index → registry-function → `variable {unknown}` (§5.3.1) and reconciled `request` as a `variable`, `url_for` as a `function`, with no F02 user-function category (the `{user}` function modifier comes from F04 hints). Cited E07 REQ-DATA-12/01 for the parameter-vs-variable derivation (§5.3.2). Reworded `range` from "strict subset" to a decoded-tuple subset re-encoded from the range start (REQ-SEM-03), asserting subset on decoded tuples. Added a §3 note framing `unknown` as F01's quiet complement and the `builtin`/`user`/`macro` axes as the real value. Removed `function` from the `unknown` modifier's appliers (unresolved calls fall to `variable {unknown}`). Updated the §6.1 legend mockup, §11.2 tests, §11.4 coverage (added REQ-SEM-06), and E2E-01/02/03 to match.
 - **2026-06-25** — Expanded §11.2 test plan and §12.2 E2E scenarios to cover every combination: each §5.1 token type, each §5.2 modifier in both `defined`/`unknown` and `builtin`/`user` polarities, the parameter/block "no resolution modifier" cases, all §10 edges (disabled pack, hint-over-builtin, broken template, range-split, inline, host-bytes, legend evolution), and the §6 legend rows / §6.2 line. Updated §11.3 fixtures and §11.4 requirement-coverage table; added E2E-05/06/07.
+- **2026-06-26** — v0.3 (spec-review fixes): stated normatively that `parameter` and `block` tokens carry zero modifiers (REQ-SEM-02; jinja-lsp-0zs). Added §5.3.3 deriving the `block` token from a `BlockDefinition` name span (E07 REQ-DATA-02), parallel to §5.3.2 (jinja-lsp-4jb). Clarified `range` inclusion-by-overlap and that the first emitted token anchors at its absolute start so no delta is negative (REQ-SEM-03; jinja-lsp-3g3). Added a `function {user,defined}` row to the §6.1 legend mockup (jinja-lsp-sxz). Realigned the §6.2 colored-line so each underline sits under its token, with the modifier annotation inline (jinja-lsp-1rl). Broadened §12.1 E2E coverage wording to match all seven §12.2 scenarios (jinja-lsp-a2w). Added the required §13.1 "Access & authorization" and "Baseline" bullets (jinja-lsp-9ix).

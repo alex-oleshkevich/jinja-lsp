@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-25
+> **Version:** 0.3   ·   **Last updated:** 2026-06-26
 >
 > **Purpose:** Actionable annotations above macros and blocks — a reference count and an inheritance summary — whose counts are computed lazily via `codeLens/resolve` so the initial response stays cheap.
 
@@ -55,6 +55,8 @@ For each `MacroDefinition` and `BlockDefinition` in the file ([E07](../foundatio
 
 Activating the lens invokes `textDocument/references` at the definition **with `context.includeDeclaration: false`**, so clicking `5 references` opens a panel of exactly five locations (not the six F09 shows with the declaration). The lens count and that panel's length are therefore equal by construction: `lens-N == F09 panel-N(includeDeclaration: false)`.
 
+**UX note:** the lens count may read one *lower* than the editor's built-in "Find All References" command, which usually counts the declaration too (so `5 references` on the lens vs. `6` from the editor command for the same macro). This one-off difference is intended — the lens deliberately excludes the declaration so its number matches the panel it opens.
+
 The count-0 case is **not** rendered as a lens — see REQ-LENS-05 and §15.
 
 This lens kind is **on by default**.
@@ -93,7 +95,7 @@ The count work happens on resolve, not on the initial request.
 
 `textDocument/codeLens` returns lenses with range and `data` only. `codeLens/resolve` reads `data`, queries the reference/inheritance graph, and fills in the `title` and `command`.
 
-The `data` payload carries a **stable symbol id**, not a cursor position: the tuple **(file URI, symbol kind, symbol name, declaration name-range)** drawn straight from the `MacroDefinition`/`BlockDefinition` in the [E07](../foundations/E07-data-model.md) `TemplateIndex` (E07 REQ-DATA-01/02; the declaration name-range is the same range F09's REQ-REF-03 uses for `includeDeclaration`). An index-assigned id (the symbol's slot in the `TemplateIndex`) is an acceptable equivalent encoding so long as it round-trips to the same symbol. Resolve looks the symbol up by this id and **never re-derives it from a live cursor position**, so the same lens resolves to the same title regardless of where the user's cursor sits or how text below the definition shifts. If the document changed since the lens was issued and the symbol is gone (no matching id in the rebuilt index), resolve returns the lens with an empty title rather than throwing (P3).
+The `data` payload carries a **stable symbol id**, not a cursor position: the tuple **(file URI, symbol kind, symbol name, declaration name-range)** drawn straight from the `MacroDefinition`/`BlockDefinition` in the [E07](../foundations/E07-data-model.md) `TemplateIndex` (E07 REQ-DATA-01/02; the declaration name-range is the same range F09's REQ-REF-03 uses for `includeDeclaration`). An index-assigned id (the symbol's slot in the `TemplateIndex`) is an acceptable equivalent encoding so long as it round-trips to the same symbol. Resolve looks the symbol up by this id and **never re-derives it from a live cursor position**, so the same lens resolves to the same title regardless of where the user's cursor sits or how text below the definition shifts. Lookup matches on **(kind, name) within the file**, using the declaration name-range only as a tiebreaker between same-named same-kind symbols (rare); it does **not** require exact range equality, so a definition that merely shifted lines after an edit still resolves rather than being treated as gone. If the document changed since the lens was issued and the symbol is genuinely gone (no matching (kind, name) in the rebuilt index), resolve returns the lens with an empty title rather than throwing (P3).
 
 ### 5.5 Zero-reference suppression
 
@@ -138,26 +140,26 @@ templates/blog/post.html
 
 ### 6.2 Stacked lenses — a mid-chain block in both directions
 
-In a `base → post → amp-post` chain, the mid-chain `post` block both *overrides* `base`'s block **and** *is extended by* `amp-post`. It therefore carries two inheritance lenses, which the editor stacks (clients that prefer one line render the combined title). A reference-count lens stacks above them when the block also has usages:
+In a `layout → article → amp-article` chain (named apart from the canonical `base.html`/`content` cast so the overrider sets don't blur together), the mid-chain `article` block both *overrides* `layout`'s `main` block **and** *is extended by* `amp-article`. It therefore carries two inheritance lenses, which the editor stacks (clients that prefer one line render the combined title). A reference-count lens stacks above them when the block also has usages:
 
 ```
-templates/blog/amp_post.html  (extends blog/post.html)
+templates/blog/amp_article.html  (extends blog/article.html)
  ┌──────────────────────────────────────────────────────────────────────┐
  │      overrides base                                                   │
- │  3 │ {% block content %}                                              │
+ │  3 │ {% block main %}                                                 │
  └──────────────────────────────────────────────────────────────────────┘
 
-templates/blog/post.html  (extends base.html)
+templates/blog/article.html  (extends layout.html)
  ┌──────────────────────────────────────────────────────────────────────┐
  │      overrides base                                                   │
  │      extended by 1                                                    │
- │  3 │ {% block content %}                                              │
+ │  3 │ {% block main %}                                                 │
  └──────────────────────────────────────────────────────────────────────┘
 
-templates/base.html
+templates/layout.html
  ┌──────────────────────────────────────────────────────────────────────┐
- │      extended by 2          (both post.html and amp_post.html)       │
- │  9 │ {% block content %}{% endblock %}                                │
+ │      extended by 2     (both article.html and amp_article.html)       │
+ │  9 │ {% block main %}{% endblock %}                                   │
  └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -173,6 +175,10 @@ stateDiagram-v2
     Listed --> Anchored: range + data, no title
     Anchored --> Resolved: codeLens/resolve (per visible lens)
     Resolved --> [*]: title + command attached
+    classDef cheap fill:#d1ecf1,stroke:#17a2b8;
+    classDef done fill:#d4edda,stroke:#28a745;
+    class Listed,Anchored cheap
+    class Resolved done
 ```
 
 ## 9. Examples & Use Cases
@@ -241,7 +247,7 @@ Rows are organized by lens kind and branch so every count branch (1 / N, with 0 
 |---|---|---|---|---|
 | 20 | initial `textDocument/codeLens` · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) `blog/macros.html` | one lens per macro/block with range + opaque `data`, **no title and no command** (Anchored state, §7) | unit | REQ-LENS-04 |
 | 21 | `codeLens/resolve` fills title + command · [starlette-blog](../foundations/E17-testing.md#5-fixtures-registry) `post_url` lens | resolve reads `data`, queries the graph, returns title `5 references` + command (Resolved state, §7) | unit | REQ-LENS-04 |
-| 22 | **`data` carries a stable symbol id, position-independent** · synthetic `didOpen` doc | `data` is the tuple (file URI, symbol kind, name, declaration name-range) drawn from the [E07](../foundations/E07-data-model.md) `TemplateIndex` (or an equivalent index-assigned id); resolve looks the symbol up by id and **never re-derives from a cursor position**. Inserting unrelated text *below* the definition (shifting later lines but not the symbol's identity) yields the **same** resolved title — asserting position-independence | unit | REQ-LENS-04 |
+| 22 | **`data` carries a stable symbol id, position-independent** · synthetic `didOpen` doc | `data` is the tuple (file URI, symbol kind, name, declaration name-range) drawn from the [E07](../foundations/E07-data-model.md) `TemplateIndex` (or an equivalent index-assigned id); resolve looks the symbol up by **(kind, name) within the file** (range tiebreaker only), **never re-derives from a cursor position**. Inserting unrelated text *below* the definition yields the **same** resolved title; inserting text *above* the definition — shifting the symbol's own name-range while it still exists — **also** resolves to the same title (no exact-range match required, asserting the §5.4 (kind, name) rule) | unit | REQ-LENS-04 |
 | 23 | document edited between list and resolve, symbol now gone · synthetic `didOpen` doc edited before resolve | resolve returns the lens with an **empty title** rather than throwing (P3, §10 edge) | unit | REQ-LENS-04 |
 
 **REQ-LENS-05 — zero-reference suppression (count 0 renders no lens; W202 owns "unused"):**
@@ -321,7 +327,7 @@ Rows are organized by lens kind and branch so every count branch (1 / N, with 0 
 
 - **Decided** — both kinds on by default; counts resolve-lazy; a block with no inheritance relationship gets no lens.
 - **Decided — zero-reference count lenses are suppressed, not shown as `no references` (REQ-LENS-05).** A count lens on *every* macro and block, including a `no references` line on each unused one, contradicts the spec's own noise-consciousness (§3) and duplicates a fact `JINJA-W202 unused-macro` / `JINJA-W203 unused-import` already surface as a squiggle on the same definition. We considered (a) keeping `no references`, (b) making the 0-floor a client setting, and (c) suppressing at 0. We chose (c): suppress at count 0 and let W202/W203 own "unused", so two features never narrate the same emptiness and the smallest count shown is `1 reference`. We did **not** add a setting — a per-client 0-toggle is more configuration surface than a never-useful line warrants; this can revisit if a user asks. (Inheritance lenses are already self-suppressing at "no relationship", so this only concerns the reference-count kind.)
-- **OQ-LENS-1** — should the reference count include uses inside inline-template regions ([E31](../foundations/E31-inline-templates.md)) by default, or gate them behind a setting? Currently included.
+- **Decided — reference counts include uses inside inline-template regions ([E31](../foundations/E31-inline-templates.md)) by default (was OQ-LENS-1).** This is already the shipped, tested behavior: the lens anchors and counts in host-file coordinates like every other feature (§10, row 30), so an inline-region usage counts the same as any other. We chose inclusion over a setting because a usage is a usage regardless of where the template text lives, and a per-region gate is configuration surface no user has asked for; revisit on request.
 
 ## 16. Cross-References
 
@@ -333,4 +339,5 @@ Rows are organized by lens kind and branch so every count branch (1 / N, with 0 
 - **2026-06-24** — Initial draft.
 - **2026-06-24** — `post_url`'s lens reads `5 references` (the F09 usage count per REQ-LENS-01), reconciled across §6.1/§6.2/§11; `comment_card(comment, show_actions)` is imported and called in `post.html`, so its lens reads `2 references`; the second `content` overrider named as `email/digest.html`.
 - **2026-06-25** — §11.2 and §12.2 rewritten for full combinatorial coverage: every count branch (0 `no references` / 1 `1 reference` / N), every inheritance branch (`overrides base`, `extended by 1`, `extended by N>1`, neither → no lens), both toggles independently plus both-on/both-off, the Anchored→Resolved resolve lifecycle with data-identity and stale-symbol empty-title, and every §10 edge — each traced to a concrete symbol · fixture · expected title + command; §11.4 retargeted to the new row numbers; E2E scenarios expanded to 11 across happy and negative polarities.
+- **2026-06-26** — v0.3, spec-review fixes: renamed the §6.2 mid-chain mockup's inheritance fixture to `layout → article → amp-article` (block `main`) so its overrider set no longer collides with the canonical `base.html`/`content` cast whose overriders are `post.html`/`digest.html` (jinja-lsp-zzy); changed resolve identity (§5.4, row 22) to match on **(kind, name) within the file** with the declaration name-range as a tiebreaker only, so a definition that merely shifts lines after an edit still resolves instead of falling to the empty-title path (jinja-lsp-y3j); promoted OQ-LENS-1 to a **Decided** entry — inline-region references are counted by default, revisit on request (jinja-lsp-r2d); added a §5.1 UX note that the lens count may read one lower than the editor's built-in references command, which usually counts the declaration, and that this is intended (jinja-lsp-d7q); applied the constitution §6 Mermaid style to the §7 diagram with colored nodes via `classDef` and labeled arrows, no `%%{init}%%` block (jinja-lsp-rle).
 - **2026-06-25** — v0.2, review fixes: (1) pinned the reference-count lens to F09's `includeDeclaration: false` total and its click command to `textDocument/references` with `includeDeclaration: false`, so `5 references` opens a 5-item panel (not the 6 F09 shows with the declaration); added the `lens-N == F09 panel-N(includeDeclaration:false)` equality test. (2) Defined `extended by N` as counting **all descendant overrides** in the chain (not just direct children), matching F09 §10; added a 3-level `base → post → amp-post` chain test asserting the base block reads `extended by 2`. (3) Added the both-directions case — a mid-chain block that *overrides base* **and** *is extended by N* carries both inheritance lenses (§5.2, §6.2, row 14, E2E-08). (4) Added **REQ-LENS-05**: suppress the reference-count lens at count 0 (no `no references`), letting `JINJA-W202`/`W203` own "unused"; decision + rationale recorded in §15. (5) Defined the resolve `data` as a **stable, position-independent symbol id** = (file URI, kind, name, declaration name-range) from the E07 `TemplateIndex` (or an equivalent index-assigned id), asserted by the position-independence resolve test. Bumped Version to 0.2; added F01 to Related.
