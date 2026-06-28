@@ -20,6 +20,20 @@ pub struct TemplateIndex {
 }
 
 impl TemplateIndex {
+    pub fn empty() -> Self {
+        Self {
+            path: String::new(),
+            macros: vec![],
+            blocks: vec![],
+            variables: vec![],
+            import_aliases: vec![],
+            from_imports: vec![],
+            template_refs: vec![],
+            references: vec![],
+            syntax_errors: vec![],
+        }
+    }
+
     /// Returns the single `Extends` reference if this template extends another.
     pub fn extends(&self) -> Option<&TemplateReference> {
         self.template_refs
