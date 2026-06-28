@@ -105,7 +105,7 @@ pub struct Reference {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReferenceKind {
     Identifier,
     Attribute,
@@ -115,7 +115,7 @@ pub enum ReferenceKind {
 }
 
 /// REQ-DATA-07: exactly nine variants.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VariableScope {
     Template,
     Block,
