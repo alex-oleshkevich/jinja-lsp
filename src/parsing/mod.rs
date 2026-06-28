@@ -10,6 +10,8 @@ pub use path_resolver::resolve_path;
 mod discovery;
 pub use discovery::discover_templates;
 
+pub mod inline;
+
 pub fn layer_name() -> &'static str {
     "parsing"
 }
