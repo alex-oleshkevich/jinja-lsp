@@ -21,3 +21,4 @@ tree-sitter-jinja-inline = { git = "https://github.com/alex-oleshkevich/tree-sit
 
 [dev-dependencies]
 insta = "1"
+tempfile = "3"
