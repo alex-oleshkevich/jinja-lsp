@@ -213,6 +213,16 @@ impl Registry {
         self.entries.values().filter(|e| e.category == category).count()
     }
 
+    /// Iterate all entries of a given category (order unspecified).
+    pub fn iter_by_category(&self, category: Category) -> Vec<&DocEntry> {
+        self.entries.values().filter(|e| e.category == category).collect()
+    }
+
+    /// All attribute docs whose parent matches `parent`.
+    pub fn attrs_for(&self, parent: &str) -> Vec<&AttrDoc> {
+        self.attributes.values().filter(|a| a.parent == parent).collect()
+    }
+
     /// REQ-BLTN-06: load all 94 core embedded docs.
     pub fn load_core() -> Self {
         let mut reg = Self::new();
