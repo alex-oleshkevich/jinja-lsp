@@ -1,0 +1,8 @@
+[project]
+name = "jinja-lsp-e2e"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["pytest", "pytest-lsp", "lsprotocol"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
