@@ -575,7 +575,8 @@ fn do_references(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &
                 "attribute" => ReferenceKind::Attribute,
                 "filter" => ReferenceKind::Filter,
                 "function" => ReferenceKind::Function,
-                _ => continue,
+                "builtin_test" | "custom_test" => ReferenceKind::Test,
+                _ => continue, // helper captures (e.g. @_is_op) are silently skipped
             };
             idx.references.push(Reference {
                 name: txt(cap.node, bytes).to_owned(),

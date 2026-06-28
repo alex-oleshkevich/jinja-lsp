@@ -37,3 +37,17 @@
         (primary_expression
           (function_call
             (identifier) @function))))))
+
+; Builtin `is` test (`x is defined`, `x is callable`, etc.) — in any expression context:
+(binary_expression
+  (binary_operator) @_is_op
+  (builtin_test) @builtin_test
+  (#eq? @_is_op "is"))
+
+; Custom (user-defined) `is` test (`x is my_test`) — identifier after `is`:
+(binary_expression
+  (binary_operator) @_is_op2
+  (unary_expression
+    (primary_expression
+      (identifier) @custom_test))
+  (#eq? @_is_op2 "is"))
