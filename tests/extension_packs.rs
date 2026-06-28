@@ -147,6 +147,8 @@ fn hint_overrides_pack_for_same_symbol() {
         params: vec![],
         body: "hint body".to_owned(),
         source: Source::Hint,
+        ty: None,
+        template: None,
     });
 
     let entry = reg.get(Category::Function, "url_for").unwrap();

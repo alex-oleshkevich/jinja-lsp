@@ -171,6 +171,8 @@ fn merge_higher_priority_wins() {
         params: vec![],
         body: "custom upper override".to_owned(),
         source: Source::Custom,
+        ty: None,
+        template: None,
     };
     reg.insert(override_entry);
     let entry = reg.get(Category::Filter, "upper").unwrap();
@@ -191,6 +193,8 @@ fn merge_lower_priority_does_not_override() {
         params: vec![],
         body: "custom body".to_owned(),
         source: Source::Custom,
+        ty: None,
+        template: None,
     });
     // Now try to insert Core again — must not override Custom
     reg.insert(DocEntry {
@@ -201,6 +205,8 @@ fn merge_lower_priority_does_not_override() {
         params: vec![],
         body: "core body".to_owned(),
         source: Source::Core,
+        ty: None,
+        template: None,
     });
     let entry = reg.get(Category::Filter, "upper").unwrap();
     assert_eq!(entry.source, Source::Custom, "Core must not override Custom");

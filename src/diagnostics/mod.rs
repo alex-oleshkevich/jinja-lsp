@@ -21,6 +21,7 @@ pub enum DiagCode {
     W303, // duplicate-import-alias
     W304, // duplicate-from-import
     W305, // name-shadowing
+    W106, // unknown-attribute (REQ-HINT-05: off by default, hint-gated)
     W107, // invalid-noqa
     // Pass 2 — cross-file
     E101, // undefined-variable
@@ -43,6 +44,7 @@ impl DiagCode {
             Self::E102 => "undefined-filter",
             Self::E103 => "undefined-function",
             Self::E104 => "undefined-test",
+            Self::W106 => "unknown-attribute",
             Self::W107 => "invalid-noqa",
             Self::W201 => "unused-variable",
             Self::W202 => "unused-macro",
@@ -68,6 +70,7 @@ impl DiagCode {
             Self::E102 => "JINJA-E102",
             Self::E103 => "JINJA-E103",
             Self::E104 => "JINJA-E104",
+            Self::W106 => "JINJA-W106",
             Self::W107 => "JINJA-W107",
             Self::W201 => "JINJA-W201",
             Self::W202 => "JINJA-W202",

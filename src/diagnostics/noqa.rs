@@ -101,7 +101,7 @@ pub fn suppress_by_noqa(
     let lines: Vec<&str> = source.lines().collect();
     let all_known_codes: &[&str] = &[
         "JINJA-E001", "JINJA-E101", "JINJA-E102", "JINJA-E103", "JINJA-E104",
-        "JINJA-W107", "JINJA-W201", "JINJA-W202", "JINJA-W203",
+        "JINJA-W106", "JINJA-W107", "JINJA-W201", "JINJA-W202", "JINJA-W203",
         "JINJA-W301", "JINJA-W302", "JINJA-W303", "JINJA-W304", "JINJA-W305",
         "JINJA-E401", "JINJA-W402", "JINJA-E403", "JINJA-E404",
         "JINJA-E501", "JINJA-E601",

@@ -13,6 +13,7 @@ pub enum Category {
     Function,
     Test,
     Variable,
+    #[serde(rename = "context_variable")]
     ContextVariable,
 }
 
@@ -53,6 +54,10 @@ pub struct DocEntry {
     pub params: Vec<Param>,
     pub body: String,
     pub source: Source,
+    /// REQ-HINT-03: Python type name, informational (hints only).
+    pub ty: Option<String>,
+    /// REQ-HINT-03: template scope for hint entries; `None` means global.
+    pub template: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,9 +92,15 @@ struct Frontmatter {
     category: Category,
     signature: Option<String>,
     since: Option<String>,
+    /// REQ-HINT-03: Python type name (hints only).
+    #[serde(rename = "type")]
+    ty: Option<String>,
+    /// REQ-HINT-03: template scope (hints only); absent = global.
+    template: Option<String>,
     #[serde(default)]
     params: Vec<FrontmatterParam>,
-    #[serde(default)]
+    /// REQ-BLTN-05 / REQ-HINT-03: attribute list (loop.* or context_variable attrs).
+    #[serde(default, alias = "attributes")]
     attrs: Vec<FrontmatterAttr>,
 }
 
@@ -137,6 +148,8 @@ pub fn parse_doc_str(src: &str, source: Source) -> Option<(DocEntry, Vec<AttrDoc
             .collect(),
         body: body.to_owned(),
         source,
+        ty: fm.ty,
+        template: fm.template,
     };
 
     Some((entry, attrs))
