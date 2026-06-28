@@ -1,0 +1,5 @@
+{% macro post_url(post) %}{{ post.slug }}{% endmacro %}
+{% macro comment_card(comment, show_actions=true) %}
+  <div>{{ comment.body }}</div>
+  {% if show_actions %}<a>Reply</a>{% endif %}
+{% endmacro %}

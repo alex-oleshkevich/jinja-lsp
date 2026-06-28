@@ -6,4 +6,5 @@ pub mod features;
 pub mod format;
 pub mod linter;
 pub mod parsing;
+pub mod server;
 pub mod workspace;

@@ -9,16 +9,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the LSP server (stdio transport)
+    /// Start the LSP server over stdio (default)
     Lsp,
     /// Check templates for diagnostics
     Check {
-        /// Files or directories to check
         paths: Vec<String>,
     },
     /// Format Jinja templates
     Format {
-        /// Files to format
         paths: Vec<String>,
     },
 }
@@ -26,16 +24,11 @@ enum Commands {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-
     match cli.command.unwrap_or(Commands::Lsp) {
-        Commands::Lsp => run_lsp().await,
+        Commands::Lsp => jinja_lsp::server::run_lsp_server().await,
         Commands::Check { paths: _ } => run_check(),
         Commands::Format { paths: _ } => run_format(),
     }
-}
-
-async fn run_lsp() {
-    todo!("LSP server not yet implemented")
 }
 
 fn run_check() {
