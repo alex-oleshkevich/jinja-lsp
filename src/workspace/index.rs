@@ -59,6 +59,9 @@ impl WorkspaceIndex {
             if !seen.insert(current.clone()) {
                 break; // cycle guard
             }
+            if !self.templates.contains_key(&current) {
+                break; // unresolved reference — chain stops here
+            }
             chain.push(current.clone());
             match self.templates.get(&current).and_then(|idx| idx.extends()) {
                 Some(r) => current = r.path.clone(),

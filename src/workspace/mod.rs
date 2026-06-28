@@ -3,6 +3,9 @@
 pub mod index;
 pub mod symbols;
 
+mod builder;
+pub use builder::build_workspace;
+
 pub fn layer_name() -> &'static str {
     "workspace"
 }
