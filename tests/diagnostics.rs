@@ -1,0 +1,200 @@
+// F01 diagnostics tests: REQ-DIAG-01 through REQ-DIAG-06.
+
+use jinja_lsp::diagnostics::{
+    filter_by_config, parse_noqa_directives, suppress_by_noqa, DiagCode, NoqaDirective,
+};
+use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
+
+fn make_diag(line: u32, code: &str, slug: &str) -> Diagnostic {
+    Diagnostic {
+        file: "test.html".to_owned(),
+        line,
+        col: 0,
+        code: code.to_owned(),
+        slug: slug.to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: "test".to_owned(),
+    }
+}
+
+// ---------- REQ-DIAG-01: stable kebab-case slugs ----------------------------
+
+#[test]
+fn all_known_codes_have_slug() {
+    // Every entry in DiagCode has a kebab-case slug
+    let codes = [
+        (DiagCode::E001, "syntax-error"),
+        (DiagCode::E101, "undefined-variable"),
+        (DiagCode::E102, "undefined-filter"),
+        (DiagCode::W201, "unused-variable"),
+        (DiagCode::W301, "duplicate-block"),
+        (DiagCode::W107, "invalid-noqa"),
+        (DiagCode::E601, "template-does-not-exist"),
+    ];
+    for (code, expected_slug) in codes {
+        assert_eq!(code.slug(), expected_slug, "code {code:?} slug mismatch");
+    }
+}
+
+// ---------- REQ-DIAG-03: select/ignore filter --------------------------------
+
+#[test]
+fn select_by_full_code_keeps_only_that_code() {
+    let diags = vec![
+        make_diag(1, "JINJA-E101", "undefined-variable"),
+        make_diag(2, "JINJA-W201", "unused-variable"),
+    ];
+    let filtered = filter_by_config(&diags, &["JINJA-E101"], &[]);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].code, "JINJA-E101");
+}
+
+#[test]
+fn select_by_class_prefix_keeps_class() {
+    let diags = vec![
+        make_diag(1, "JINJA-E101", "undefined-variable"),
+        make_diag(2, "JINJA-E102", "undefined-filter"),
+        make_diag(3, "JINJA-W201", "unused-variable"),
+    ];
+    let filtered = filter_by_config(&diags, &["JINJA-E"], &[]);
+    assert_eq!(filtered.len(), 2, "only E-class must remain");
+    assert!(filtered.iter().all(|d| d.code.starts_with("JINJA-E")));
+}
+
+#[test]
+fn ignore_removes_matching_code() {
+    let diags = vec![
+        make_diag(1, "JINJA-E101", "undefined-variable"),
+        make_diag(2, "JINJA-W201", "unused-variable"),
+    ];
+    let filtered = filter_by_config(&diags, &[], &["JINJA-W201"]);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].code, "JINJA-E101");
+}
+
+#[test]
+fn ignore_wins_over_select_when_overlapping() {
+    let diags = vec![make_diag(1, "JINJA-E101", "undefined-variable")];
+    // both select and ignore include E101 → ignore wins
+    let filtered = filter_by_config(&diags, &["JINJA-E101"], &["JINJA-E101"]);
+    assert!(filtered.is_empty(), "ignore must win over select");
+}
+
+#[test]
+fn empty_select_means_all_enabled() {
+    let diags = vec![
+        make_diag(1, "JINJA-E101", "undefined-variable"),
+        make_diag(2, "JINJA-W201", "unused-variable"),
+    ];
+    // empty select = all enabled
+    let filtered = filter_by_config(&diags, &[], &[]);
+    assert_eq!(filtered.len(), 2);
+}
+
+// ---------- REQ-DIAG-04: noqa directive parsing ------------------------------
+
+#[test]
+fn parses_bare_noqa() {
+    let directives = parse_noqa_directives("{# noqa #}", 5);
+    assert_eq!(directives.len(), 1);
+    assert!(matches!(directives[0], NoqaDirective::All { .. }));
+}
+
+#[test]
+fn parses_noqa_with_codes() {
+    let directives = parse_noqa_directives("{# noqa: JINJA-E101, JINJA-W2 #}", 3);
+    assert_eq!(directives.len(), 1);
+    if let NoqaDirective::Codes { codes, .. } = &directives[0] {
+        assert!(codes.contains(&"JINJA-E101".to_owned()));
+        assert!(codes.contains(&"JINJA-W2".to_owned()));
+    } else {
+        panic!("expected Codes variant");
+    }
+}
+
+#[test]
+fn parses_noqa_with_bare_space_separator() {
+    // REQ-DIAG-04: bare space separator is tolerated
+    let directives = parse_noqa_directives("{# noqa JINJA-E101 #}", 1);
+    assert_eq!(directives.len(), 1);
+    assert!(matches!(directives[0], NoqaDirective::Codes { .. }));
+}
+
+#[test]
+fn parses_noqa_file_all() {
+    let directives = parse_noqa_directives("{# noqa-file #}", 0);
+    assert_eq!(directives.len(), 1);
+    assert!(matches!(directives[0], NoqaDirective::FileAll { .. }));
+}
+
+#[test]
+fn parses_noqa_file_with_codes() {
+    let directives = parse_noqa_directives("{# noqa-file: JINJA-W2 #}", 0);
+    assert_eq!(directives.len(), 1);
+    assert!(matches!(directives[0], NoqaDirective::FileCodes { .. }));
+}
+
+// ---------- REQ-DIAG-05: noqa suppression scope model -----------------------
+
+#[test]
+fn noqa_on_same_line_suppresses_diagnostic() {
+    let source = "{{ undefined_var }}   {# noqa: JINJA-E101 #}";
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, _w107) = suppress_by_noqa(&diags, source);
+    assert!(kept.is_empty(), "E101 must be suppressed by same-line noqa");
+}
+
+#[test]
+fn noqa_all_suppresses_all_on_line() {
+    let source = "{{ x }} {{ y }}   {# noqa #}";
+    let diags = vec![
+        make_diag(0, "JINJA-E101", "undefined-variable"),
+        make_diag(0, "JINJA-W201", "unused-variable"),
+    ];
+    let (kept, _w107) = suppress_by_noqa(&diags, source);
+    assert!(kept.is_empty());
+}
+
+#[test]
+fn noqa_does_not_suppress_different_line() {
+    let source = "line0\n{{ undefined_var }}   {# noqa: JINJA-E101 #}";
+    // Diagnostic is on line 0, noqa is on line 1
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, _w107) = suppress_by_noqa(&diags, source);
+    assert_eq!(kept.len(), 1, "noqa on different line must not suppress");
+}
+
+#[test]
+fn noqa_file_suppresses_whole_file() {
+    let source = "{# noqa-file #}\n{{ x }}\n{{ y }}";
+    let diags = vec![
+        make_diag(1, "JINJA-E101", "undefined-variable"),
+        make_diag(2, "JINJA-E101", "undefined-variable"),
+    ];
+    let (kept, _w107) = suppress_by_noqa(&diags, source);
+    assert!(kept.is_empty());
+}
+
+// ---------- REQ-DIAG-06: invalid noqa IDs raise JINJA-W107 ------------------
+
+#[test]
+fn invalid_noqa_code_produces_w107() {
+    // "undefined-variable" is a slug, not a code — raises W107
+    let source = "{{ x }}   {# noqa: undefined-variable #}";
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, w107s) = suppress_by_noqa(&diags, source);
+    // The invalid ID doesn't suppress; W107 is produced
+    assert_eq!(kept.len(), 1, "invalid ID must not suppress");
+    assert!(!w107s.is_empty(), "must produce W107 for invalid ID");
+    assert!(w107s[0].code == "JINJA-W107");
+}
+
+#[test]
+fn valid_and_invalid_noqa_ids_mixed() {
+    // Valid "JINJA-E101" suppresses; invalid slug produces W107
+    let source = "{{ x }}   {# noqa: JINJA-E101, not-a-code #}";
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, w107s) = suppress_by_noqa(&diags, source);
+    assert!(kept.is_empty(), "valid ID must suppress E101");
+    assert!(!w107s.is_empty(), "invalid ID must produce W107");
+}
