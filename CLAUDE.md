@@ -54,6 +54,18 @@ bd close <id>         # Complete work
 
 This project is spec-driven. See **AGENTS.md › Specifications** — start at `specs/index.md`, load specs on demand, and create a spec before building any new feature.
 
+## Autonomous Implementation Workflow
+
+When implementing tasks from the beads backlog, use the **`autonomous-coder` skill** and run continuously:
+
+- **Never stop after finishing a single task.** When a task is done, claim the next ready bead (`bd ready --limit 500`) and keep going.
+- **Stop ONLY when** all tasks are done, OR you genuinely need human intervention — an ambiguous product decision, an external blocker you cannot resolve, or a destructive/irreversible action that requires approval. A normal failing test or lint is NOT a stop condition; debug and fix it.
+- **After every task, self-review:** run the **`self-review` skill**, fix every finding, and re-iterate the review until it is clean.
+- **Commit at the end of each task** (commit permission is granted — commit without asking), then move on to the next task.
+  - No git remote is configured, so commits are local: `git commit` for code + `bd dolt commit` for issue state. Push only if/when a remote is added.
+- Follow the layered order: work `bd ready` from the foundations up; closing a layer's tasks automatically unblocks the next.
+- Use **TDD** (`test-driven-development` skill) — every impl task's acceptance is "implemented and verified by a passing test."
+
 ## Build & Test
 
 _Add your build and test commands here_
