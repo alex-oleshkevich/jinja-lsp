@@ -4,6 +4,7 @@ use super::symbols::{
     BlockDefinition, FromImport, ImportAlias, MacroDefinition, Reference, SyntaxError,
     TemplateRefKind, TemplateReference, VariableDefinition,
 };
+use crate::parsing::extract;
 
 /// REQ-DATA-08: everything known about one template, from its own parse tree.
 #[derive(Debug, Clone)]
@@ -49,6 +50,13 @@ pub struct WorkspaceIndex {
 }
 
 impl WorkspaceIndex {
+    /// REQ-EXTR-05: index an inline Jinja region under `key` — identical to a file-based entry.
+    pub fn index_inline(&mut self, key: &str, source: &str) {
+        let mut idx = extract(source);
+        idx.path = key.to_owned();
+        self.templates.insert(key.to_owned(), idx);
+    }
+
     /// REQ-DATA-10: ordered extends lineage from `path` up to the root template.
     pub fn template_chain(&self, path: &str) -> Vec<String> {
         let mut chain = Vec::new();
