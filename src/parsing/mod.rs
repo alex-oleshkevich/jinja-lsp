@@ -7,6 +7,9 @@ pub use extractor::extract;
 mod path_resolver;
 pub use path_resolver::resolve_path;
 
+mod discovery;
+pub use discovery::discover_templates;
+
 pub fn layer_name() -> &'static str {
     "parsing"
 }
