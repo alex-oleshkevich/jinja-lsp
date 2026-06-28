@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod config;
 pub mod diagnostics;
 pub mod edit;
 pub mod error;
