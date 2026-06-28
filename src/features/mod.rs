@@ -18,3 +18,16 @@ pub mod symbols;
 pub fn layer_name() -> &'static str {
     "features"
 }
+
+/// Extract the Jinja identifier word centered at `byte` in `source`.
+pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
+    let start = source[..byte]
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let end = source[byte..]
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| byte + i)
+        .unwrap_or(source.len());
+    &source[start..end]
+}
