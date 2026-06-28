@@ -4,6 +4,9 @@
 mod extractor;
 pub use extractor::extract;
 
+mod path_resolver;
+pub use path_resolver::resolve_path;
+
 pub fn layer_name() -> &'static str {
     "parsing"
 }
