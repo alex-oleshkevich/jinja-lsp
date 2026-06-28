@@ -1,0 +1,199 @@
+// F12 — Folding range tests: REQ-FOLD2-01 through REQ-FOLD2-06.
+
+use jinja_lsp::features::folding::{fold_ranges, FoldKind};
+
+// ─── REQ-FOLD2-01: every block-statement node folds ──────────────────────────
+
+#[test]
+fn fold01_block_folds_as_region() {
+    let src = "{% block content %}\nbody\n{% endblock %}";
+    let ranges = fold_ranges(src);
+    let r = ranges.iter().find(|r| r.kind == FoldKind::Region).expect("block must fold");
+    assert_eq!(r.start_line, 0, "startLine is opener line (0-based)");
+    assert_eq!(r.end_line, 2, "endLine is closer line (0-based)");
+}
+
+#[test]
+fn fold01_for_folds_as_region() {
+    let src = "{% for item in items %}\n{{ item }}\n{% endfor %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "for loop must fold"
+    );
+}
+
+#[test]
+fn fold01_macro_folds_as_region() {
+    let src = "{% macro greet(name) %}\nhello {{ name }}\n{% endmacro %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "macro must fold"
+    );
+}
+
+#[test]
+fn fold01_if_folds_as_single_region_from_if_to_endif() {
+    // elif/else are intermediate clauses — NOT separate folds (§2, §5.1).
+    let src = "{% if x %}\na\n{% elif y %}\nb\n{% else %}\nc\n{% endif %}";
+    let ranges = fold_ranges(src);
+    let r = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Region && r.start_line == 0)
+        .expect("if block must fold");
+    assert_eq!(r.end_line, 6, "region ends at endif (line 6)");
+    // No per-branch sub-folds.
+    assert!(
+        !ranges.iter().any(|r| r.start_line == 2 || r.start_line == 4),
+        "elif/else must not produce separate sub-folds"
+    );
+}
+
+#[test]
+fn fold01_custom_tag_folds_via_endname_convention() {
+    let src = "{% cache 'key' %}\ncontent\n{% endcache %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "custom cache tag must fold via end<name> convention"
+    );
+}
+
+#[test]
+fn fold01_nested_blocks_fold_independently() {
+    // Outer for: line 0..4; inner if: line 1..3
+    let src = "{% for x in xs %}\n{% if x %}\n{{ x }}\n{% endif %}\n{% endfor %}";
+    let ranges = fold_ranges(src);
+    let outer = ranges.iter().find(|r| r.start_line == 0 && r.end_line == 4);
+    let inner = ranges.iter().find(|r| r.start_line == 1 && r.end_line == 3);
+    assert!(outer.is_some(), "outer for must fold");
+    assert!(inner.is_some(), "inner if must fold independently");
+}
+
+#[test]
+fn fold01_single_line_block_yields_no_fold() {
+    let src = "{% block content %}body{% endblock %}";
+    let ranges = fold_ranges(src);
+    // All on one line → startLine == endLine → no fold emitted.
+    assert!(
+        !ranges.iter().any(|r| r.kind == FoldKind::Region),
+        "single-line block must not produce a fold"
+    );
+}
+
+// ─── REQ-FOLD2-02: multi-line comments fold as Comment ───────────────────────
+
+#[test]
+fn fold02_multiline_comment_folds_as_comment() {
+    let src = "{# this is a\nmulti-line comment #}";
+    let ranges = fold_ranges(src);
+    let r = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Comment)
+        .expect("multi-line comment must fold");
+    assert_eq!(r.start_line, 0);
+    assert_eq!(r.end_line, 1);
+}
+
+#[test]
+fn fold02_single_line_comment_yields_no_fold() {
+    let src = "{# one-liner #}";
+    let ranges = fold_ranges(src);
+    assert!(
+        !ranges.iter().any(|r| r.kind == FoldKind::Comment),
+        "one-line comment must not fold"
+    );
+}
+
+// ─── REQ-FOLD2-03: multi-line tags fold as region ────────────────────────────
+
+#[test]
+fn fold03_multiline_expression_tag_folds() {
+    let src = "{{ a\n+ b\n+ c }}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "multi-line {{ }} must fold as region"
+    );
+}
+
+#[test]
+fn fold03_multiline_statement_tag_folds() {
+    let src = "{% set nav = [\n  'a',\n  'b'\n] %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 3),
+        "multi-line {{%...%}} must fold as region"
+    );
+}
+
+#[test]
+fn fold03_single_line_tag_yields_no_multiline_fold() {
+    let src = "{{ post.title }}";
+    let ranges = fold_ranges(src);
+    assert!(ranges.is_empty(), "single-line {{ }} must yield no fold");
+}
+
+// ─── REQ-FOLD2-04: 0-based boundaries ────────────────────────────────────────
+
+#[test]
+fn fold04_pinned_0based_example() {
+    // Spec §5.4 worked example: startLine=0, endLine=2, kind=Region.
+    let src = "{% block content %}\n  <h1>{{ post.title }}</h1>\n{% endblock %}";
+    let ranges = fold_ranges(src);
+    let r = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Region)
+        .expect("block must fold");
+    assert_eq!(r.start_line, 0);
+    assert_eq!(r.end_line, 2);
+}
+
+// ─── REQ-FOLD2-05: Jinja-only folds ──────────────────────────────────────────
+
+#[test]
+fn fold05_html_content_yields_no_jinja_fold() {
+    let src = "<section>\n  <h1>Hello</h1>\n</section>";
+    let ranges = fold_ranges(src);
+    assert!(ranges.is_empty(), "pure HTML must yield no Jinja folds");
+}
+
+// ─── REQ-FOLD2-06: incomplete/unmatched nodes yield no range ─────────────────
+
+#[test]
+fn fold06_unclosed_block_yields_no_fold() {
+    let src = "{% block content %}\nbody\n(no endblock)";
+    let ranges = fold_ranges(src);
+    assert!(
+        !ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0),
+        "unclosed block must not fold"
+    );
+}
+
+#[test]
+fn fold06_stray_endfor_yields_no_fold() {
+    let src = "{% endfor %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        !ranges.iter().any(|r| r.kind == FoldKind::Region),
+        "stray closer must not fold"
+    );
+}
+
+#[test]
+fn fold06_unclosed_does_not_suppress_well_formed_pair() {
+    // Lines: 0=block, 1=body, 2=endblock, 3=for, 4=no-endfor
+    let src = "{% block content %}\nbody\n{% endblock %}\n{% for x in xs %}\n(no endfor)";
+    let ranges = fold_ranges(src);
+    let block_fold = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2);
+    let for_fold = ranges.iter().find(|r| r.kind == FoldKind::Region && r.start_line == 3);
+    assert!(block_fold.is_some(), "well-formed block/endblock pair must fold");
+    assert!(for_fold.is_none(), "unclosed for must not fold");
+}

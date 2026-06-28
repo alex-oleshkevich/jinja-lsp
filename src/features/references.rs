@@ -32,6 +32,7 @@ pub struct ReferenceLocation {
 /// - `include_declaration`: include the definition span if `true` (REQ-REF-03).
 ///
 /// Results are deduplicated and sorted by path then position (REQ-REF-02).
+#[allow(clippy::too_many_arguments)]
 pub fn find_references(
     source: &str,
     line: u32,

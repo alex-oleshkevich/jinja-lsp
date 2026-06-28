@@ -62,7 +62,7 @@ pub fn go_to_definition(
         .iter()
         .filter(|r| byte_in_span(byte, &r.span))
         .collect();
-    candidates.sort_by(|a, b| kind_priority(b.kind).cmp(&kind_priority(a.kind)));
+    candidates.sort_by_key(|b| std::cmp::Reverse(kind_priority(b.kind)));
 
     for r in &candidates {
         let result = match r.kind {
@@ -195,7 +195,7 @@ fn resolve_ident(
     None
 }
 
-fn resolve_alias_attr<'a>(
+fn resolve_alias_attr(
     parent: &str,
     attr: &str,
     index: &TemplateIndex,

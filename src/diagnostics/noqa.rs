@@ -160,10 +160,9 @@ pub fn suppress_by_noqa(
             if file_suppress_all {
                 return false;
             }
-            if !file_suppress_codes.is_empty() {
-                if file_suppress_codes.iter().any(|f| is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())) {
-                    return false;
-                }
+            if !file_suppress_codes.is_empty()
+                && file_suppress_codes.iter().any(|f| is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())) {
+                return false;
             }
             // line-level suppression
             for dir in &all_directives {
@@ -172,12 +171,12 @@ pub fn suppress_by_noqa(
                 }
                 match dir {
                     NoqaDirective::All { .. } => return false,
-                    NoqaDirective::Codes { codes, .. } => {
+                    NoqaDirective::Codes { codes, .. }
                         if codes.iter().any(|f| {
                             is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())
-                        }) {
-                            return false;
-                        }
+                        }) =>
+                    {
+                        return false;
                     }
                     _ => {}
                 }

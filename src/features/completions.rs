@@ -134,10 +134,8 @@ fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
 
     // Template path context: starts with path-yielding keyword and has an unclosed quote.
     let first_word = inner.split_whitespace().next().unwrap_or("");
-    if matches!(first_word, "extends" | "include" | "import" | "from") {
-        if has_unclosed_string(inner) {
-            return CursorContext::TemplatePath;
-        }
+    if matches!(first_word, "extends" | "include" | "import" | "from") && has_unclosed_string(inner) {
+        return CursorContext::TemplatePath;
     }
 
     CursorContext::Statement

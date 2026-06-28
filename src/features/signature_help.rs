@@ -170,11 +170,11 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
 /// and determine whether this is a filter call.
 ///
 /// Returns `(callee_name, is_filter)` or `None` if no callee is found.
-fn callee_before_paren<'a>(
-    inner: &'a str,
+fn callee_before_paren(
+    inner: &str,
     paren_pos: usize,
     is_render_ctx: bool,
-) -> Option<(&'a str, bool)> {
+) -> Option<(&str, bool)> {
     let before_paren = inner.get(..paren_pos)?.trim_end();
     if before_paren.is_empty() {
         return None;
