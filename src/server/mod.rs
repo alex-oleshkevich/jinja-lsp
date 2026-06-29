@@ -25,6 +25,7 @@ use crate::features::folding::{fold_ranges, FoldKind};
 use crate::features::signature_help::signature_help as sig_help_feature;
 use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintData, InlayHintsConfig};
 use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resolve as code_lens_resolve_feature, CodeLensConfig, LensData, LensKind, LensSymbolKind};
+use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -668,6 +669,55 @@ impl LanguageServer for Backend {
         Ok(Some(lsp_actions))
     }
 
+    async fn prepare_call_hierarchy(
+        &self,
+        params: CallHierarchyPrepareParams,
+    ) -> Result<Option<Vec<CallHierarchyItem>>> {
+        let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
+        let pos = params.text_document_position_params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let items = prepare_call_hierarchy(source, pos.line, byte_col, &key, index, &state.workspace, &state.registry);
+        if items.is_empty() { return Ok(None); }
+        let result = items.iter().map(|i| internal_item_to_lsp(i, utf8)).collect();
+        Ok(Some(result))
+    }
+
+    async fn incoming_calls(
+        &self,
+        params: CallHierarchyIncomingCallsParams,
+    ) -> Result<Option<Vec<CallHierarchyIncomingCall>>> {
+        let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
+        let state = self.state.read().await;
+        let calls = incoming_calls(&item, &state.workspace);
+        if calls.is_empty() { return Ok(None); }
+        let utf8 = state.position_encoding_utf8;
+        let result = calls.iter().map(|c| CallHierarchyIncomingCall {
+            from: internal_item_to_lsp(&c.from, utf8),
+            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
+        }).collect();
+        Ok(Some(result))
+    }
+
+    async fn outgoing_calls(
+        &self,
+        params: CallHierarchyOutgoingCallsParams,
+    ) -> Result<Option<Vec<CallHierarchyOutgoingCall>>> {
+        let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
+        let state = self.state.read().await;
+        let calls = outgoing_calls(&item, &state.workspace, &state.registry);
+        if calls.is_empty() { return Ok(None); }
+        let utf8 = state.position_encoding_utf8;
+        let result = calls.iter().map(|c| CallHierarchyOutgoingCall {
+            to: internal_item_to_lsp(&c.to, utf8),
+            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
+        }).collect();
+        Ok(Some(result))
+    }
+
     async fn formatting(
         &self,
         params: DocumentFormattingParams,
@@ -953,6 +1003,74 @@ fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
             end: Position { line: e.end_line, character: e.end_col },
         },
         new_text: e.new_text,
+    }
+}
+
+fn internal_item_to_lsp(item: &InternalCallHierarchyItem, utf8: bool) -> CallHierarchyItem {
+    let kind = match item.kind {
+        ItemKind::Function => SymbolKind::FUNCTION,
+        ItemKind::Module => SymbolKind::MODULE,
+    };
+    let data = serde_json::json!({
+        "name": item.name,
+        "kind": match item.kind { ItemKind::Function => "function", ItemKind::Module => "module" },
+        "detail": item.detail,
+        "uri": item.uri,
+        "range": { "sl": item.range.start_line, "sc": item.range.start_col, "el": item.range.end_line, "ec": item.range.end_col },
+        "sr": { "sl": item.selection_range.start_line, "sc": item.selection_range.start_col, "el": item.selection_range.end_line, "ec": item.selection_range.end_col },
+    });
+    let _ = utf8;
+    CallHierarchyItem {
+        name: item.name.clone(),
+        kind,
+        tags: None,
+        detail: Some(item.detail.clone()),
+        uri: path_to_uri(&item.uri),
+        range: Range {
+            start: Position { line: item.range.start_line, character: item.range.start_col },
+            end: Position { line: item.range.end_line, character: item.range.end_col },
+        },
+        selection_range: Range {
+            start: Position { line: item.selection_range.start_line, character: item.selection_range.start_col },
+            end: Position { line: item.selection_range.end_line, character: item.selection_range.end_col },
+        },
+        data: Some(data),
+    }
+}
+
+fn lsp_item_to_internal(item: &CallHierarchyItem) -> Option<InternalCallHierarchyItem> {
+    let obj = item.data.as_ref()?.as_object()?;
+    let kind = match obj.get("kind")?.as_str()? {
+        "function" => ItemKind::Function,
+        "module" => ItemKind::Module,
+        _ => return None,
+    };
+    let range_obj = obj.get("range")?.as_object()?;
+    let sr_obj = obj.get("sr")?.as_object()?;
+    Some(InternalCallHierarchyItem {
+        name: obj.get("name")?.as_str()?.to_owned(),
+        kind,
+        detail: obj.get("detail")?.as_str()?.to_owned(),
+        uri: obj.get("uri")?.as_str()?.to_owned(),
+        range: HierarchyRange {
+            start_line: range_obj.get("sl")?.as_u64()? as u32,
+            start_col: range_obj.get("sc")?.as_u64()? as u32,
+            end_line: range_obj.get("el")?.as_u64()? as u32,
+            end_col: range_obj.get("ec")?.as_u64()? as u32,
+        },
+        selection_range: HierarchyRange {
+            start_line: sr_obj.get("sl")?.as_u64()? as u32,
+            start_col: sr_obj.get("sc")?.as_u64()? as u32,
+            end_line: sr_obj.get("el")?.as_u64()? as u32,
+            end_col: sr_obj.get("ec")?.as_u64()? as u32,
+        },
+    })
+}
+
+fn hr_to_range(r: &HierarchyRange) -> Range {
+    Range {
+        start: Position { line: r.start_line, character: r.start_col },
+        end: Position { line: r.end_line, character: r.end_col },
     }
 }
 
