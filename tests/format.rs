@@ -1,4 +1,4 @@
-// F18 — Formatter engine tests: REQ-FMT-01 delimiter spacing.
+// F18 — Formatter engine tests: REQ-FMT-01/03/04 delimiter spacing, marker spacing, pipe spacing.
 
 use jinja_lsp::format::{format, normalize_delimiter};
 
@@ -119,5 +119,102 @@ fn fmt01_idempotent() {
         let once = format(src);
         let twice = format(&once);
         assert_eq!(once, twice, "format must be idempotent for: {src:?}");
+    }
+}
+
+// ─── REQ-FMT-04: T-15 — Single pipe spacing ──────────────────────────────────
+
+#[test]
+fn fmt04_t15_single_pipe_spacing() {
+    assert_eq!(format("{{ x|e }}"), "{{ x | e }}");
+}
+
+#[test]
+fn fmt04_t16_chained_pipes() {
+    assert_eq!(format("{{ name|upper|trim }}"), "{{ name | upper | trim }}");
+}
+
+#[test]
+fn fmt04_t17_is_test_spacing() {
+    assert_eq!(format("{{ post is  defined }}"), "{{ post is defined }}");
+}
+
+#[test]
+fn fmt04_t18_filter_call_arg_commas() {
+    assert_eq!(format("{{ x | truncate( 20,true ) }}"), "{{ x | truncate(20, true) }}");
+}
+
+#[test]
+fn fmt04_t19_non_pipe_operators_untouched() {
+    // == is not a pipe or is-test — left as-is (formatter, not beautifier)
+    let src = "{{ a==b }}";
+    assert_eq!(format(src), src);
+}
+
+// ─── REQ-FMT-04: T-44 — Non-filter commas untouched ─────────────────────────
+
+#[test]
+fn fmt04_t44_dict_literal_commas_untouched() {
+    let src = "{{ {'a': 1,'b': 2} }}";
+    assert_eq!(format(src), src);
+}
+
+#[test]
+fn fmt04_t44_non_filter_call_commas_untouched() {
+    // post_url is a plain function call (not via |) — its commas are untouched
+    let src = "{{ post_url(post,absolute=true) }}";
+    assert_eq!(format(src), src);
+}
+
+#[test]
+fn fmt04_combined_pipe_and_delimiter() {
+    // Both FMT-01 (tight delimiter) and FMT-04 (pipe spacing) applied together
+    assert_eq!(format("{{name|upper}}"), "{{ name | upper }}");
+}
+
+#[test]
+fn fmt04_marker_plus_pipe() {
+    // Marker spacing (FMT-03) + pipe spacing (FMT-04)
+    assert_eq!(format("{{- name|trim -}}"), "{{- name | trim -}}");
+}
+
+// ─── REQ-FMT-04: Idempotence extension ───────────────────────────────────────
+
+#[test]
+fn fmt04_idempotent() {
+    let inputs = [
+        "{{ x|e }}",
+        "{{ name|upper|trim }}",
+        "{{ post is  defined }}",
+        "{{ x | truncate( 20,true ) }}",
+        "{{ {'a': 1,'b': 2} }}",
+        "{{ post_url(post,absolute=true) }}",
+        "{{name|upper}}",
+    ];
+    for src in inputs {
+        let once = format(src);
+        let twice = format(&once);
+        assert_eq!(once, twice, "format must be idempotent for: {src:?}");
+    }
+}
+
+#[test]
+#[ignore]
+fn dump_filter_tree() {
+    let lang = tree_sitter_jinja::language();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&lang).unwrap();
+    let cases = [
+        "{{ name|upper }}",
+        "{{ name | upper | trim }}",
+        "{{ name|upper(20, true) }}",
+        "{{ post is defined }}",
+        "{{ post is  defined }}",
+        "{{ {'a': 1,'b': 2} }}",
+        "{{ post_url(post,absolute=true) }}",
+    ];
+    for src in cases {
+        let tree = parser.parse(src, None).unwrap();
+        eprintln!("{src}\n→ {}\n", tree.root_node().to_sexp());
     }
 }
