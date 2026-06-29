@@ -84,6 +84,12 @@ pub fn code_actions(
             "JINJA-E103" => {
                 actions.extend(resolve_undefined_function(source, file, diag, index, workspace, registry));
             }
+            "JINJA-E102" => {
+                actions.extend(suggest_spelling_correction(file, diag, Category::Filter, registry));
+            }
+            "JINJA-E104" => {
+                actions.extend(suggest_spelling_correction(file, diag, Category::Test, registry));
+            }
             _ => {}
         }
     }
@@ -252,6 +258,54 @@ fn resolve_undefined_function(
     }
 
     actions
+}
+
+// ── REQ-ACT-03 — Suggest corrections for undefined filters / tests ────────────
+
+// Registry-only search; workspace macros are not filters/tests.
+fn suggest_spelling_correction(
+    file: &str,
+    diag: &Diagnostic,
+    category: Category,
+    registry: &Registry,
+) -> Vec<CodeAction> {
+    let Some(misspelled) = extract_quoted_name(&diag.message) else {
+        return vec![];
+    };
+    let threshold = edit_distance_threshold(&misspelled);
+    let mut candidates: Vec<(usize, String)> = registry
+        .iter_by_category(category)
+        .into_iter()
+        .filter_map(|e| {
+            if e.name == misspelled { return None; }
+            let d = levenshtein(&misspelled, &e.name);
+            if d <= threshold { Some((d, e.name.clone())) } else { None }
+        })
+        .collect();
+
+    candidates.sort_by_key(|(d, _)| *d);
+    let mut seen = HashSet::new();
+    candidates.retain(|(_, n)| seen.insert(n.clone()));
+
+    candidates
+        .into_iter()
+        .map(|(_, candidate)| {
+            let edit = TextEdit {
+                start_line: diag.line,
+                start_col: diag.col,
+                end_line: diag.line,
+                end_col: diag.col + misspelled.len() as u32,
+                new_text: candidate.clone(),
+            };
+            CodeAction {
+                title: format!("Did you mean `{candidate}`?"),
+                kind: ActionKind::QuickFix,
+                diagnostics: vec![diag.clone()],
+                is_preferred: false,
+                edit: Some(WorkspaceEdit::single(file, edit)),
+            }
+        })
+        .collect()
 }
 
 /// Return the 0-based line of the extends tag, if any.

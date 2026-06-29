@@ -1,4 +1,4 @@
-// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02.
+// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02, REQ-ACT-03.
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
@@ -297,4 +297,94 @@ fn act02_exact_match_is_preferred_over_near_miss() {
     let preferred = actions.iter().filter(|a| a.is_preferred).count();
     assert_eq!(preferred, 1, "exactly one action must be preferred");
     assert!(actions.iter().any(|a| a.is_preferred && a.title.contains("Import")));
+}
+
+// ─── REQ-ACT-03: T-07 — E102 undefined-filter suggests close match ───────────
+
+fn e102(line: u32, col: u32, name: &str) -> Diagnostic {
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-E102".to_owned(),
+        slug: "undefined-filter".to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: format!("undefined filter '{name}'"),
+    }
+}
+
+fn e104(line: u32, col: u32, name: &str) -> Diagnostic {
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-E104".to_owned(),
+        slug: "undefined-test".to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: format!("undefined test '{name}'"),
+    }
+}
+
+#[test]
+fn act03_t07_undefined_filter_suggests_close_match() {
+    // "uppe" is 1 edit from "upper" (insert 'r') — within threshold 1 for 4-char names
+    let src = "{{ x | uppe }}";
+    let idx = extract(src);
+    let col = src.find("uppe").unwrap() as u32;
+    let diags = vec![e102(0, col, "uppe")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(!actions.is_empty(), "must suggest at least one close filter");
+    assert!(
+        actions.iter().all(|a| a.title.contains("Did you mean")),
+        "all actions must be did-you-mean"
+    );
+    let has_upper = actions.iter().any(|a| a.title.contains("upper"));
+    assert!(has_upper, "must suggest 'upper' as a near-match for 'uppe'");
+}
+
+// ─── REQ-ACT-03: T-08 — E104 undefined-test suggests close match ──────────────
+
+#[test]
+fn act03_t08_undefined_test_suggests_close_match() {
+    // "evn" is 1 edit from "even" (insert 'e') — within threshold 1 for 3-char names
+    let src = "{% if x is evn %}{% endif %}";
+    let idx = extract(src);
+    let col = src.find("evn").unwrap() as u32;
+    let diags = vec![e104(0, col, "evn")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(!actions.is_empty(), "must suggest at least one close test");
+    assert!(
+        actions.iter().any(|a| a.title.contains("even")),
+        "must suggest 'even' as a near-match for 'evn'"
+    );
+    // applying the action replaces "evn" with "even"
+    let even_action = actions.iter().find(|a| a.title.contains("even")).unwrap();
+    let result = apply_action(src, "t.html", even_action);
+    assert!(result.contains("is even"), "misspelled test name replaced");
+}
+
+// ─── REQ-ACT-03: T-09 — No close match → no action ──────────────────────────
+
+#[test]
+fn act03_t09_no_close_match_no_action() {
+    let src = "{{ x | zzqq_filter }}";
+    let idx = extract(src);
+    let diags = vec![e102(0, 7, "zzqq_filter")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "no close match must produce no actions — we don't guess");
+}
+
+// ─── REQ-ACT-03: Additional — action replaces filter name in source ──────────
+
+#[test]
+fn act03_filter_action_replaces_name_in_source() {
+    // "lowe" is 1 edit from "lower"
+    let src = "{{ x | lowe }}";
+    let idx = extract(src);
+    let col = src.find("lowe").unwrap() as u32;
+    let diags = vec![e102(0, col, "lowe")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    let lower_action = actions.iter().find(|a| a.title.contains("lower")).unwrap();
+    let result = apply_action(src, "t.html", lower_action);
+    assert_eq!(result, "{{ x | lower }}", "filter name replaced correctly");
 }
