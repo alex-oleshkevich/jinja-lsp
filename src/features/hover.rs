@@ -76,11 +76,6 @@ pub fn hover(
         }
     }
 
-    if !candidates.is_empty() {
-        // Recognized position but no documentation → None (REQ-HOV-08 fallback).
-        return None;
-    }
-
     // ── Check macro definitions ───────────────────────────────────────────────
     for m in &index.macros {
         if byte_in_span(byte, &m.span) {
@@ -154,6 +149,18 @@ pub fn hover(
             if let Some(e) = entry {
                 return Some(format_registry_card_with_span(e, None, &span));
             }
+        }
+
+        // Local macro call-site hover: cursor on a Function reference to a macro
+        // that isn't in the registry (local or workspace macro).
+        if let Some(m) = index.macros.iter().find(|m| m.name == word) {
+            return Some(format_macro_card(m));
+        }
+        if let Some(m) = workspace.templates.values()
+            .flat_map(|ti| &ti.macros)
+            .find(|m| m.name == word)
+        {
+            return Some(format_macro_card(m));
         }
 
         // REQ-HOV-10: from-import names and aliases.

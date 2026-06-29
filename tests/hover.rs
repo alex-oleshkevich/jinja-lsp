@@ -224,6 +224,27 @@ fn hov03_macro_without_docstring_shows_only_signature() {
     assert!(r.markdown.contains("render(item)"), "signature must still appear");
 }
 
+// ─── qudr: fallback hover when reference has no registry doc ─────────────────
+
+#[test]
+fn qudr_imported_macro_call_shows_macro_hover() {
+    // "greet" is imported from a workspace template; it's a workspace macro.
+    // The hover cursor lands on the Function reference "greet(".
+    // Before the fix, the early `return None` at `candidates.is_empty()` would
+    // fire because greet isn't in the built-in registry, suppressing the macro card.
+    let src = "{% macro greet(name) %}Hello{% endmacro %}{{ greet( }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Cursor on "greet" in the call site {{ greet( }}
+    let call_col = src.rfind("greet").unwrap() as u32;
+    let result = hover(src, 0, call_col, &idx, &reg, &ws);
+    assert!(result.is_some(), "hover on a local macro call must return macro card (not None); \
+        the early-return bug suppresses fallback handlers");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("greet"), "macro name must appear in card");
+}
+
 // ─── REQ-HOV-04: variable scope and definition site ──────────────────────────
 
 #[test]
