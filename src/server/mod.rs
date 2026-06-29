@@ -681,6 +681,11 @@ impl LanguageServer for Backend {
         Ok(Some(lsp_actions))
     }
 
+    async fn code_action_resolve(&self, params: CodeAction) -> Result<CodeAction> {
+        // Our code actions ship with full edits on creation, so no lazy resolve is needed.
+        Ok(params)
+    }
+
     async fn prepare_call_hierarchy(
         &self,
         params: CallHierarchyPrepareParams,
