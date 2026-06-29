@@ -23,6 +23,7 @@ use crate::features::references::{find_references, ReferenceLocation};
 use crate::features::document_highlight::{document_highlight, HighlightKind};
 use crate::features::folding::{fold_ranges, FoldKind};
 use crate::features::signature_help::signature_help as sig_help_feature;
+use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintData, InlayHintsConfig};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -507,9 +508,61 @@ impl LanguageServer for Backend {
 
     async fn inlay_hint(
         &self,
-        _params: InlayHintParams,
+        params: InlayHintParams,
     ) -> Result<Option<Vec<InlayHint>>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let cfg = InlayHintsConfig::default();
+        let hints = inlay_hints(source, &key, index, &state.registry, &state.workspace, &cfg);
+        if hints.is_empty() { return Ok(None); }
+        let result = hints.iter().map(|h| {
+            let data = inlay_hint_data_to_json(&h.data);
+            InlayHint {
+                position: Position {
+                    line: h.line,
+                    character: byte_col_to_lsp_char(source_line(source, h.line), h.col, utf8),
+                },
+                label: InlayHintLabel::String(h.label.clone()),
+                kind: h.kind.as_ref().map(|_| tower_lsp::lsp_types::InlayHintKind::PARAMETER),
+                tooltip: h.tooltip.as_deref().map(|t| InlayHintTooltip::String(t.to_owned())),
+                text_edits: None,
+                padding_left: Some(true),
+                padding_right: None,
+                data: Some(data),
+            }
+        }).collect();
+        Ok(Some(result))
+    }
+
+    async fn inlay_hint_resolve(&self, mut params: InlayHint) -> Result<InlayHint> {
+        let Some(data_val) = &params.data else { return Ok(params) };
+        let Some(hint_data) = inlay_hint_data_from_json(data_val) else { return Ok(params) };
+        let path = match &hint_data {
+            InlayHintData::Parameter { template_path, .. } => template_path.clone(),
+            InlayHintData::EndBlock { template_path, .. } => template_path.clone(),
+        };
+        let state = self.state.read().await;
+        let Some(index) = state.workspace.templates.get(&path) else { return Ok(params) };
+        // Reconstruct an internal InlayHint with only the data field; resolve fills tooltip.
+        let internal = crate::features::inlay_hints::InlayHint {
+            line: params.position.line,
+            col: 0,
+            label: match &params.label { InlayHintLabel::String(s) => s.clone(), _ => String::new() },
+            kind: None,
+            tooltip: None,
+            data: hint_data,
+        };
+        let resolved = inlay_hint_resolve(internal, index, &state.registry, &state.workspace);
+        if let Some(tooltip) = resolved.tooltip {
+            params.tooltip = Some(InlayHintTooltip::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: tooltip,
+            }));
+        }
+        Ok(params)
     }
 
     async fn code_lens(&self, _params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
@@ -857,6 +910,38 @@ fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
             end: Position { line: e.end_line, character: e.end_col },
         },
         new_text: e.new_text,
+    }
+}
+
+fn inlay_hint_data_to_json(data: &InlayHintData) -> serde_json::Value {
+    match data {
+        InlayHintData::Parameter { template_path, symbol_name, param_index } => serde_json::json!({
+            "type": "parameter",
+            "template_path": template_path,
+            "symbol_name": symbol_name,
+            "param_index": param_index,
+        }),
+        InlayHintData::EndBlock { template_path, block_name } => serde_json::json!({
+            "type": "endblock",
+            "template_path": template_path,
+            "block_name": block_name,
+        }),
+    }
+}
+
+fn inlay_hint_data_from_json(val: &serde_json::Value) -> Option<InlayHintData> {
+    let obj = val.as_object()?;
+    match obj.get("type")?.as_str()? {
+        "parameter" => Some(InlayHintData::Parameter {
+            template_path: obj.get("template_path")?.as_str()?.to_owned(),
+            symbol_name: obj.get("symbol_name")?.as_str()?.to_owned(),
+            param_index: obj.get("param_index")?.as_u64()? as u32,
+        }),
+        "endblock" => Some(InlayHintData::EndBlock {
+            template_path: obj.get("template_path")?.as_str()?.to_owned(),
+            block_name: obj.get("block_name")?.as_str()?.to_owned(),
+        }),
+        _ => None,
     }
 }
 
