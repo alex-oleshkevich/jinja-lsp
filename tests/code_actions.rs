@@ -629,3 +629,40 @@ fn act06_t18_identical_duplicate_macro_removes_later() {
     let result = apply(src, "t.html", &actions);
     assert_eq!(result, "{% macro foo() %}body{% endmacro %}\n{{ bar }}", "only the later macro removed");
 }
+
+// ─── REQ-ACT-10: T-36 — Quick-fixes have kind=QuickFix and diagnostics set ───
+
+#[test]
+fn act10_t36_quickfix_kind_and_diagnostics_set() {
+    // Every diagnostic-driven action must carry kind=QuickFix and the originating diagnostic.
+    let src = "{% import \"shared.html\" as shared %}\n{{ content }}";
+    let idx = extract(src);
+    let diag = Diagnostic {
+        file: "t.html".to_owned(), line: 0, col: 0,
+        code: "JINJA-W203".to_owned(), slug: "unused-import".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: "unused import 'shared'".to_owned(),
+    };
+    let actions = code_actions(src, "t.html", &[diag.clone()], &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(actions[0].kind, ActionKind::QuickFix), "must be QuickFix");
+    assert!(!actions[0].diagnostics.is_empty(), "diagnostics must be set");
+    assert_eq!(actions[0].diagnostics[0].code, "JINJA-W203", "must reference the originating diagnostic");
+}
+
+// ─── REQ-ACT-10: T-37 — Import fix isPreferred; did-you-mean suggestions are not ──
+
+#[test]
+fn act10_t37_import_fix_is_preferred_over_suggestions() {
+    // Workspace has exact-match macro; import fix must be isPreferred, suggestions must not.
+    let ws = ws_with(&[("blog/macros.html", "{% macro post_url(post) %}url{% endmacro %}")]);
+    let src = "{{ post_url(post) }}";
+    let idx = extract(src);
+    let diag = e103(0, 3, "post_url");
+    let actions = code_actions(src, "t.html", &[diag], &idx, &ws, &reg());
+    let import_action = actions.iter().find(|a| a.title.contains("Import")).expect("import fix must be offered");
+    assert!(import_action.is_preferred, "import fix must be isPreferred");
+    for action in actions.iter().filter(|a| a.title.contains("Did you mean")) {
+        assert!(!action.is_preferred, "did-you-mean suggestions must not be isPreferred");
+    }
+}
