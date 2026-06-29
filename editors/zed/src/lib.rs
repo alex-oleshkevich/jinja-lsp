@@ -41,7 +41,7 @@ impl zed::Extension for JinjaLspExtension {
         }
 
         // REQ-EDIT-12: not on PATH — download the release binary.
-        let release_binary = download_release()?;
+        let release_binary = download_release(language_server_id)?;
         Ok(zed::Command {
             command: release_binary,
             args: vec!["lsp".to_owned()],
@@ -50,8 +50,34 @@ impl zed::Extension for JinjaLspExtension {
     }
 }
 
-/// REQ-EDIT-12: download the jinja-lsp release binary from GitHub.
-fn download_release() -> Result<String> {
+/// File name (in the extension working dir) where we cache the last installed version string.
+const INSTALLED_VERSION_FILE: &str = "installed_version";
+
+/// REQ-EDIT-12: return the path to the jinja-lsp binary, downloading it if needed.
+///
+/// On every launch the cached version (if any) is checked first. A GitHub API call is
+/// made only when no locally-cached binary is found, avoiding redundant network traffic.
+fn download_release(language_server_id: &LanguageServerId) -> Result<String> {
+    let (os, arch) = zed::current_platform();
+    let (target, archive_ext, file_type, binary_name) = platform_info(os, arch)?;
+
+    // Fast path: if we already have a cached binary, return it immediately.
+    if let Ok(version) = std::fs::read_to_string(INSTALLED_VERSION_FILE) {
+        let version = version.trim();
+        if !version.is_empty() {
+            let binary_path = format!("jinja-lsp-{version}/{binary_name}");
+            if std::path::Path::new(&binary_path).exists() {
+                return Ok(binary_path);
+            }
+        }
+    }
+
+    // Slow path: cached binary missing — fetch latest release from GitHub and download.
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::CheckingForUpdate,
+    );
+
     let release = zed::latest_github_release(
         "alex-oleshkevich/jinja-lsp",
         zed::GithubReleaseOptions {
@@ -59,9 +85,6 @@ fn download_release() -> Result<String> {
             pre_release: false,
         },
     )?;
-
-    let (os, arch) = zed::current_platform();
-    let (target, archive_ext, file_type, binary_name) = platform_info(os, arch)?;
 
     let archive_name = format!("jinja-lsp-{target}.{archive_ext}");
 
@@ -71,15 +94,22 @@ fn download_release() -> Result<String> {
         .find(|a| a.name == archive_name)
         .ok_or_else(|| format!("jinja-lsp release asset '{archive_name}' not found"))?;
 
-    // Download and extract the archive; returns the extraction directory.
-    let install_dir = zed::download_file(
-        &asset.download_url,
-        &format!("jinja-lsp-{}", release.version),
-        file_type,
-    )?;
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::Downloading,
+    );
+
+    // Download and extract the archive into a versioned directory.
+    // The `file-path` argument is used as the directory name inside the extension working dir.
+    let install_dir = format!("jinja-lsp-{}", release.version);
+    zed::download_file(&asset.download_url, &install_dir, file_type)?;
 
     let binary_path = format!("{install_dir}/{binary_name}");
     zed::make_file_executable(&binary_path)?;
+
+    // Persist the installed version so future launches can skip the GitHub API call.
+    let _ = std::fs::write(INSTALLED_VERSION_FILE, &release.version);
+
     Ok(binary_path)
 }
 
