@@ -242,7 +242,8 @@ fn count_descendant_overrides(workspace: &WorkspaceIndex, file_path: &str, block
         .filter(|(path, _)| {
             workspace
                 .template_chain(path)
-                .contains(&file_path.to_owned())
+                .iter()
+                .any(|p| p == file_path)
         })
         .count()
 }
