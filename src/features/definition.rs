@@ -65,6 +65,10 @@ pub fn go_to_definition(
     candidates.sort_by_key(|b| std::cmp::Reverse(kind_priority(b.kind)));
 
     for r in &candidates {
+        // Filters and tests are built-ins or host-owned (REQ-DEF-06): short-circuit.
+        if matches!(r.kind, ReferenceKind::Filter | ReferenceKind::Test) {
+            return None;
+        }
         let result = match r.kind {
             ReferenceKind::Function | ReferenceKind::Identifier => {
                 resolve_ident(&r.name, byte, current_path, index, registry, workspace)
@@ -79,18 +83,11 @@ pub fn go_to_definition(
                     None => None,
                 }
             }
-            // Filters and tests are built-ins or host-owned (REQ-DEF-06).
-            ReferenceKind::Filter | ReferenceKind::Test => None,
+            ReferenceKind::Filter | ReferenceKind::Test => unreachable!(),
         };
         if result.is_some() {
             return result;
         }
-    }
-
-    // After checking references: if we hit any candidates (recognized but not
-    // resolvable), stop — REQ-DEF-06 says return nothing.
-    if !candidates.is_empty() {
-        return None;
     }
 
     // ── Fallback: self.<block>() not captured by references.scm ─────────────
