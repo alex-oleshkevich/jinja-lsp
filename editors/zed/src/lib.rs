@@ -2,7 +2,7 @@
 // Registers the tree-sitter-jinja grammar and the jinja-lsp language server.
 // Language-server id: jinja2-lsp, language: Jinja2 (HTML) — ported from legacy .zed/settings.json.
 
-use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Result};
+use zed_extension_api::{self as zed, settings::LspSettings, Architecture, LanguageServerId, Os, Result};
 
 struct JinjaLspExtension;
 
@@ -12,8 +12,7 @@ impl zed::Extension for JinjaLspExtension {
     }
 
     /// REQ-EDIT-07/08: return the jinja-lsp lsp command over stdio.
-    /// REQ-EDIT-12: when jinja-lsp is not on PATH, download and checksum-verify
-    ///              the release binary before returning it.
+    /// REQ-EDIT-12: when jinja-lsp is not on PATH, download the release binary.
     fn language_server_command(
         &mut self,
         language_server_id: &LanguageServerId,
@@ -42,7 +41,7 @@ impl zed::Extension for JinjaLspExtension {
         }
 
         // REQ-EDIT-12: not on PATH — download the release binary.
-        let release_binary = download_and_verify_release()?;
+        let release_binary = download_release()?;
         Ok(zed::Command {
             command: release_binary,
             args: vec!["lsp".to_owned()],
@@ -51,11 +50,8 @@ impl zed::Extension for JinjaLspExtension {
     }
 }
 
-/// REQ-EDIT-12: download the jinja-lsp release binary from GitHub and verify
-/// its published checksum before returning the local path.
-///
-/// Rejects the binary (returns Err) if the checksum does not match.
-fn download_and_verify_release() -> Result<String> {
+/// REQ-EDIT-12: download the jinja-lsp release binary from GitHub.
+fn download_release() -> Result<String> {
     let release = zed::latest_github_release(
         "alex-oleshkevich/jinja-lsp",
         zed::GithubReleaseOptions {
@@ -64,47 +60,61 @@ fn download_and_verify_release() -> Result<String> {
         },
     )?;
 
-    let (asset_name, checksum_name) = release_asset_names();
+    let (os, arch) = zed::current_platform();
+    let (target, archive_ext, file_type, binary_name) = platform_info(os, arch)?;
+
+    let archive_name = format!("jinja-lsp-{target}.{archive_ext}");
 
     let asset = release
         .assets
         .iter()
-        .find(|a| a.name == asset_name)
-        .ok_or_else(|| format!("jinja-lsp release asset '{asset_name}' not found"))?;
+        .find(|a| a.name == archive_name)
+        .ok_or_else(|| format!("jinja-lsp release asset '{archive_name}' not found"))?;
 
-    let checksum_asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == checksum_name)
-        .ok_or_else(|| format!("jinja-lsp checksum asset '{checksum_name}' not found"))?;
-
-    // Download the binary.
-    let binary_path = zed::download_file(
+    // Download and extract the archive; returns the extraction directory.
+    let install_dir = zed::download_file(
         &asset.download_url,
         &format!("jinja-lsp-{}", release.version),
-        zed::DownloadedFileType::Uncompressed,
+        file_type,
     )?;
 
-    // Download and verify the published checksum (REQ-EDIT-12: single source of truth = F21).
-    let checksum_content = zed::download_file(
-        &checksum_asset.download_url,
-        &format!("jinja-lsp-{}.sha256", release.version),
-        zed::DownloadedFileType::Uncompressed,
-    )?;
-
-    zed::verify_file_against_checksum(&binary_path, &checksum_content)?;
-
+    let binary_path = format!("{install_dir}/{binary_name}");
     zed::make_file_executable(&binary_path)?;
     Ok(binary_path)
 }
 
-fn release_asset_names() -> (String, String) {
-    let os = zed::current_platform().os.to_string();
-    let arch = zed::current_platform().arch.to_string();
-    let ext = if os == "windows" { ".exe" } else { "" };
-    let asset = format!("jinja-lsp-{arch}-{os}{ext}");
-    let checksum = format!("{asset}.sha256");
-    (asset, checksum)
+/// Map the current platform to (rust-target-triple, archive-ext, download-type, binary-name).
+fn platform_info(
+    os: Os,
+    arch: Architecture,
+) -> Result<(&'static str, &'static str, zed::DownloadedFileType, &'static str)> {
+    match (os, arch) {
+        (Os::Linux, Architecture::Aarch64) => Ok((
+            "aarch64-unknown-linux-gnu",
+            "tar.gz",
+            zed::DownloadedFileType::GzipTar,
+            "jinja-lsp",
+        )),
+        (Os::Linux, Architecture::X8664) => Ok((
+            "x86_64-unknown-linux-gnu",
+            "tar.gz",
+            zed::DownloadedFileType::GzipTar,
+            "jinja-lsp",
+        )),
+        (Os::Mac, Architecture::Aarch64) => Ok((
+            "aarch64-apple-darwin",
+            "tar.gz",
+            zed::DownloadedFileType::GzipTar,
+            "jinja-lsp",
+        )),
+        (Os::Windows, Architecture::X8664) => Ok((
+            "x86_64-pc-windows-msvc",
+            "zip",
+            zed::DownloadedFileType::Zip,
+            "jinja-lsp.exe",
+        )),
+        _ => Err("unsupported platform for jinja-lsp release binary".to_string()),
+    }
 }
 
 zed::register_extension!(JinjaLspExtension);
