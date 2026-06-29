@@ -675,6 +675,7 @@ fn to_lsp_completion_item(item: crate::features::completions::CompletionItem) ->
         CompletionKind::Keyword => CompletionItemKind::KEYWORD,
         CompletionKind::TemplatePath => CompletionItemKind::FILE,
         CompletionKind::Attribute => CompletionItemKind::FIELD,
+        CompletionKind::KeywordArg => CompletionItemKind::PROPERTY,
     });
     CompletionItem {
         label: item.label,

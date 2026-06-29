@@ -16,6 +16,8 @@ pub enum CompletionKind {
     Keyword,
     TemplatePath,
     Attribute,
+    /// REQ-CMP-08: `name=` keyword argument for a macro/function call.
+    KeywordArg,
 }
 
 /// A single completion candidate (REQ-CMP-07).
@@ -51,6 +53,8 @@ enum CursorContext {
     Statement,
     /// Inside `{{ receiver.` — offer attributes of `receiver`.
     Attribute { parent: String },
+    /// Inside `{{ callee(` — offer keyword-argument names (REQ-CMP-08).
+    CallArgs { callee: String },
     /// Inside a string that follows `extends`, `include`, `import`, or `from`.
     TemplatePath,
     /// Inside `{# #}` — offer nothing (REQ-CMP-06).
@@ -128,6 +132,11 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
         return CursorContext::Filter;
     }
 
+    // REQ-CMP-08: call-args context — cursor is inside unclosed `callee(`.
+    if let Some(callee) = callee_before_open_paren(inner) {
+        return CursorContext::CallArgs { callee };
+    }
+
     CursorContext::Expression
 }
 
@@ -176,7 +185,42 @@ fn has_unclosed_string(text: &str) -> bool {
     text.chars().filter(|&c| c == '"').count() % 2 == 1
 }
 
+/// REQ-CMP-08: if `inner` ends with an unclosed `identifier(…`, return the callee name.
+///
+/// Scans right-to-left for the last unmatched `(`; if an identifier precedes it, returns it.
+fn callee_before_open_paren(inner: &str) -> Option<String> {
+    let mut depth = 0i32;
+    let mut paren_pos = None;
+    for (i, c) in inner.char_indices().rev() {
+        match c {
+            ')' => depth += 1,
+            '(' => {
+                if depth == 0 {
+                    paren_pos = Some(i);
+                    break;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    let paren_pos = paren_pos?;
+    let before_paren = inner[..paren_pos].trim_end();
+    let callee = last_identifier(before_paren);
+    if callee.is_empty() { None } else { Some(callee.to_owned()) }
+}
+
 // ── Completion item builders ───────────────────────────────────────────────────
+
+fn kwarg_item(param_name: &str) -> CompletionItem {
+    CompletionItem {
+        label: format!("{param_name}="),
+        kind: CompletionKind::KeywordArg,
+        detail: Some("parameter".to_owned()),
+        documentation: None,
+        data: None,
+    }
+}
 
 fn filter_item(name: &str) -> CompletionItem {
     CompletionItem {
@@ -298,6 +342,12 @@ pub fn complete(
             items
         }
 
+        // REQ-CMP-08: call-args context → macro parameter names as `name=` completions.
+        CursorContext::CallArgs { callee } => {
+            let params = resolve_callee_params(&callee, index, workspace);
+            params.iter().map(|p| kwarg_item(p)).collect()
+        }
+
         // REQ-CMP-02: statement context → keyword list.
         CursorContext::Statement => STATEMENT_KEYWORDS
             .iter()
@@ -345,6 +395,30 @@ pub fn resolve_doc(data: &str, registry: &Registry) -> Option<String> {
         parts.push(entry.body.trim().to_owned());
     }
     Some(parts.join("\n\n"))
+}
+
+/// REQ-CMP-08: Resolve parameter names for `callee` from local macros, from-imports, or workspace.
+fn resolve_callee_params(callee: &str, index: &TemplateIndex, workspace: &WorkspaceIndex) -> Vec<String> {
+    // 1. Local macro.
+    if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
+        return m.parameters.iter().map(|p| p.name.clone()).collect();
+    }
+
+    // 2. From-imported macro.
+    for fi in &index.from_imports {
+        for n in &fi.names {
+            let matches = n.name == callee || n.alias.as_deref() == Some(callee);
+            if matches {
+                if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                    if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                        return m.parameters.iter().map(|p| p.name.clone()).collect();
+                    }
+                }
+            }
+        }
+    }
+
+    vec![]
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

@@ -207,3 +207,45 @@ fn cmp12_path_context_offers_workspace_templates() {
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"base.html"), "workspace template must be offered: {labels:?}");
 }
+
+// ─── REQ-CMP-08: keyword-argument name completion inside call parens ──────────
+
+#[test]
+fn cmp08_local_macro_params_offered_in_call() {
+    // Macro defined in same template; cursor inside the call parens.
+    let src = "{% macro render(title, body='') %}{% endmacro %}{{ render(";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.iter().any(|l| l.starts_with("title")), "title param must be offered: {labels:?}");
+    assert!(labels.iter().any(|l| l.starts_with("body")), "body param must be offered: {labels:?}");
+}
+
+#[test]
+fn cmp08_params_offered_after_comma() {
+    // After typing the first arg and a comma, still offer remaining params.
+    let src = "{% macro greet(name, msg) %}{% endmacro %}{{ greet(name='hi', ";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.iter().any(|l| l.starts_with("msg")), "msg param must be offered after comma: {labels:?}");
+}
+
+#[test]
+fn cmp08_from_import_macro_params_offered() {
+    // Macro imported via from-import; cursor inside call parens.
+    let src = r#"{% from "macros.html" import card %}{{ card("#;
+    let idx = extract(src);
+    // Simulate workspace providing macro definition.
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", "{% macro card(title, variant='default') %}{% endmacro %}");
+    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.iter().any(|l| l.starts_with("title")), "title param must be offered for from-import: {labels:?}");
+}
+
+fn reg() -> Registry { Registry::load_core() }
