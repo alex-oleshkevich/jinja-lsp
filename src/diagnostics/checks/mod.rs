@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E404, E501, E601.
+/// Checks implemented: E001, W106, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E404, E501, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -24,6 +24,7 @@ pub fn run_checks(
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     check_e001(path, index, &mut out);
+    check_w106(source, path, index, registry, &mut out);
     check_e101(path, index, registry, workspace, &mut out);
     check_e103(path, index, registry, workspace, &mut out);
     check_e102_e104(path, index, registry, &mut out);
@@ -154,6 +155,58 @@ fn check_e103(
             message: format!("'{}' is not defined", name),
         });
     }
+}
+
+// ── W106: unknown-attribute ───────────────────────────────────────────────────
+// REQ-HINT-05: off by default; only fires against hinted context_variables with declared attrs.
+
+fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Registry, out: &mut Vec<Diagnostic>) {
+    for r in &index.references {
+        if r.kind != ReferenceKind::Attribute {
+            continue;
+        }
+        let attr = r.name.as_str();
+        // Determine the parent variable name via backward text scan.
+        let Some(parent) = attribute_parent(source, r.span.start_byte) else { continue };
+        // Only fires for hinted context_variables (REQ-HINT-05).
+        if registry.get(Category::ContextVariable, parent).is_none() {
+            continue;
+        }
+        // If no attrs are declared, the list is considered incomplete — no W106.
+        let declared_attrs = registry.attrs_for(parent);
+        if declared_attrs.is_empty() {
+            continue;
+        }
+        if declared_attrs.iter().any(|a| a.attr == attr) {
+            continue;
+        }
+        out.push(Diagnostic {
+            file: path.to_owned(),
+            line: r.span.start_line,
+            col: r.span.start_col,
+            code: "JINJA-W106".to_owned(),
+            slug: "unknown-attribute".to_owned(),
+            severity: DiagnosticSeverity::Warning,
+            message: format!("'{}' has no declared attribute '{}'", parent, attr),
+        });
+    }
+}
+
+/// Scan backwards from `attr_start_byte` to find the parent identifier name.
+fn attribute_parent(source: &str, attr_start_byte: usize) -> Option<&str> {
+    if attr_start_byte == 0 {
+        return None;
+    }
+    let before = source.get(..attr_start_byte)?;
+    let dot_pos = before.rfind('.')?;
+    let before_dot = &before[..dot_pos];
+    let end = before_dot.len();
+    let start = before_dot
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let parent = &before_dot[start..end];
+    if parent.is_empty() { None } else { Some(parent) }
 }
 
 // ── E102: undefined filter / E104: undefined test ─────────────────────────────

@@ -182,7 +182,7 @@ impl Registry {
         self.entries.insert(key, entry);
     }
 
-    pub(crate) fn insert_attr(&mut self, attr: AttrDoc) {
+    pub fn insert_attr(&mut self, attr: AttrDoc) {
         self.attributes
             .insert((attr.parent.clone(), attr.attr.clone()), attr);
     }

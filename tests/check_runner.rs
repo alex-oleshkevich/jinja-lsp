@@ -1,6 +1,8 @@
 // F01 / REQ-DIAG — check runner tests (jinja-lsp-aznq + jinja-lsp-3ayw).
 
 use jinja_lsp::builtins::registry::{parse_doc_str, Registry, Source};
+#[allow(unused_imports)]
+use jinja_lsp::builtins::registry::AttrDoc;
 use jinja_lsp::diagnostic::DiagnosticSeverity;
 use jinja_lsp::diagnostics::checks::run_checks;
 use jinja_lsp::parsing::extract;
@@ -483,6 +485,88 @@ fn no_e101_for_local_macro_name() {
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
         "local macro name used as identifier must not trigger E101");
+}
+
+// ─── W106: unknown-attribute ─────────────────────────────────────────────────
+
+fn registry_with_context_var_attrs(name: &str, attrs: &[&str]) -> Registry {
+    let attrs_yaml = attrs.iter().map(|a| format!("  - name: {a}")).collect::<Vec<_>>().join("\n");
+    let src = format!(
+        "---\nname: {name}\ncategory: context_variable\nattributes:\n{attrs_yaml}\n---\nA hinted variable."
+    );
+    let mut reg = Registry::load_core();
+    if let Some((entry, attr_docs)) = parse_doc_str(&src, Source::Hint) {
+        reg.insert(entry);
+        for a in attr_docs {
+            reg.insert_attr(a);
+        }
+    }
+    reg
+}
+
+#[test]
+fn w106_emitted_for_unknown_attribute_on_hinted_var() {
+    // post has attrs [title, slug] — post.autor is a typo → W106
+    let src = "{{ post.autor }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    let w106 = diags.iter().find(|d| d.code == "JINJA-W106");
+    assert!(w106.is_some(), "W106 must fire for an unknown attribute on a hinted context_variable");
+    assert!(w106.unwrap().message.contains("autor"), "message must name the unknown attribute");
+}
+
+#[test]
+fn no_w106_for_known_attribute() {
+    let src = "{{ post.title }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
+        "known attribute must not trigger W106");
+}
+
+#[test]
+fn no_w106_when_no_attrs_declared() {
+    // context_variable with no attributes list → W106 never fires (empty list = "I haven't declared")
+    let src = "{{ post.title }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var("post"); // no attrs
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
+        "variable with no attrs declaration must not trigger W106");
+}
+
+#[test]
+fn no_w106_for_non_hinted_variable() {
+    // post not in registry at all → W106 cannot fire
+    let src = "{{ post.title }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
+        "non-hinted variable must not trigger W106");
+}
+
+#[test]
+fn w106_is_off_by_default_in_filter() {
+    use jinja_lsp::diagnostics::filter_by_config;
+    let src = "{{ post.autor }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let raw_diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    // With empty select (default), W106 is suppressed
+    let filtered = filter_by_config(&raw_diags, &[], &[]);
+    assert!(filtered.iter().all(|d| d.code != "JINJA-W106"),
+        "W106 must be filtered out by default when select is empty");
+    // With explicit select, W106 appears
+    let filtered_selected = filter_by_config(&raw_diags, &["JINJA-W106"], &[]);
+    assert!(filtered_selected.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must appear when explicitly selected");
 }
 
 // ─── E501: wrong-call-args ───────────────────────────────────────────────────

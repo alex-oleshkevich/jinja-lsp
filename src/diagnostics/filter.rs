@@ -4,7 +4,8 @@ use crate::diagnostic::Diagnostic;
 
 /// Apply `select` and `ignore` filters to `diags`.
 ///
-/// - Empty `select` means all codes are enabled.
+/// - Empty `select` means all codes are enabled, EXCEPT `JINJA-W106` which is off by default
+///   (REQ-HINT-05: only fires when explicitly selected via `lint.select`).
 /// - A filter entry is a full code (`JINJA-E101`) or class prefix (`JINJA-E`).
 /// - `ignore` wins over `select` when both match the same code.
 pub fn filter_by_config<'a>(
@@ -15,6 +16,10 @@ pub fn filter_by_config<'a>(
     diags
         .iter()
         .filter(|d| {
+            // JINJA-W106 is off by default: only active when explicitly selected.
+            if d.code == "JINJA-W106" && select.is_empty() {
+                return false;
+            }
             // ignore wins first
             if ignore.iter().any(|f| code_matches(f, &d.code)) {
                 return false;
