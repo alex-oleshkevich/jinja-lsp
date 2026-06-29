@@ -5,44 +5,9 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::Diagnostic,
+    edit::{TextEdit, WorkspaceEdit},
     workspace::index::{TemplateIndex, WorkspaceIndex},
 };
-
-// ── Public types ──────────────────────────────────────────────────────────────
-
-/// A line/col range (0-based) within a single file.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TextEdit {
-    pub start_line: u32,
-    pub start_col: u32,
-    pub end_line: u32,
-    pub end_col: u32,
-    pub new_text: String,
-}
-
-/// Accumulated edits and file creations for a single code action (REQ-ACT-09).
-#[derive(Debug, Clone)]
-pub struct WorkspaceEdit {
-    /// file → ordered list of edits (non-overlapping, top-to-bottom).
-    pub changes: HashMap<String, Vec<TextEdit>>,
-    /// Files to create as (path, initial_content) pairs (REQ-ACT-05).
-    pub create_files: Vec<(String, String)>,
-}
-
-impl WorkspaceEdit {
-    fn single(file: &str, edit: TextEdit) -> Self {
-        let mut changes = HashMap::new();
-        changes.insert(file.to_owned(), vec![edit]);
-        WorkspaceEdit { changes, create_files: vec![] }
-    }
-
-    fn create_file(path: &str) -> Self {
-        WorkspaceEdit {
-            changes: HashMap::new(),
-            create_files: vec![(path.to_owned(), String::new())],
-        }
-    }
-}
 
 /// LSP CodeActionKind taxonomy (REQ-ACT-10).
 #[derive(Debug, Clone, PartialEq)]

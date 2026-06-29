@@ -47,6 +47,30 @@ fn generation_increments_on_update() {
     assert!(state.generation > gen0, "generation must increment after update_file");
 }
 
+// ---------- REQ-FOLD-07: TextEdit/WorkspaceEdit live in edit/, not code_actions
+#[test]
+fn textedit_and_workspaceedit_defined_in_edit_module() {
+    // Verify types are accessible from edit/ (not code_actions).
+    use jinja_lsp::edit::{TextEdit, WorkspaceEdit};
+    let edit = TextEdit { start_line: 0, start_col: 0, end_line: 0, end_col: 0, new_text: String::new() };
+    let we = WorkspaceEdit::single("f.html", edit);
+    assert!(we.changes.contains_key("f.html"));
+}
+
+#[test]
+fn code_actions_does_not_define_textedit() {
+    // Structural: TextEdit must not be defined in code_actions.rs.
+    let src = include_str!("../src/features/code_actions.rs");
+    assert!(
+        !src.contains("pub struct TextEdit"),
+        "TextEdit must be defined in edit/mod.rs, not code_actions.rs"
+    );
+    assert!(
+        !src.contains("pub struct WorkspaceEdit"),
+        "WorkspaceEdit must be defined in edit/mod.rs, not code_actions.rs"
+    );
+}
+
 // ---------- REQ-ARCH-01: CLI structure --------------------------------------
 
 #[test]

@@ -1,6 +1,6 @@
 // REQ-ACT-08: Wrap selection in block, if, or for.
 
-use crate::features::code_actions::{TextEdit, WorkspaceEdit};
+use crate::edit::{TextEdit, WorkspaceEdit};
 use std::collections::HashMap;
 
 pub fn layer_name() -> &'static str {

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::features::code_actions::{TextEdit, WorkspaceEdit};
+use crate::edit::{TextEdit, WorkspaceEdit};
 
 pub fn layer_name() -> &'static str {
     "extract_macro"

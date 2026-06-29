@@ -3,7 +3,7 @@
 // Both delegate to the same `src/format/` engine; the LSP wrappers translate
 // between LSP TextEdit types and line/col coordinates.
 
-use crate::features::code_actions::TextEdit;
+use crate::edit::TextEdit;
 use crate::format::format;
 
 pub fn layer_name() -> &'static str {

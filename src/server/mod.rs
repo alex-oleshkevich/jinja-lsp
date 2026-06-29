@@ -717,7 +717,7 @@ fn to_lsp_document_symbol(source: &str, utf8: bool, s: crate::features::symbols:
     }
 }
 
-fn to_lsp_edit(e: crate::features::code_actions::TextEdit) -> TextEdit {
+fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
     // Note: col values here come from the code-actions feature which works in
     // byte offsets. Full UTF-16 conversion for edit ranges is tracked separately;
     // for now these values are passed through unchanged (correct for UTF-8 mode
