@@ -57,6 +57,8 @@ enum CursorContext {
     CallArgs { callee: String },
     /// Inside a string that follows `extends`, `include`, `import`, or `from`.
     TemplatePath,
+    /// After `from "path" import ` (or after a comma) — offer macro names from `source_path`.
+    ImportName { source_path: String },
     /// Inside `{# #}` — offer nothing (REQ-CMP-06).
     Comment,
     /// Outside any Jinja delimiter — offer nothing (REQ-CMP-06).
@@ -150,7 +152,28 @@ fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
         return CursorContext::TemplatePath;
     }
 
+    // REQ-CMP-04: import-name context: `from "path" import` with closed string.
+    if first_word == "from" {
+        if let Some(source_path) = extract_from_import_source(inner) {
+            return CursorContext::ImportName { source_path };
+        }
+    }
+
     CursorContext::Statement
+}
+
+fn extract_from_import_source(inner: &str) -> Option<String> {
+    let rest = inner.strip_prefix("from")?.trim_start();
+    let quote = rest.chars().next().filter(|&c| c == '"' || c == '\'')?;
+    let rest = &rest[quote.len_utf8()..];
+    let close = rest.find(quote)?;
+    let source_path = rest[..close].to_owned();
+    let after_close = rest[close + quote.len_utf8()..].trim_start();
+    if after_close.starts_with("import") {
+        Some(source_path)
+    } else {
+        None
+    }
 }
 
 /// Returns the byte position of a `.` that is the last non-ident char reached
@@ -293,6 +316,16 @@ fn template_path_item(path: &str) -> CompletionItem {
     }
 }
 
+fn macro_name_item(name: &str) -> CompletionItem {
+    CompletionItem {
+        label: name.to_owned(),
+        kind: CompletionKind::Function,
+        detail: Some("macro".to_owned()),
+        documentation: None,
+        data: None,
+    }
+}
+
 // ── Statement keyword list (REQ-CMP-09) ───────────────────────────────────────
 
 static STATEMENT_KEYWORDS: &[&str] = &[
@@ -380,6 +413,15 @@ pub fn complete(
             .keys()
             .map(|p| template_path_item(p))
             .collect(),
+
+        // REQ-CMP-04: import-name context → macro names from the source template.
+        CursorContext::ImportName { source_path } => workspace
+            .templates
+            .get(&source_path)
+            .map(|src_idx| {
+                src_idx.macros.iter().map(|m| macro_name_item(&m.name)).collect()
+            })
+            .unwrap_or_default(),
     }
 }
 

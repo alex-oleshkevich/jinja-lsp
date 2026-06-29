@@ -284,3 +284,40 @@ fn bovp_detect_context_mid_multibyte_char_does_not_panic() {
     let ws = WorkspaceIndex::default();
     let _items = complete(src, 0, 4, &idx, &reg(), &ws); // byte 4 is mid-char (é = bytes 3-4)
 }
+
+// ─── REQ-CMP-04: import-name completion after `from "x" import` ──────────────
+
+#[test]
+fn cmp04_from_import_offers_macro_names() {
+    // After `from "macros.html" import ` — cursor at the end
+    // → should offer "post_url" and "card" from macros.html
+    let src = r#"{% from "macros.html" import "#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", "{% macro post_url(post) %}{% endmacro %}{% macro card() %}{% endmacro %}");
+    let idx = extract(src);
+    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"post_url"), "post_url must be offered; got: {labels:?}");
+    assert!(labels.contains(&"card"), "card must be offered; got: {labels:?}");
+}
+
+#[test]
+fn cmp04_from_import_after_comma_offers_remaining_macros() {
+    // After `from "macros.html" import post_url, ` — cursor at end
+    let src = r#"{% from "macros.html" import post_url, "#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", "{% macro post_url(post) %}{% endmacro %}{% macro card() %}{% endmacro %}");
+    let idx = extract(src);
+    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"card"), "card must be offered after comma; got: {labels:?}");
+}
+
+#[test]
+fn cmp04_from_import_unknown_source_returns_empty() {
+    let src = r#"{% from "nonexistent.html" import "#;
+    let ws = WorkspaceIndex::default(); // no templates
+    let idx = extract(src);
+    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "unknown source must return no completions; got: {items:?}");
+}
