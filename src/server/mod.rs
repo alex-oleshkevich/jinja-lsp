@@ -212,7 +212,7 @@ impl LanguageServer for Backend {
                     },
                 )),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec![],
+                    commands: vec!["jinja-lsp.extract-macro".to_owned()],
                     ..Default::default()
                 }),
                 document_formatting_provider: Some(OneOf::Left(true)),
@@ -681,6 +681,29 @@ impl LanguageServer for Backend {
         Ok(Some(lsp_actions))
     }
 
+    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<serde_json::Value>> {
+        match params.command.as_str() {
+            "jinja-lsp.extract-macro" => {
+                // args[0]: {path, start_line, end_line, name}
+                let Some(arg) = params.arguments.first() else { return Ok(None) };
+                let Some(obj) = arg.as_object() else { return Ok(None) };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
+                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let Some(name) = obj.get("name").and_then(|v| v.as_str()) else { return Ok(None) };
+                let state = self.state.read().await;
+                let Some(source) = state.sources.get(path) else { return Ok(None) };
+                let Some(workspace_edit) = crate::features::extract_macro::compute_extract_macro(source, path, start_line as u32, end_line as u32, name) else {
+                    return Ok(None);
+                };
+                let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit);
+                let _ = self.client.apply_edit(lsp_edit).await;
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
     async fn code_action_resolve(&self, params: CodeAction) -> Result<CodeAction> {
         // Our code actions ship with full edits on creation, so no lazy resolve is needed.
         Ok(params)
@@ -817,6 +840,48 @@ fn path_to_uri(path: &str) -> Url {
     }
 }
 
+fn internal_workspace_edit_to_lsp(we: crate::edit::WorkspaceEdit) -> WorkspaceEdit {
+    if we.create_files.is_empty() {
+        let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = std::collections::HashMap::new();
+        for (path, edits) in we.changes {
+            changes.insert(path_to_uri(&path), edits.into_iter().map(to_lsp_edit).collect());
+        }
+        WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
+    } else {
+        let mut ops: Vec<DocumentChangeOperation> = Vec::new();
+        for (path, content) in we.create_files {
+            let uri = path_to_uri(&path);
+            ops.push(DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+                uri: uri.clone(),
+                options: None,
+                annotation_id: None,
+            })));
+            if !content.is_empty() {
+                ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
+                    edits: vec![OneOf::Left(TextEdit {
+                        range: Range {
+                            start: Position { line: 0, character: 0 },
+                            end: Position { line: 0, character: 0 },
+                        },
+                        new_text: content,
+                    })],
+                }));
+            }
+        }
+        for (path, edits) in we.changes {
+            let uri = path_to_uri(&path);
+            for e in edits {
+                ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
+                    edits: vec![OneOf::Left(to_lsp_edit(e))],
+                }));
+            }
+        }
+        WorkspaceEdit { changes: None, document_changes: Some(DocumentChanges::Operations(ops)), change_annotations: None }
+    }
+}
+
 fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
     let kind = Some(match action.kind {
         ActionKind::QuickFix => CodeActionKind::QUICKFIX,
@@ -824,50 +889,7 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
         ActionKind::RefactorRewrite => CodeActionKind::REFACTOR_REWRITE,
     });
 
-    let edit = action.edit.map(|we| {
-        if we.create_files.is_empty() {
-            // Simple case: only text changes — use the compact `changes` map.
-            let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = std::collections::HashMap::new();
-            for (path, edits) in we.changes {
-                changes.insert(path_to_uri(&path), edits.into_iter().map(to_lsp_edit).collect());
-            }
-            WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
-        } else {
-            // Complex case: file creations — must use document_changes.
-            // CreateFile ops must come BEFORE any TextDocumentEdit targeting the new file.
-            let mut ops: Vec<DocumentChangeOperation> = Vec::new();
-            for (path, content) in we.create_files {
-                let uri = path_to_uri(&path);
-                ops.push(DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
-                    uri: uri.clone(),
-                    options: None,
-                    annotation_id: None,
-                })));
-                if !content.is_empty() {
-                    ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
-                        text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
-                        edits: vec![OneOf::Left(TextEdit {
-                            range: Range {
-                                start: Position { line: 0, character: 0 },
-                                end: Position { line: 0, character: 0 },
-                            },
-                            new_text: content,
-                        })],
-                    }));
-                }
-            }
-            for (path, edits) in we.changes {
-                let uri = path_to_uri(&path);
-                for e in edits {
-                    ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
-                        text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
-                        edits: vec![OneOf::Left(to_lsp_edit(e))],
-                    }));
-                }
-            }
-            WorkspaceEdit { changes: None, document_changes: Some(DocumentChanges::Operations(ops)), change_annotations: None }
-        }
-    });
+    let edit = action.edit.map(internal_workspace_edit_to_lsp);
 
     CodeAction {
         title: action.title,
