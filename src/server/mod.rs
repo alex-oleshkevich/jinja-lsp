@@ -561,24 +561,36 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
             WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
         } else {
             // Complex case: file creations — must use document_changes.
-            let mut ops: Vec<DocumentChangeOperation> = we.changes
-                .into_iter()
-                .flat_map(|(path, edits)| {
-                    let uri = path_to_uri(&path);
-                    edits.into_iter().map(move |e| {
-                        DocumentChangeOperation::Edit(TextDocumentEdit {
-                            text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
-                            edits: vec![OneOf::Left(to_lsp_edit(e))],
-                        })
-                    })
-                })
-                .collect();
-            for (path, _content) in we.create_files {
+            // CreateFile ops must come BEFORE any TextDocumentEdit targeting the new file.
+            let mut ops: Vec<DocumentChangeOperation> = Vec::new();
+            for (path, content) in we.create_files {
+                let uri = path_to_uri(&path);
                 ops.push(DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
-                    uri: path_to_uri(&path),
+                    uri: uri.clone(),
                     options: None,
                     annotation_id: None,
                 })));
+                if !content.is_empty() {
+                    ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
+                        text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
+                        edits: vec![OneOf::Left(TextEdit {
+                            range: Range {
+                                start: Position { line: 0, character: 0 },
+                                end: Position { line: 0, character: 0 },
+                            },
+                            new_text: content,
+                        })],
+                    }));
+                }
+            }
+            for (path, edits) in we.changes {
+                let uri = path_to_uri(&path);
+                for e in edits {
+                    ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
+                        text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
+                        edits: vec![OneOf::Left(to_lsp_edit(e))],
+                    }));
+                }
             }
             WorkspaceEdit { changes: None, document_changes: Some(DocumentChanges::Operations(ops)), change_annotations: None }
         }

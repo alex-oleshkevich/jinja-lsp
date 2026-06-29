@@ -52,6 +52,40 @@ fn zed_manifest_is_cdylib_crate() {
     );
 }
 
+// ─── T-13b: grammar must be pinned to an immutable SHA, not HEAD ─────────────
+
+#[test]
+fn zed_grammar_pinned_to_sha_not_head() {
+    let m = manifest();
+    let commit = m["grammars"]["jinja"]["commit"].as_str().unwrap_or("HEAD");
+    assert_ne!(
+        commit, "HEAD",
+        "grammar commit must be a full SHA, not 'HEAD' — non-reproducible builds break users"
+    );
+    assert!(
+        commit.len() >= 40,
+        "grammar commit must be a full 40-char SHA; got: {commit}"
+    );
+}
+
+// ─── T-13c: languages/jinja2/config.toml must exist with the correct name ────
+
+#[test]
+fn zed_language_config_exists_with_correct_name() {
+    let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
+    let cfg: toml::Value = toml::from_str(cfg_raw).expect("languages/jinja2/config.toml must be valid TOML");
+    let name = cfg["name"].as_str().unwrap_or("");
+    assert_eq!(
+        name, "Jinja2 (HTML)",
+        "language config name must match the language_servers entry; got: {name}"
+    );
+    let grammar = cfg["grammar"].as_str().unwrap_or("");
+    assert_eq!(
+        grammar, "jinja",
+        "language config grammar must be 'jinja'; got: {grammar}"
+    );
+}
+
 // ─── T-14: REQ-EDIT-07 — language_server_command returns jinja-lsp lsp ───────
 
 #[test]

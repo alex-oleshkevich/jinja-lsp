@@ -66,6 +66,54 @@ fn act09_t03_unknown_code_returns_empty() {
     assert!(actions.is_empty());
 }
 
+// ─── T-03b: create-template action carries create_files entry ────────────────
+
+#[test]
+fn act09_t03b_create_template_action_has_create_files() {
+    use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
+    let source = "{% extends 'missing/base.html' %}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+    let reg = Registry::load_core();
+
+    let diag = Diagnostic {
+        code: "JINJA-E601".to_owned(),
+        slug: "jinja-e601".to_owned(),
+        message: "Template 'missing/base.html' not found".to_owned(),
+        file: "/tpl.html".to_owned(),
+        line: 0,
+        col: 0,
+        severity: DiagnosticSeverity::Error,
+    };
+    let actions = code_actions(source, "/tpl.html", &[diag], &idx, &ws, &reg);
+    let create_action = actions.iter().find(|a| a.title.contains("Create template"));
+    assert!(create_action.is_some(), "E101 should offer a 'Create template' action");
+    let edit = create_action.unwrap().edit.as_ref().unwrap();
+    assert!(!edit.create_files.is_empty(), "create-template action must populate create_files");
+    assert_eq!(edit.create_files[0].0, "missing/base.html");
+}
+
+// ─── T-03c: to_lsp_action emits Create before Edit in document_changes ───────
+
+#[test]
+fn act09_t03c_workspace_edit_create_before_text_edit_in_source() {
+    // Static source-check: verify the fix is in place by reading server/mod.rs.
+    let src = include_str!("../src/server/mod.rs");
+    // After the fix, Create ops are pushed first; the changes loop comes after.
+    // The "for (path, _content) in we.create_files" pattern (bug) must be gone.
+    assert!(
+        !src.contains("for (path, _content) in we.create_files"),
+        "dropped-content bug must be removed: 'for (path, _content)' found in server/mod.rs"
+    );
+    // The CreateFile block must appear before the changes iteration.
+    let create_pos = src.find("ResourceOp::Create").unwrap_or(usize::MAX);
+    let changes_pos = src.rfind("for (path, edits) in we.changes").unwrap_or(usize::MAX);
+    assert!(
+        create_pos < changes_pos,
+        "ResourceOp::Create must appear before the 'we.changes' loop in document_changes builder"
+    );
+}
+
 // ─── T-04: W301 duplicate block produces a quick-fix with WorkspaceEdit ──────
 
 #[test]
