@@ -491,3 +491,23 @@ fn lens01_ref_count_cross_file() {
     let resolved = code_lens_resolve(lens.clone(), &workspace);
     assert_eq!(resolved.title.as_deref(), Some("3 references"));
 }
+
+#[test]
+fn lens01_same_name_macro_in_another_file_not_counted() {
+    // A macro named `btn` in macros.html and an unrelated macro also named `btn`
+    // in other.html — the ref count for macros.html's btn must NOT include
+    // other.html's internal calls to its own btn macro.
+    let macro_src = "{% macro btn() %}{% endmacro %}";
+    let other_src = "{% macro btn() %}{% endmacro %}{{ btn() }}{{ btn() }}";
+    let workspace = ws(&[("macros.html", macro_src), ("other.html", other_src)]);
+    let idx = extract(macro_src);
+    let lenses = code_lens("macros.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::ReferenceCount && l.data.symbol_name == "btn")
+        .expect("btn lens");
+    let resolved = code_lens_resolve(lens.clone(), &workspace);
+    // other.html defines its own btn — those 2 calls must not be attributed to macros.html.
+    // Count=0 is suppressed to empty string (REQ-LENS-05).
+    assert_eq!(resolved.title.as_deref(), Some(""));
+}

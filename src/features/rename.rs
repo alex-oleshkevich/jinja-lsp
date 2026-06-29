@@ -107,8 +107,13 @@ pub fn compute_rename(
             if !def_edits.is_empty() {
                 changes.insert(file.to_owned(), def_edits);
             }
+            // Skip templates that define their own macro named old_name — those would be
+            // independent macros that happen to share the name, not callers of this one.
             for (path, tpl) in &workspace.templates {
                 if path == file {
+                    continue;
+                }
+                if !super::template_does_not_shadow_macro(tpl, old_name) {
                     continue;
                 }
                 let edits = rename_in_index(old_name, new_name, tpl);

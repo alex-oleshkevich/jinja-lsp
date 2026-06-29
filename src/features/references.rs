@@ -59,7 +59,13 @@ pub fn find_references(
                 results.insert(span_to_ref(&def_path, &def_span));
             }
             // Collect usages across the whole workspace (REQ-REF-01, REQ-REF-02).
+            // Skip templates that define their own local macro with this name — those calls
+            // resolve to the local definition, not to the target macro in def_path.
             for (path, tmpl_idx) in &workspace.templates {
+                let is_def_file = path.as_str() == def_path.as_str();
+                if !is_def_file && !super::template_does_not_shadow_macro(tmpl_idx, &name) {
+                    continue;
+                }
                 for r in &tmpl_idx.references {
                     if r.name == name
                         && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)

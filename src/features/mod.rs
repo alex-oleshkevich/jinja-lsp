@@ -80,6 +80,17 @@ fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
+/// Return `true` when `tmpl` does NOT shadow `macro_name` with a local macro definition.
+///
+/// Used to scope cross-file symbol searches: if a template defines its own macro with the
+/// same name, that template's references resolve to the local definition, not to a remote one.
+pub(super) fn template_does_not_shadow_macro(
+    tmpl: &crate::workspace::index::TemplateIndex,
+    macro_name: &str,
+) -> bool {
+    !tmpl.macros.iter().any(|m| m.name == macro_name)
+}
+
 /// Extract the Jinja identifier word centered at `byte` in `source`.
 pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
     let byte = clamp_to_char_boundary(source, byte);

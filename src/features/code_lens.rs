@@ -205,8 +205,12 @@ fn count_references(
     match kind {
         LensSymbolKind::Macro => workspace
             .templates
-            .values()
-            .flat_map(|idx| idx.references.iter())
+            .iter()
+            .filter(|(path, tmpl_idx)| {
+                path.as_str() == file_path
+                    || super::template_does_not_shadow_macro(tmpl_idx, name)
+            })
+            .flat_map(|(_, idx)| idx.references.iter())
             .filter(|r| {
                 r.name == name
                     && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
