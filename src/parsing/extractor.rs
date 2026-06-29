@@ -78,7 +78,9 @@ jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
 /// `TemplateIndex` (REQ-EXTR-03). Syntax errors (JINJA-E001) are recorded.
 pub fn extract(source: &str) -> TemplateIndex {
     let mut parser = Parser::new();
-    parser.set_language(&tree_sitter_jinja::language()).expect("language");
+    if parser.set_language(&tree_sitter_jinja::language()).is_err() {
+        return TemplateIndex::empty();
+    }
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,

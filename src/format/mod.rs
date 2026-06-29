@@ -39,7 +39,9 @@ pub fn format(source: &str) -> String {
 pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
     let lang = tree_sitter_jinja::language();
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("language");
+    if parser.set_language(&lang).is_err() {
+        return source.to_owned();
+    }
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
