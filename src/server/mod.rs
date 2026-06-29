@@ -14,6 +14,7 @@ use tower_lsp::{
 
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::features::formatting::{format_document, format_range};
+use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
 use state::ServerState;
 
 /// REQ-ARCH-02: direct all tracing output to stderr; never stdout (stdout
@@ -264,9 +265,19 @@ impl LanguageServer for Backend {
 
     async fn document_symbol(
         &self,
-        _params: DocumentSymbolParams,
+        params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let syms = document_symbols(source, index);
+        if syms.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(DocumentSymbolResponse::Nested(
+            syms.into_iter().map(to_lsp_document_symbol).collect(),
+        )))
     }
 
     async fn document_highlight(
@@ -420,6 +431,38 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
         is_preferred: Some(action.is_preferred),
         disabled: None,
         data: None,
+    }
+}
+
+fn span_to_range(span: &crate::workspace::symbols::Span) -> Range {
+    Range {
+        start: Position { line: span.start_line, character: span.start_col },
+        end: Position { line: span.end_line, character: span.end_col },
+    }
+}
+
+fn to_lsp_document_symbol(s: crate::features::symbols::DocumentSymbol) -> DocumentSymbol {
+    let kind = match s.kind {
+        InternalSymbolKind::Class => SymbolKind::CLASS,
+        InternalSymbolKind::Function => SymbolKind::FUNCTION,
+        InternalSymbolKind::Variable => SymbolKind::VARIABLE,
+        InternalSymbolKind::Namespace => SymbolKind::NAMESPACE,
+        InternalSymbolKind::Module => SymbolKind::MODULE,
+    };
+    #[allow(deprecated)]
+    DocumentSymbol {
+        name: s.name,
+        detail: s.detail,
+        kind,
+        tags: None,
+        deprecated: None,
+        range: span_to_range(&s.range),
+        selection_range: span_to_range(&s.selection_range),
+        children: if s.children.is_empty() {
+            None
+        } else {
+            Some(s.children.into_iter().map(to_lsp_document_symbol).collect())
+        },
     }
 }
 
