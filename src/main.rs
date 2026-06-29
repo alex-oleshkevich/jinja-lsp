@@ -31,9 +31,19 @@ enum Commands {
         #[arg(long, value_delimiter = ',')]
         ignore: Vec<String>,
     },
-    /// Format Jinja templates
+    /// Format Jinja templates in place (or --check / --diff read-only)
     Format {
+        /// Files or directories to format (optional; defaults to templates/)
         paths: Vec<String>,
+        /// Path to config file (overrides discovery)
+        #[arg(long)]
+        config: Option<String>,
+        /// Check only — do not write, exit 1 if any file would change
+        #[arg(long)]
+        check: bool,
+        /// Print unified diff — do not write, exit 1 if any file would change
+        #[arg(long)]
+        diff: bool,
     },
 }
 
@@ -48,8 +58,8 @@ async fn main() {
         Commands::Check { paths, format, verbose: _, config: _, select, ignore } => {
             run_check(paths, &format, &select, &ignore)
         }
-        Commands::Format { paths: _ } => {
-            todo!("format not yet implemented")
+        Commands::Format { paths, config: _, check, diff } => {
+            run_format(paths, check, diff)
         }
     };
     std::process::exit(code);
@@ -130,4 +140,99 @@ fn run_check(paths: Vec<String>, format: &str, select: &[String], ignore: &[Stri
 
     // REQ-LINT-08: exit codes 0 (no findings) / 1 (findings) / 2 (error)
     if sorted.is_empty() { 0 } else { 1 }
+}
+
+/// REQ-FMT-08 / REQ-FMT-09: format command.
+/// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
+fn run_format(paths: Vec<String>, check: bool, diff: bool) -> i32 {
+    use std::path::Path;
+    const TEMPLATE_EXTS: &[&str] = &["html", "jinja", "jinja2", "j2"];
+
+    let roots: Vec<std::path::PathBuf> = if paths.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let templates = cwd.join("templates");
+        if templates.is_dir() { vec![templates] } else { vec![cwd] }
+    } else {
+        paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
+    };
+
+    // Collect all template files from roots.
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for root in &roots {
+        if root.is_file() {
+            if let Some(ext) = root.extension().and_then(|e| e.to_str()) {
+                if TEMPLATE_EXTS.contains(&ext) {
+                    files.push(root.clone());
+                } else {
+                    // Single file with non-template ext is a no-op.
+                }
+            } else {
+                files.push(root.clone());
+            }
+        } else if root.is_dir() {
+            collect_template_files(root, TEMPLATE_EXTS, &mut files);
+        }
+    }
+
+    let mut any_changed = false;
+
+    for path in &files {
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: {}: {e}", path.display());
+                return 2;
+            }
+        };
+
+        let formatted = jinja_lsp::format::format(&source);
+        if formatted == source {
+            continue;
+        }
+
+        any_changed = true;
+
+        if diff {
+            print_unified_diff(path, &source, &formatted);
+        }
+
+        if !check && !diff {
+            if let Err(e) = std::fs::write(path, formatted.as_bytes()) {
+                eprintln!("error: {}: {e}", path.display());
+                return 2;
+            }
+        }
+    }
+
+    if any_changed { 1 } else { 0 }
+}
+
+fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_template_files(&path, exts, out);
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if exts.contains(&ext) {
+                out.push(path);
+            }
+        }
+    }
+}
+
+fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
+    println!("--- {}", path.display());
+    println!("+++ {}", path.display());
+    let orig_lines: Vec<&str> = original.split('\n').collect();
+    let fmt_lines: Vec<&str> = formatted.split('\n').collect();
+    let max = orig_lines.len().max(fmt_lines.len());
+    for i in 0..max {
+        let o = orig_lines.get(i).copied().unwrap_or("");
+        let f = fmt_lines.get(i).copied().unwrap_or("");
+        if o != f {
+            println!("-{o}");
+            println!("+{f}");
+        }
+    }
 }
