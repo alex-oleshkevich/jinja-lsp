@@ -20,6 +20,7 @@ use crate::diagnostics::checks::run_checks;
 use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::references::{find_references, ReferenceLocation};
+use crate::features::document_highlight::{document_highlight, HighlightKind};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -432,9 +433,28 @@ impl LanguageServer for Backend {
 
     async fn document_highlight(
         &self,
-        _params: DocumentHighlightParams,
+        params: DocumentHighlightParams,
     ) -> Result<Option<Vec<DocumentHighlight>>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
+        let pos = params.text_document_position_params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let highlights = document_highlight(source, pos.line, byte_col, index, &state.registry);
+        if highlights.is_empty() { return Ok(None); }
+        let result = highlights.iter().map(|h| {
+            let kind = match h.kind {
+                HighlightKind::Read => DocumentHighlightKind::READ,
+                HighlightKind::Write => DocumentHighlightKind::WRITE,
+            };
+            DocumentHighlight {
+                range: span_to_lsp_range(source, &h.range, utf8),
+                kind: Some(kind),
+            }
+        }).collect();
+        Ok(Some(result))
     }
 
     async fn folding_range(
