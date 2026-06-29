@@ -321,6 +321,51 @@ fn hov09_block_hover_shows_name() {
     assert!(r.markdown.contains("block"), "block kind must appear");
 }
 
+#[test]
+fn hov09_block_scoped_modifier_appears_in_hover() {
+    let src = "{% block content scoped %}hello{% endblock %}";
+    let mut idx = extract(src);
+    idx.path = "t.html".to_owned();
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, col_of(src, "content"), &idx, &reg, &ws);
+    assert!(result.is_some());
+    assert!(result.unwrap().markdown.contains("scoped"), "scoped modifier must appear");
+}
+
+#[test]
+fn hov09_block_override_shows_parent_template() {
+    let base_src = "{% block content %}base{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base_src);
+    let child_src = r#"{% extends "base.html" %}{% block content %}child{% endblock %}"#;
+    let mut idx = extract(child_src);
+    idx.path = "child.html".to_owned();
+    let reg = Registry::load_core();
+    let col = last_col_of(child_src, "content");
+    let result = hover(child_src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "block hover must return a result");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("base.html"), "must mention parent template");
+}
+
+#[test]
+fn hov09_block_shows_overriding_children() {
+    // base declares 'content'; child overrides it — hover on base should list the child.
+    let base_src = "{% block content %}base{% endblock %}";
+    let child_src = r#"{% extends "base.html" %}{% block content %}child{% endblock %}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("child.html", child_src);
+    let mut idx = extract(base_src);
+    idx.path = "base.html".to_owned();
+    let reg = Registry::load_core();
+    let col = col_of(base_src, "content");
+    let result = hover(base_src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some());
+    let r = result.unwrap();
+    assert!(r.markdown.contains("child.html"), "must mention overriding child");
+}
+
 // ─── REQ-HOV-10: imported names resolve through the import ───────────────────
 
 #[test]

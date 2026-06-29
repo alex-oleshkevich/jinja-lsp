@@ -248,6 +248,7 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         let mut name = String::new();
         let mut span = Span::default();
         let mut key = 0usize;
+        let mut scoped = false;
         let mut required = false;
         let mut ctrl_end = 0usize;
 
@@ -261,6 +262,20 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                         ctrl_end = ancestor(bs, "control")
                             .map(|c| c.end_byte())
                             .unwrap_or(bs.end_byte());
+                        // The grammar has no scoped_keyword node. Detect "scoped"
+                        // by scanning source bytes from the identifier end to the
+                        // nearest closing block delimiter.
+                        let name_end = cap.node.end_byte();
+                        if let Some(after) = bytes.get(name_end..) {
+                            let close = after.windows(2).position(|w| w == b"%}")
+                                .or_else(|| after.windows(3).position(|w| w == b"-%}"))
+                                .unwrap_or(after.len());
+                            if let Ok(segment) = std::str::from_utf8(&after[..close]) {
+                                if segment.split_whitespace().any(|w| w == "scoped") {
+                                    scoped = true;
+                                }
+                            }
+                        }
                     }
                 }
                 "required" => required = true,
@@ -273,12 +288,11 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         }
 
         if let Some(&(i, _)) = seen.get(&key) {
-            if required {
-                idx.blocks[i].required = true;
-            }
+            if scoped { idx.blocks[i].scoped = true; }
+            if required { idx.blocks[i].required = true; }
         } else {
             seen.insert(key, (idx.blocks.len(), ctrl_end));
-            idx.blocks.push(BlockDefinition { name, scoped: false, required, body: Span::default(), span });
+            idx.blocks.push(BlockDefinition { name, scoped, required, body: Span::default(), span });
         }
     }
 

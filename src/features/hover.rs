@@ -4,7 +4,7 @@ use crate::{
     builtins::registry::{AttrDoc, Category, DocEntry, Registry},
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
-        symbols::{MacroDefinition, ReferenceKind, Span, VariableScope},
+        symbols::{BlockDefinition, MacroDefinition, ReferenceKind, Span, VariableScope},
     },
 };
 
@@ -86,20 +86,7 @@ pub fn hover(
     // ── Check block definitions ───────────────────────────────────────────────
     for b in &index.blocks {
         if byte_in_span(byte, &b.span) {
-            let result = HoverResult {
-                markdown: compose_card(
-                    &b.name,
-                    "block",
-                    None,
-                    None,
-                    None,
-                ),
-                start_line: b.span.start_line,
-                start_col: b.span.start_col,
-                end_line: b.span.end_line,
-                end_col: b.span.end_col,
-            };
-            return Some(result);
+            return Some(format_block_card(b, index, workspace));
         }
     }
 
@@ -307,6 +294,104 @@ fn format_registry_card_with_span(entry: &DocEntry, alias_of: Option<&str>, span
         start_col: span.start_col,
         end_line: span.end_line,
         end_col: span.end_col,
+    }
+}
+
+/// REQ-HOV-09: block inheritance card (modifiers, parent override, overriding children).
+fn format_block_card(b: &BlockDefinition, index: &TemplateIndex, workspace: &WorkspaceIndex) -> HoverResult {
+    let mut modifiers = Vec::new();
+    if b.scoped { modifiers.push("scoped"); }
+    if b.required { modifiers.push("required"); }
+
+    let heading = if modifiers.is_empty() {
+        format!("**{}** — block", b.name)
+    } else {
+        format!("**{}** — block ({})", b.name, modifiers.join(", "))
+    };
+
+    let mut parts = vec![heading];
+
+    // Parent block (what this block overrides).
+    if let Some((parent_path, parent_line)) = find_parent_block(&b.name, index, workspace) {
+        parts.push(format!("Overrides `{}` block in `{}` (line {})", b.name, parent_path, parent_line + 1));
+    }
+
+    // Child templates that override this block.
+    let current_path = &index.path;
+    if !current_path.is_empty() {
+        let overriders = find_block_overriders(&b.name, current_path, workspace);
+        if !overriders.is_empty() {
+            let items: Vec<String> = overriders
+                .iter()
+                .map(|(path, line)| format!("- `{}` (line {})", path, line + 1))
+                .collect();
+            parts.push(format!("Overridden by:\n{}", items.join("\n")));
+        }
+    }
+
+    HoverResult {
+        markdown: parts.join("\n\n"),
+        start_line: b.span.start_line,
+        start_col: b.span.start_col,
+        end_line: b.span.end_line,
+        end_col: b.span.end_col,
+    }
+}
+
+fn find_parent_block(
+    block_name: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+) -> Option<(String, u32)> {
+    let parent_path = index.extends()?.path.clone();
+    let chain = workspace.template_chain(&parent_path);
+    for ancestor_path in &chain {
+        if let Some(anc_idx) = workspace.templates.get(ancestor_path) {
+            if let Some(block) = anc_idx.blocks.iter().find(|block| block.name == block_name) {
+                return Some((ancestor_path.clone(), block.span.start_line));
+            }
+        }
+    }
+    None
+}
+
+fn find_block_overriders(
+    block_name: &str,
+    current_path: &str,
+    workspace: &WorkspaceIndex,
+) -> Vec<(String, u32)> {
+    let mut result = Vec::new();
+    for (path, tmpl_idx) in &workspace.templates {
+        if path == current_path {
+            continue;
+        }
+        if is_descendant_of(path, current_path, workspace) {
+            if let Some(b) = tmpl_idx.blocks.iter().find(|b| b.name == block_name) {
+                result.push((path.clone(), b.span.start_line));
+            }
+        }
+    }
+    result.sort();
+    result
+}
+
+/// Walk the `extends()` chain of `descendant` to check if `ancestor` appears
+/// (without requiring `ancestor` to be registered in the workspace).
+fn is_descendant_of(descendant: &str, ancestor: &str, workspace: &WorkspaceIndex) -> bool {
+    let mut current = descendant.to_owned();
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let parent = match workspace.templates.get(&current).and_then(|idx| idx.extends()) {
+            Some(e) => e.path.clone(),
+            None => return false,
+        };
+        if parent == ancestor {
+            return true;
+        }
+        if !seen.insert(parent.clone()) {
+            return false; // cycle guard
+        }
+        current = parent;
     }
 }
 

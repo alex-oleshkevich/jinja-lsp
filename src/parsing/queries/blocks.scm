@@ -1,6 +1,6 @@
-; Captures {% block name %} and {% block name required %} → BlockDefinition.
-; The grammar: block_statement = seq('block', identifier, optional('required'))
-; "scoped" is not in this grammar version.
+; Captures {% block name %}, {% block name scoped %}, {% block name required %}.
+; Note: "scoped" detection falls back to text scan in the extractor because
+; the grammar does not expose a scoped_keyword node type.
 (block_statement
   (identifier) @name)
 
