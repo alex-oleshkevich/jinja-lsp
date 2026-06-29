@@ -23,7 +23,7 @@ pub enum WrapKind {
 /// Inserts the opening tag as a new line before start_line and the closing tag
 /// as a new line after end_line. Host-language lines within the selection are not modified (P5).
 pub fn wrap_selection(
-    _source: &str,
+    source: &str,
     file: &str,
     start_line: u32,
     end_line: u32,
@@ -38,9 +38,7 @@ pub fn wrap_selection(
         ),
     };
 
-    // Insert opening tag at start_line (shifts existing content down).
-    // Insert closing tag after end_line (which becomes end_line + 1 after the opening insert).
-    // Both are zero-length insertions at column 0 of the target line.
+    // Insert the opening tag before start_line by prepending "<tag>\n" at (start_line, 0).
     let open_edit = TextEdit {
         start_line,
         start_col: 0,
@@ -49,13 +47,19 @@ pub fn wrap_selection(
         new_text: format!("{open_tag}\n"),
     };
 
-    // After inserting the opener, the original end_line is now end_line + 1.
-    // We insert the closer after that, i.e., at the line after end_line + 1.
+    // Insert the closing tag AFTER end_line by appending "\n<tag>" at the END of end_line.
+    // Using end-of-line avoids the middle-of-file bug where inserting at (end_line+1, 0)
+    // would produce "{% endif %}existing_content" on one line.
+    let end_line_len = source
+        .split('\n')
+        .nth(end_line as usize)
+        .map(|l| l.len() as u32)
+        .unwrap_or(0);
     let close_edit = TextEdit {
-        start_line: end_line + 1,
-        start_col: 0,
-        end_line: end_line + 1,
-        end_col: 0,
+        start_line: end_line,
+        start_col: end_line_len,
+        end_line,
+        end_col: end_line_len,
         new_text: format!("\n{close_tag}"),
     };
 

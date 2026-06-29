@@ -34,7 +34,7 @@ pub fn rename_at_cursor(
 ) -> Option<(RenameTarget, String)> {
     // Convert (line, col) to byte offset and find the identifier word there.
     let byte = line_col_to_byte(source, line, col)?;
-    let word = word_at_byte(source, byte);
+    let word = super::word_at_byte(source, byte);
     if word.is_empty() {
         return None;
     }
@@ -124,19 +124,6 @@ fn line_col_to_byte(source: &str, line: u32, col: u32) -> Option<usize> {
         .sum();
     let byte = line_start + col as usize;
     if byte <= source.len() { Some(byte) } else { None }
-}
-
-/// Extract the Jinja identifier word centered at `byte` in `source`.
-fn word_at_byte(source: &str, byte: usize) -> &str {
-    let start = source[..byte]
-        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let end = source[byte..]
-        .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| byte + i)
-        .unwrap_or(source.len());
-    &source[start..end]
 }
 
 /// Collect TextEdits for all occurrences of `old_name` as an identifier in `index`.

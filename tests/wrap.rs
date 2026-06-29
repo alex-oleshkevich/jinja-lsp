@@ -62,5 +62,30 @@ fn act08_t04_multi_line_wrap() {
         v
     };
     assert_eq!(sorted[0].start_line, 0, "opener at line 0");
-    assert_eq!(sorted[1].start_line, 3, "closer after line 2 (becomes line 3)");
+    // close_edit anchors at the END of end_line (col = len("line3")) so adjacent
+    // file content is not disturbed — start_line is end_line, not end_line+1.
+    assert_eq!(sorted[1].start_line, 2, "closer anchored at end of line 2");
+    assert!(sorted[1].new_text.contains("{% endif %}"), "closer contains endif");
+}
+
+// ─── T-05: middle-of-file selection — closer must not merge with next line ───
+
+#[test]
+fn act08_t05_middle_of_file_wrap() {
+    let source = "header\n<p>one</p>\n<p>two</p>\nfooter";
+    // Wrap lines 1-2 (the two <p> lines); line 3 "footer" must stay below.
+    let we = wrap_selection(source, "/tpl.html", 1, 2, WrapKind::If);
+    assert!(we.is_some());
+    let we = we.unwrap();
+    let edits = we.changes.get("/tpl.html").unwrap();
+    assert_eq!(edits.len(), 2);
+
+    // The close edit must be anchored at the END of line 2, not the START of line 3.
+    let close = edits.iter().max_by_key(|e| e.start_line).unwrap();
+    assert_eq!(close.start_line, 2, "close anchored at line 2");
+    // col must be at the end of "<p>two</p>" (10 chars)
+    assert_eq!(close.start_col, "<p>two</p>".len() as u32, "close at end-of-line col");
+    // new_text must start with \n so the tag gets its own line
+    assert!(close.new_text.starts_with('\n'), "close_tag preceded by newline");
+    assert!(close.new_text.contains("{% endif %}"), "close contains endif");
 }
