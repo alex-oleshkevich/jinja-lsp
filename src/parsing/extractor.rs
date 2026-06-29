@@ -799,7 +799,7 @@ fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
     while let Some(m) = ms.next() {
         for cap in m.captures {
             let kind = match q.capture_names()[cap.index as usize] {
-                "identifier" => ReferenceKind::Identifier,
+                "identifier" | "object" => ReferenceKind::Identifier,
                 "attribute" => ReferenceKind::Attribute,
                 "filter" => ReferenceKind::Filter,
                 "function" => ReferenceKind::Function,

@@ -70,6 +70,51 @@ pub fn find_references(
             }
         }
 
+        // REQ-REF-01: blocks — collect all templates that declare a block with this name.
+        Symbol::Block { name } => {
+            for (path, tmpl_idx) in &workspace.templates {
+                for b in &tmpl_idx.blocks {
+                    if b.name == name {
+                        results.insert(span_to_ref(path, &b.span));
+                    }
+                }
+            }
+        }
+
+        // REQ-REF-01: import alias — collect all identifier references to the alias name
+        // across the workspace (the alias is file-local, so only current file matters).
+        Symbol::Alias { name } => {
+            if include_declaration {
+                if let Some(alias) = index.import_aliases.iter().find(|a| a.alias == name) {
+                    results.insert(span_to_ref(current_path, &alias.span));
+                }
+            }
+            for r in &index.references {
+                if r.name == name && r.kind == ReferenceKind::Identifier {
+                    results.insert(span_to_ref(current_path, &r.span));
+                }
+            }
+            // Text-scan for alias used in attribute position (e.g. `{{ alias.fn() }}`).
+            // The @object capture may not be extracted as a reference by the extractor when
+            // the grammar structure differs from the query pattern, so scan the source directly.
+            let name_bytes = name.as_bytes();
+            let src_bytes = source.as_bytes();
+            let mut pos = 0usize;
+            while pos + name_bytes.len() <= src_bytes.len() {
+                if &src_bytes[pos..pos + name_bytes.len()] == name_bytes {
+                    let before_ok = pos == 0 || !(src_bytes[pos - 1].is_ascii_alphanumeric() || src_bytes[pos - 1] == b'_');
+                    let after = pos + name_bytes.len();
+                    let after_ok = after >= src_bytes.len() || !(src_bytes[after].is_ascii_alphanumeric() || src_bytes[after] == b'_');
+                    if before_ok && after_ok && inside_jinja(source, pos) {
+                        let (sl, sc) = byte_to_line_col(source, pos);
+                        let (el, ec) = byte_to_line_col(source, after);
+                        results.insert(ReferenceLocation { path: current_path.to_owned(), start_line: sl, start_col: sc, end_line: el, end_col: ec });
+                    }
+                }
+                pos += 1;
+            }
+        }
+
         Symbol::ScopeLocal { name } => {
             // File-local references only (REQ-REF-05).
             for r in &index.references {
@@ -106,6 +151,8 @@ pub fn find_references(
 
 enum Symbol {
     Macro { name: String, def_path: String, def_span: Span },
+    Block { name: String },
+    Alias { name: String },
     ScopeLocal { name: String },
     HostOwned,
 }
@@ -139,14 +186,34 @@ fn symbol_at(
         }
     }
 
+    // Check block definition spans.
+    for b in &index.blocks {
+        if byte_in_span(byte, &b.span) {
+            return Some(Symbol::Block { name: b.name.clone() });
+        }
+    }
+
+    // Check import alias spans (cursor ON the alias declaration).
+    for a in &index.import_aliases {
+        if byte_in_span(byte, &a.span) {
+            return Some(Symbol::Alias { name: a.alias.clone() });
+        }
+    }
+
     // Text-based fallback: cursor on a variable binding site (spans are zero for
     // for-loop bindings, so span-based detection silently misses them). Only
     // attempt this when we're actually inside a Jinja delimiter to avoid false
     // positives from HTML text that happens to match a variable name.
     if inside_jinja(source, byte) {
         let word = super::word_at_byte(source, byte);
-        if !word.is_empty() && index.variables.iter().any(|v| v.name == word) {
-            return Some(Symbol::ScopeLocal { name: word.to_owned() });
+        if !word.is_empty() {
+            // Import alias used as namespace (e.g. `macros` in `{{ macros.fn() }}`).
+            if index.import_aliases.iter().any(|a| a.alias == word) {
+                return Some(Symbol::Alias { name: word.to_owned() });
+            }
+            if index.variables.iter().any(|v| v.name == word) {
+                return Some(Symbol::ScopeLocal { name: word.to_owned() });
+            }
         }
     }
 
@@ -177,6 +244,11 @@ fn classify_reference(
                 def_span: Span::default(),
             });
         }
+    }
+
+    // Import alias (namespace usage like {{ macros.post_url() }}).
+    if index.import_aliases.iter().any(|a| a.alias == name) {
+        return Some(Symbol::Alias { name: name.to_owned() });
     }
 
     // Scope-local variable.
@@ -237,6 +309,16 @@ fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
         byte += line.len() + 1;
     }
     byte
+}
+
+fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
+    let byte = byte.min(source.len());
+    let (mut line, mut col) = (0u32, 0u32);
+    for (i, c) in source.char_indices() {
+        if i >= byte { break; }
+        if c == '\n' { line += 1; col = 0; } else { col += 1; }
+    }
+    (line, col)
 }
 
 /// Returns `true` when `byte` is inside an active `{{ }}` or `{% %}` delimiter.
