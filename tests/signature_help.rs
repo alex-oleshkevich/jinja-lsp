@@ -205,6 +205,27 @@ fn sig05_param_has_label() {
     }
 }
 
+// ─── trc3: dict-literal commas must not count as argument separators ─────────
+
+#[test]
+fn trc3_dict_literal_commas_not_counted_as_arg_separators() {
+    // foo({"a": 1, "b": 2}, bar) — cursor after the comma following the dict.
+    // active_parameter should be 1 (second arg = bar), not 2 (wrong count from dict comma).
+    let src = r#"{% macro foo(d, x) %}{% endmacro %}{{ foo({"a": 1, "b": 2}, "bar") }}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Cursor right after the closing `}` of the dict, before `"bar"`.
+    let cursor = src.rfind(", \"bar\"").unwrap() as u32 + 2; // past the comma+space
+    let sh = signature_help(src, 0, cursor, &idx, &reg, &ws).unwrap();
+    assert_eq!(
+        sh.active_parameter,
+        Some(1),
+        "cursor after dict arg should be param[1]; got {:?} (dict commas being miscounted)",
+        sh.active_parameter
+    );
+}
+
 #[test]
 fn sig05_macro_param_default_in_label() {
     // macro greet(name, msg='hi') — the default 'hi' should appear in param label.

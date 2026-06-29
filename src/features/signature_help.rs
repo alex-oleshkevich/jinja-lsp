@@ -117,6 +117,7 @@ struct CallState {
 fn scan_call_state(inner: &str) -> Option<CallState> {
     let mut depth: i32 = 0;
     let mut bracket_depth: i32 = 0;
+    let mut brace_depth: i32 = 0;
     let mut in_string = false;
     let mut string_char = '"';
     let mut last_open_paren: Option<usize> = None;
@@ -149,7 +150,9 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
             }
             '[' => bracket_depth += 1,
             ']' => bracket_depth -= 1,
-            ',' if depth == 1 && bracket_depth == 0 => comma_count += 1,
+            '{' => brace_depth += 1,
+            '}' => brace_depth -= 1,
+            ',' if depth == 1 && bracket_depth == 0 && brace_depth == 0 => comma_count += 1,
             _ => {}
         }
     }
