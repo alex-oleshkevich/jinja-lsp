@@ -180,3 +180,17 @@ fn hl04_whitespace_inside_expression_returns_empty() {
     let results = document_highlight(src, 0, 2, &idx, &reg); // position of space after `{{`
     assert!(results.is_empty(), "whitespace inside expression must return empty");
 }
+
+#[test]
+fn hl_nvch_block_named_block_write_span_not_on_keyword() {
+    // Block named "block" — the Write span must land on the name, not on the "block" keyword
+    let src = "{% block block %}body{% endblock %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Cursor on "block" name (col 9, which is after "{% block ")
+    let col = 9u32;
+    let results = document_highlight(src, 0, col, &idx, &reg);
+    let write: Vec<_> = results.iter().filter(|r| r.kind == HighlightKind::Write).collect();
+    assert!(!write.is_empty(), "must have a Write highlight");
+    assert_eq!(write[0].range.start_col, 9, "Write span must be on the name at col 9, not the keyword at col 3");
+}

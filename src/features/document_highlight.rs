@@ -205,16 +205,9 @@ fn find_variable_write_span(source: &str, name: &str) -> Option<Span> {
 
 /// Return the span of `name` within the tag starting at `tag_start_byte`.
 fn name_span_in_source(source: &str, tag_start_byte: usize, name: &str) -> Span {
-    let slice = match source.get(tag_start_byte..) {
-        Some(s) => s,
-        None => return Span::default(),
-    };
-    if let Some(pos) = slice.find(name) {
-        let abs_start = tag_start_byte + pos;
-        let abs_end = abs_start + name.len();
-        make_span(source, abs_start, abs_end)
-    } else {
-        Span::default()
+    match super::find_name_in_tag(source, tag_start_byte, name) {
+        Some(abs_start) => make_span(source, abs_start, abs_start + name.len()),
+        None => Span::default(),
     }
 }
 

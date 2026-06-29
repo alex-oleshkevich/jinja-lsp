@@ -46,6 +46,40 @@ pub(super) fn inside_jinja(source: &str, byte: usize) -> bool {
         || is_active(before.rfind("{%"), before.rfind("%}"))
 }
 
+/// Byte offset from the start of a `{% … %}` tag slice to just after the first keyword.
+/// Used to skip the tag keyword before searching for the symbol name.
+pub(super) fn after_tag_keyword(tag: &str) -> usize {
+    let inner = tag.strip_prefix("{%").unwrap_or(tag);
+    let inner = inner.trim_start_matches(['-', '+', ' ', '\t']);
+    let keyword_len = inner.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(inner.len());
+    tag.len() - inner.len() + keyword_len
+}
+
+/// Find `name` as a whole word in `source[start_byte..]`, skipping past the opening tag keyword.
+pub(super) fn find_name_in_tag(source: &str, tag_start_byte: usize, name: &str) -> Option<usize> {
+    let tag = source.get(tag_start_byte..)?;
+    let search_from = tag_start_byte + after_tag_keyword(tag);
+    let slice = source.get(search_from..)?;
+    let name_bytes = name.as_bytes();
+    let slice_bytes = slice.as_bytes();
+    let mut i = 0usize;
+    while i + name.len() <= slice.len() {
+        if &slice_bytes[i..i + name.len()] == name_bytes {
+            let before_ok = i == 0 || !is_ident_byte(slice_bytes[i - 1]);
+            let after_ok = i + name.len() >= slice.len() || !is_ident_byte(slice_bytes[i + name.len()]);
+            if before_ok && after_ok {
+                return Some(search_from + i);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
 /// Extract the Jinja identifier word centered at `byte` in `source`.
 pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
     let byte = clamp_to_char_boundary(source, byte);
