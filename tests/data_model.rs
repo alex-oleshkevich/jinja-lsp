@@ -157,6 +157,7 @@ fn template_index_holds_one_files_symbols_and_errors() {
             span: span(),
         }],
         references: vec![],
+        macro_calls: vec![],
         syntax_errors: vec![],
     };
     assert_eq!(idx.path, "blog/post.html");
@@ -180,6 +181,7 @@ fn workspace_index_maps_paths_to_template_indexes() {
             from_imports: vec![],
             template_refs: vec![],
             references: vec![],
+            macro_calls: vec![],
             syntax_errors: vec![],
         },
     );
@@ -199,6 +201,7 @@ fn workspace_index_can_compute_template_chain() {
         from_imports: vec![],
         template_refs: vec![],
         references: vec![],
+        macro_calls: vec![],
         syntax_errors: vec![],
     };
     let post = TemplateIndex {
@@ -216,6 +219,7 @@ fn workspace_index_can_compute_template_chain() {
             span: span(),
         }],
         references: vec![],
+        macro_calls: vec![],
         syntax_errors: vec![],
     };
     let mut templates = HashMap::new();

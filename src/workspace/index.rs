@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use super::symbols::{
-    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, MacroDefinition, Reference,
-    ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference, VariableDefinition,
+    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, MacroCallSite, MacroDefinition,
+    Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference,
+    VariableDefinition,
 };
 use crate::parsing::extract;
 
@@ -29,6 +30,7 @@ pub struct TemplateIndex {
     pub from_imports: Vec<FromImport>,
     pub template_refs: Vec<TemplateReference>,
     pub references: Vec<Reference>,
+    pub macro_calls: Vec<MacroCallSite>,
     pub syntax_errors: Vec<SyntaxError>,
 }
 
@@ -43,6 +45,7 @@ impl TemplateIndex {
             from_imports: vec![],
             template_refs: vec![],
             references: vec![],
+            macro_calls: vec![],
             syntax_errors: vec![],
         }
     }

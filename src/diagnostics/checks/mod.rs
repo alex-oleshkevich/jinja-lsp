@@ -8,13 +8,13 @@ use crate::{
     diagnostic::{Diagnostic, DiagnosticSeverity},
     workspace::{
         index::{ResolvedBinding, TemplateIndex, WorkspaceIndex},
-        symbols::{ReferenceKind, TemplateRefKind},
+        symbols::{MacroDefinition, ReferenceKind, TemplateRefKind},
     },
 };
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E404, E601.
+/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E404, E501, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -37,6 +37,7 @@ pub fn run_checks(
     check_w305(path, index, &mut out);
     check_e403(path, index, workspace, &mut out);
     check_e404(path, index, workspace, &mut out);
+    check_e501(path, index, workspace, &mut out);
     check_w402_e401(source, path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
@@ -550,6 +551,101 @@ fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<Stri
         }
     }
     false
+}
+
+// ── E501: wrong-call-args ─────────────────────────────────────────────────────
+
+fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+    for call in &index.macro_calls {
+        // Resolve the callee macro definition (local → from-imports → workspace-wide).
+        let Some(mac) = resolve_macro(call.callee.as_str(), index, workspace) else { continue };
+
+        let required_count = mac.parameters.iter().filter(|p| p.default.is_none()).count();
+        let total_count = mac.parameters.len();
+        let given_positional = call.positional_count;
+        let given_keywords: HashSet<&str> = call.keyword_names.iter().map(|s| s.as_str()).collect();
+
+        // Check for unknown keyword args.
+        for kw in &call.keyword_names {
+            if !mac.parameters.iter().any(|p| p.name == *kw) {
+                out.push(Diagnostic {
+                    file: path.to_owned(),
+                    line: call.span.start_line,
+                    col: call.span.start_col,
+                    code: "JINJA-E501".to_owned(),
+                    slug: "wrong-call-args".to_owned(),
+                    severity: DiagnosticSeverity::Error,
+                    message: format!("'{}': unexpected keyword argument '{}'", call.callee, kw),
+                });
+            }
+        }
+
+        // Count how many required params are already satisfied by keyword args.
+        let required_by_keyword = mac.parameters.iter()
+            .filter(|p| p.default.is_none() && given_keywords.contains(p.name.as_str()))
+            .count();
+        let required_positional_needed = required_count.saturating_sub(required_by_keyword);
+
+        // Too few positional args.
+        if given_positional < required_positional_needed {
+            let missing = required_positional_needed - given_positional;
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: call.span.start_line,
+                col: call.span.start_col,
+                code: "JINJA-E501".to_owned(),
+                slug: "wrong-call-args".to_owned(),
+                severity: DiagnosticSeverity::Error,
+                message: format!(
+                    "'{}': missing {} required argument(s) (expected at least {}, got {})",
+                    call.callee, missing, required_count, given_positional
+                ),
+            });
+            continue;
+        }
+
+        // Too many positional args.
+        if given_positional > total_count {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: call.span.start_line,
+                col: call.span.start_col,
+                code: "JINJA-E501".to_owned(),
+                slug: "wrong-call-args".to_owned(),
+                severity: DiagnosticSeverity::Error,
+                message: format!(
+                    "'{}': too many positional arguments (expected at most {}, got {})",
+                    call.callee, total_count, given_positional
+                ),
+            });
+        }
+    }
+}
+
+fn resolve_macro<'a>(callee: &str, index: &'a TemplateIndex, workspace: &'a WorkspaceIndex) -> Option<&'a MacroDefinition> {
+    // Local macro.
+    if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
+        return Some(m);
+    }
+    // From-imports.
+    for fi in &index.from_imports {
+        let Some(orig) = fi.names.iter()
+            .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == callee)
+            .map(|n| n.name.as_str())
+        else { continue };
+        if let Some(src_idx) = workspace.templates.get(&fi.source) {
+            if let Some(m) = src_idx.macros.iter().find(|m| m.name == orig) {
+                return Some(m);
+            }
+        }
+    }
+    // Workspace-wide.
+    for idx in workspace.templates.values() {
+        if let Some(m) = idx.macros.iter().find(|m| m.name == callee) {
+            return Some(m);
+        }
+    }
+    None
 }
 
 // ── E601: template-does-not-exist ─────────────────────────────────────────────

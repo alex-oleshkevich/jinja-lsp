@@ -6,9 +6,9 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 use crate::workspace::{
     index::TemplateIndex,
     symbols::{
-        BlockDefinition, FromImport, ImportAlias, ImportedName, MacroDefinition, Parameter,
-        Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference,
-        VariableDefinition, VariableScope,
+        BlockDefinition, FromImport, ImportAlias, ImportedName, MacroCallSite, MacroDefinition,
+        Parameter, Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind,
+        TemplateReference, VariableDefinition, VariableScope,
     },
 };
 
@@ -70,6 +70,7 @@ jinja_query!(Q_IMPORTS,        "queries/imports.scm");
 jinja_query!(Q_FROM_IMPORTS,   "queries/from_imports.scm");
 jinja_query!(Q_IMPORT_NAMES,   "queries/import_names.scm");
 jinja_query!(Q_REFERENCES,     "queries/references.scm");
+jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
 
 // ── public API ───────────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ pub fn extract(source: &str) -> TemplateIndex {
     do_imports(&tree, bytes, &mut idx);
     do_from_imports(&tree, bytes, &mut idx);
     do_references(&tree, bytes, &mut idx);
+    do_call_sites(&tree, bytes, &mut idx);
 
     idx
 }
@@ -825,6 +827,50 @@ fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
                 name: txt(cap.node, bytes).to_owned(),
                 kind,
                 span: node_span(cap.node),
+            });
+        }
+    }
+}
+
+// ── call sites ────────────────────────────────────────────────────────────────
+
+fn do_call_sites(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_CALL_SITES;
+    let mut cur = QueryCursor::new();
+    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    while let Some(m) = ms.next() {
+        for cap in m.captures {
+            if q.capture_names()[cap.index as usize] != "callee" {
+                continue;
+            }
+            let callee = txt(cap.node, bytes).to_owned();
+            let span = node_span(cap.node);
+            // Navigate to function_call parent to count args.
+            let Some(fn_call) = cap.node.parent() else { continue };
+            if fn_call.kind() != "function_call" { continue }
+            let mut positional_count = 0usize;
+            let mut keyword_names = Vec::new();
+            let mut c = fn_call.walk();
+            for child in fn_call.children(&mut c) {
+                if child.kind() != "arg" { continue }
+                // A keyword arg has an identifier child followed by a binary_operator ("=").
+                let is_keyword = child.child_count() >= 2 && {
+                    child.child(0).map(|n| n.kind() == "identifier").unwrap_or(false)
+                        && child.child(1).map(|n| n.kind() == "binary_operator").unwrap_or(false)
+                };
+                if is_keyword {
+                    if let Some(name_node) = child.child(0) {
+                        keyword_names.push(txt(name_node, bytes).to_owned());
+                    }
+                } else {
+                    positional_count += 1;
+                }
+            }
+            idx.macro_calls.push(MacroCallSite {
+                callee,
+                positional_count,
+                keyword_names,
+                span,
             });
         }
     }

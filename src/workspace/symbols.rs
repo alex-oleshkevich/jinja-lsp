@@ -117,6 +117,16 @@ pub enum ReferenceKind {
     Test,
 }
 
+/// A resolved function/macro call site with argument arity information.
+/// Used by the E501 wrong-call-args check.
+#[derive(Debug, Clone)]
+pub struct MacroCallSite {
+    pub callee: String,
+    pub positional_count: usize,
+    pub keyword_names: Vec<String>,
+    pub span: Span,
+}
+
 /// REQ-DATA-12: the innermost construct whose body contains a given span,
 /// or Template when no body encloses it.
 #[derive(Debug, Clone)]

@@ -485,6 +485,74 @@ fn no_e101_for_local_macro_name() {
         "local macro name used as identifier must not trigger E101");
 }
 
+// ─── E501: wrong-call-args ───────────────────────────────────────────────────
+
+#[test]
+fn e501_too_few_required_args() {
+    // greet(name) requires 1 arg; called with 0 → E501
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet() }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
+    assert!(e501.is_some(), "E501 must fire when required args are missing");
+    assert!(e501.unwrap().message.contains("greet"), "message must name the callee");
+}
+
+#[test]
+fn e501_too_many_positional_args() {
+    // greet(name) has 1 param; called with 2 → E501
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet('a', 'b') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
+    assert!(e501.is_some(), "E501 must fire when too many positional args are passed");
+}
+
+#[test]
+fn no_e501_for_correct_positional_args() {
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet('world') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
+        "correct arg count must not trigger E501");
+}
+
+#[test]
+fn no_e501_for_optional_args_omitted() {
+    // greet(name, title=None) — title has a default, so calling with just 1 arg is fine
+    let src = "{% macro greet(name, title='') %}hi {{ name }}{% endmacro %}{{ greet('world') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
+        "omitting optional args must not trigger E501");
+}
+
+#[test]
+fn e501_unknown_keyword_arg() {
+    // greet(name) — calling with greet(title='world') is an unknown keyword
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet(title='world') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
+    assert!(e501.is_some(), "E501 must fire for unknown keyword argument");
+    assert!(e501.unwrap().message.contains("title"), "message must name the unknown keyword");
+}
+
+#[test]
+fn no_e501_for_valid_keyword_arg() {
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet(name='world') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
+        "valid keyword arg must not trigger E501");
+}
+
 // ─── E404: recursive-import ──────────────────────────────────────────────────
 
 #[test]
