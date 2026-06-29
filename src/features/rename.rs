@@ -34,22 +34,29 @@ pub fn rename_at_cursor(
 ) -> Option<(RenameTarget, String)> {
     // Convert (line, col) to byte offset and find the identifier word there.
     let byte = line_col_to_byte(source, line, col)?;
-    let word = super::word_at_byte(source, byte);
-    if word.is_empty() {
-        return None;
+
+    // Name-based matches must be guarded: HTML text matching a block/macro/var
+    // name must not trigger a rename outside Jinja delimiters.
+    let in_jinja = super::inside_jinja(source, byte);
+
+    if in_jinja {
+        let word = super::word_at_byte(source, byte);
+        if word.is_empty() {
+            return None;
+        }
+
+        // If the word matches a macro definition, it's a workspace-wide rename.
+        if index.macros.iter().any(|m| m.name == word) {
+            return Some((RenameTarget::Workspace, word.to_owned()));
+        }
+
+        // If the word matches a block definition, it's workspace-wide.
+        if index.blocks.iter().any(|b| b.name == word) {
+            return Some((RenameTarget::Workspace, word.to_owned()));
+        }
     }
 
-    // If the word matches a macro definition, it's a workspace-wide rename.
-    if index.macros.iter().any(|m| m.name == word) {
-        return Some((RenameTarget::Workspace, word.to_owned()));
-    }
-
-    // If the word matches a block definition, it's workspace-wide.
-    if index.blocks.iter().any(|b| b.name == word) {
-        return Some((RenameTarget::Workspace, word.to_owned()));
-    }
-
-    // Otherwise check if there's a tracked reference at this position.
+    // Reference span check is position-based (parser-assigned spans are always inside Jinja).
     let ref_ = index.references.iter().find(|r| {
         r.span.start_line == line
             && col >= r.span.start_col
@@ -62,9 +69,12 @@ pub fn rename_at_cursor(
         }
     }
 
-    // Also allow cursor on a word that matches any variable definition by name.
-    if index.variables.iter().any(|v| v.name == word) {
-        return Some((RenameTarget::Local, word.to_owned()));
+    // Variable name match — also guard against HTML text.
+    if in_jinja {
+        let word = super::word_at_byte(source, byte);
+        if index.variables.iter().any(|v| v.name == word) {
+            return Some((RenameTarget::Local, word.to_owned()));
+        }
     }
 
     None

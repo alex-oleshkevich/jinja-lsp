@@ -71,6 +71,35 @@ fn act11_t04_macro_definition_offers_workspace_rename() {
     assert!(matches!(target, RenameTarget::Workspace));
 }
 
+// ─── Guard: HTML text matching a block/macro name must not trigger rename ─────
+
+#[test]
+fn act11_html_text_matching_block_name_no_rename() {
+    // "content" appears as plain HTML text; it also happens to be a block name.
+    // Cursor in the HTML text must NOT offer a rename (would corrupt HTML).
+    let source = r#"{% block content %}hello{% endblock %}<p>content goes here</p>"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+    // col 42 lands on "content" in the HTML text <p>content...</p>
+    let html_col = source.find("<p>content").map(|p| p + 3).unwrap() as u32;
+    let result = rename_at_cursor(source, "/tpl.html", 0, html_col, &idx, &ws);
+    assert!(result.is_none(), "HTML text matching a block name must not offer rename: {result:?}");
+}
+
+#[test]
+fn act11_jinja_block_name_still_renames() {
+    // Cursor on the block name inside {% block content %} MUST still offer rename.
+    let source = r#"{% block content %}hello{% endblock %}<p>content goes here</p>"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+    let jinja_col = source.find("content").unwrap() as u32;
+    let result = rename_at_cursor(source, "/tpl.html", 0, jinja_col, &idx, &ws);
+    assert!(result.is_some(), "block name inside Jinja delimiter must still offer rename");
+    let (target, name) = result.unwrap();
+    assert_eq!(name, "content");
+    assert!(matches!(target, RenameTarget::Workspace));
+}
+
 #[test]
 #[ignore]
 fn debug_spans() {
@@ -79,7 +108,7 @@ fn debug_spans() {
     eprintln!("refs: {:?}", idx.references);
     eprintln!("vars: {:?}", idx.variables);
     eprintln!("macros: {:?}", idx.macros);
-    
+
     let source2 = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
     let idx2 = jinja_lsp::parsing::extract(source2);
     eprintln!("macros2: {:?}", idx2.macros);

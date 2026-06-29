@@ -30,6 +30,22 @@ pub(super) fn clamp_to_char_boundary(source: &str, byte: usize) -> usize {
     (0..=byte).rev().find(|&b| source.is_char_boundary(b)).unwrap_or(0)
 }
 
+/// Returns `true` when `byte` is inside an active `{{ }}` or `{% %}` Jinja delimiter.
+/// Content inside Jinja comments `{# #}` returns `false`.
+pub(super) fn inside_jinja(source: &str, byte: usize) -> bool {
+    let before = &source[..clamp_to_char_boundary(source, byte)];
+    let is_active = |open: Option<usize>, close: Option<usize>| match (open, close) {
+        (Some(o), Some(c)) => o > c,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    if is_active(before.rfind("{#"), before.rfind("#}")) {
+        return false;
+    }
+    is_active(before.rfind("{{"), before.rfind("}}"))
+        || is_active(before.rfind("{%"), before.rfind("%}"))
+}
+
 /// Extract the Jinja identifier word centered at `byte` in `source`.
 pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
     let byte = clamp_to_char_boundary(source, byte);
