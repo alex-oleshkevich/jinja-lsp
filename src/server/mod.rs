@@ -22,6 +22,7 @@ use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::references::{find_references, ReferenceLocation};
 use crate::features::document_highlight::{document_highlight, HighlightKind};
 use crate::features::folding::{fold_ranges, FoldKind};
+use crate::features::signature_help::signature_help as sig_help_feature;
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -369,9 +370,32 @@ impl LanguageServer for Backend {
 
     async fn signature_help(
         &self,
-        _params: SignatureHelpParams,
+        params: SignatureHelpParams,
     ) -> Result<Option<SignatureHelp>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
+        let pos = params.text_document_position_params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some(help) = sig_help_feature(source, pos.line, byte_col, index, &state.registry, &state.workspace) else {
+            return Ok(None);
+        };
+        let sig_info = SignatureInformation {
+            label: help.label,
+            documentation: None,
+            parameters: Some(help.params.iter().map(|p| ParameterInformation {
+                label: ParameterLabel::Simple(p.label.clone()),
+                documentation: p.documentation.as_deref().map(|d| Documentation::String(d.to_owned())),
+            }).collect()),
+            active_parameter: help.active_parameter.map(|i| i as u32),
+        };
+        Ok(Some(SignatureHelp {
+            signatures: vec![sig_info],
+            active_signature: Some(0),
+            active_parameter: help.active_parameter.map(|i| i as u32),
+        }))
     }
 
     async fn goto_definition(
