@@ -168,9 +168,9 @@ fn classify_reference(
         });
     }
 
-    // From-imported macro.
+    // From-imported macro (including `import foo as bar` aliases).
     for fi in &index.from_imports {
-        if fi.names.iter().any(|n| n.name == name) {
+        if fi.names.iter().any(|n| n.name == name || n.alias.as_deref() == Some(name)) {
             return Some(Symbol::Macro {
                 name: name.to_owned(),
                 def_path: fi.source.clone(),

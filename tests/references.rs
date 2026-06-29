@@ -169,3 +169,21 @@ fn ref05_html_text_matching_variable_name_is_not_a_reference() {
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
     assert!(results.is_empty(), "HTML text matching a variable name must not yield references");
 }
+
+// ─── REQ-REF-01b: aliased from-import reference ──────────────────────────────
+
+#[test]
+fn ref01b_aliased_import_usage_classified_as_symbol() {
+    // `{% from "m.html" import foo as bar %}{{ bar( }}` — cursor on "bar" call site
+    // must produce a non-empty references result (alias must be recognized as a symbol).
+    let src = r#"{% from "m.html" import foo as bar %}{{ bar( }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    ws.index_inline("m.html", "{% macro foo(x) %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Cursor on "bar" at the call site
+    let col = src.rfind("bar").unwrap() as u32;
+    let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
+    assert!(!results.is_empty(), "aliased macro usage must be classified as a symbol and yield references");
+}

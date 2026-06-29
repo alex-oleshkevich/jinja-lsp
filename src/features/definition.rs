@@ -94,15 +94,15 @@ pub fn go_to_definition(
     {
         let word = word_at_byte(source, byte);
         if !word.is_empty() {
-            for fi in &index.from_imports {
-                let matched = fi.names.iter().any(|n| {
-                    n.name == word || n.alias.as_deref() == Some(word)
-                });
-                if matched {
-                    if let Some(src_idx) = workspace.templates.get(&fi.source) {
-                        if let Some(m) = src_idx.macros.iter().find(|m| m.name == word) {
-                            return Some(span_to_def(&fi.source, &m.span));
+            'outer: for fi in &index.from_imports {
+                for n in &fi.names {
+                    if n.name == word || n.alias.as_deref() == Some(word) {
+                        if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                            if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                                return Some(span_to_def(&fi.source, &m.span));
+                            }
                         }
+                        break 'outer;
                     }
                 }
             }
@@ -159,14 +159,17 @@ fn resolve_ident(
         return Some(span_to_def(current_path, &m.span));
     }
 
-    // From-imported macro (REQ-DEF-03): name was imported via `from X import Y`.
-    for fi in &index.from_imports {
-        let matched = fi.names.iter().any(|n| n.name == name || n.alias.as_deref() == Some(name));
-        if matched {
-            if let Some(src_idx) = workspace.templates.get(&fi.source) {
-                if let Some(m) = src_idx.macros.iter().find(|m| m.name == name) {
-                    return Some(span_to_def(&fi.source, &m.span));
+    // From-imported macro (REQ-DEF-03): name was imported via `from X import Y [as Z]`.
+    // When matched via alias, use the real imported name (n.name) for the macro lookup.
+    'from_loop: for fi in &index.from_imports {
+        for n in &fi.names {
+            if n.name == name || n.alias.as_deref() == Some(name) {
+                if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                    if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                        return Some(span_to_def(&fi.source, &m.span));
+                    }
                 }
+                break 'from_loop;
             }
         }
     }

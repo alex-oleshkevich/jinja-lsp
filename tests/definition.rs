@@ -138,6 +138,40 @@ fn def05_alias_attribute_jumps_to_macro_in_source() {
     // Not asserting is_some() — attribute resolution depends on extraction data.
 }
 
+// ─── REQ-DEF-03b: from..import..as alias → macro in source template ──────────
+
+#[test]
+fn def03b_from_import_alias_jumps_to_real_macro() {
+    // `{% from "m.html" import foo as bar %}{{ bar( }}` — cursor on "bar" (the alias
+    // at call site) must jump to the "foo" macro in m.html, not return None.
+    let src = r#"{% from "m.html" import foo as bar %}{{ bar( }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("m.html", "{% macro foo(x) %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let col = src.rfind("bar").unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "child.html", &idx, &reg, &ws);
+    assert!(result.is_some(), "aliased macro call must jump to real macro definition");
+    let def = result.unwrap();
+    assert_eq!(def.target_path, "m.html", "must jump to source template");
+}
+
+#[test]
+fn def03b_from_import_alias_in_import_stmt_jumps_to_macro() {
+    // Cursor ON the alias name in the import statement itself also must resolve.
+    let src = r#"{% from "m.html" import foo as bar %}{{ bar( }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("m.html", "{% macro foo(x) %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // "bar" first occurrence is in the import statement
+    let col = src.find("bar").unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "child.html", &idx, &reg, &ws);
+    assert!(result.is_some(), "alias name in import stmt must jump to macro");
+    let def = result.unwrap();
+    assert_eq!(def.target_path, "m.html");
+}
+
 // ─── REQ-DEF-06: host-owned/unresolvable → nothing ───────────────────────────
 
 #[test]
