@@ -36,3 +36,19 @@ fn relative_key(abs_path: &Path, templates_dirs: &[&Path]) -> Option<String> {
     }
     None
 }
+
+/// Like `build_workspace` but keyed by absolute path, matching how the LSP server
+/// identifies files via `uri.path()`.  Used during `initialize` so pre-indexed
+/// templates are findable by the same key that `pass1`/`publish_file_diagnostics` use.
+pub fn build_workspace_abs(templates_dirs: &[&Path], extensions: &[&str]) -> WorkspaceIndex {
+    let paths = discover_templates(templates_dirs, extensions);
+    let mut workspace = WorkspaceIndex::default();
+    for abs_path in paths {
+        let key = abs_path.to_string_lossy().into_owned();
+        let source = fs::read_to_string(&abs_path).unwrap_or_default();
+        let mut idx = extract(&source);
+        idx.path = key.clone();
+        workspace.templates.insert(key, idx);
+    }
+    workspace
+}

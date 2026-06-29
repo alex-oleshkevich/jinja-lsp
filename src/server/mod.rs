@@ -137,11 +137,42 @@ impl LanguageServer for Backend {
             .and_then(|g| g.position_encodings.as_ref())
             .map(|encs| encs.contains(&PositionEncodingKind::UTF8))
             .unwrap_or(false);
-        // REQ-EDIT-10 / REQ-CFG-07: apply InitializationOptions overlay and validate.
+
+        // jinja-lsp-uoyh: Resolve workspace root, discover config, build workspace.
+        let root_path: Option<std::path::PathBuf> = params.root_uri.as_ref()
+            .and_then(|u| u.to_file_path().ok())
+            .or_else(|| {
+                params.workspace_folders.as_ref()?.first()
+                    .and_then(|f| f.uri.to_file_path().ok())
+            });
+
+        // REQ-CFG-01: discover config from project root; fall back to defaults.
+        let discovered_config = root_path.as_deref()
+            .and_then(|root| crate::config::JinjaConfig::discover(root).ok())
+            .unwrap_or_default();
+
+        // Build workspace index in a blocking thread — may read many files from disk.
+        let initial_workspace = if let Some(root) = &root_path {
+            let dirs = discovered_config.resolved_template_dirs(root);
+            let exts: Vec<String> = discovered_config.extensions.clone();
+            tokio::task::spawn_blocking(move || {
+                let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+                let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+            })
+            .await
+            .unwrap_or_default()
+        } else {
+            crate::workspace::index::WorkspaceIndex::default()
+        };
+
+        // REQ-EDIT-10 / REQ-CFG-07: apply InitializationOptions overlay on top of discovered config.
         {
             let mut state = self.state.write().await;
             state.definition_link_support = link_support;
             state.position_encoding_utf8 = utf8;
+            state.workspace = initial_workspace;
+            state.reset_config(discovered_config);
             if let Some(opts) = params.initialization_options {
                 if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
                     match state.apply_init_options(overlay) {

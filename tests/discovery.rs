@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use jinja_lsp::parsing::discover_templates;
+use jinja_lsp::workspace::build_workspace_abs;
 
 #[test]
 #[cfg(unix)]
@@ -73,4 +74,40 @@ fn skips_nonexistent_dirs_silently() {
 fn empty_dirs_returns_empty() {
     let found = discover_templates(&[], &["html"]);
     assert!(found.is_empty());
+}
+
+// ─── jinja-lsp-uoyh: build_workspace_abs keys are absolute paths ─────────────
+
+#[test]
+fn build_workspace_abs_uses_absolute_path_keys() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("page.html"), "{{ title }}").unwrap();
+
+    let ws = build_workspace_abs(&[tmp.path()], &["html"]);
+    let expected_key = tmp.path().join("page.html").to_string_lossy().to_string();
+
+    assert!(
+        ws.templates.contains_key(&expected_key),
+        "workspace must use absolute path as key; expected {expected_key}, got keys: {:?}",
+        ws.templates.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn build_workspace_abs_populates_template_index() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("macro.html"), "{% macro greet(name) %}hi{% endmacro %}").unwrap();
+
+    let ws = build_workspace_abs(&[tmp.path()], &["html"]);
+    let key = tmp.path().join("macro.html").to_string_lossy().to_string();
+
+    let idx = ws.templates.get(&key).expect("template index must exist");
+    assert!(!idx.macros.is_empty(), "macro must be extracted into template index");
+    assert_eq!(idx.macros[0].name, "greet");
 }

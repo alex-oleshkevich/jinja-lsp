@@ -66,6 +66,13 @@ impl ServerState {
         self.config.validate()
     }
 
+    /// Replace the active config and rebuild the registry from it.
+    /// Called during `initialize` when config is discovered before overlays are applied.
+    pub fn reset_config(&mut self, config: JinjaConfig) {
+        self.registry = Self::build_registry(&config);
+        self.config = config;
+    }
+
     /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +
     /// extension packs + configured custom_builtins dirs + user hints dirs.
     fn build_registry(config: &JinjaConfig) -> Registry {

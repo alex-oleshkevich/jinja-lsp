@@ -286,3 +286,52 @@ fn readme_nvim_snippet_has_required_keys() {
     // root_dir keyed on jinja.toml
     assert!(readme.contains("jinja.toml"), "README nvim snippet must reference jinja.toml root");
 }
+
+// ─── jinja-lsp-uoyh: reset_config sets full config + rebuilds registry ────────
+
+#[test]
+fn state_reset_config_updates_config_and_registry() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("reset_filter.md"),
+        "---\nname: reset_filter\ncategory: filter\n---\nFilter added via reset_config.",
+    )
+    .unwrap();
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    assert!(
+        state.registry.get(Category::Filter, "reset_filter").is_none(),
+        "filter must not exist before reset_config"
+    );
+
+    let mut new_cfg = JinjaConfig::default();
+    new_cfg.custom_builtins = vec![dir.path().to_string_lossy().to_string()];
+    state.reset_config(new_cfg.clone());
+
+    assert_eq!(state.config.custom_builtins, new_cfg.custom_builtins, "config.custom_builtins must be updated");
+    assert!(
+        state.registry.get(Category::Filter, "reset_filter").is_some(),
+        "registry must be rebuilt with new config after reset_config"
+    );
+}
+
+#[test]
+fn state_reset_config_then_overlay_applies_on_top() {
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    let mut base_cfg = JinjaConfig::default();
+    base_cfg.extensions = vec!["html".to_owned()];
+    state.reset_config(base_cfg);
+
+    // Overlay should add extras on top of the reset config
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["starlette".to_owned()]),
+        ..Default::default()
+    };
+    let _ = state.apply_init_options(overlay);
+
+    assert_eq!(state.config.extensions, vec!["html"], "extensions from reset_config must survive overlay");
+    assert_eq!(state.config.extras, vec!["starlette"], "extras from overlay must be applied");
+}
