@@ -190,9 +190,7 @@ pub fn suppress_by_noqa(
     (kept, w107s)
 }
 
-/// A valid noqa ID is a full code (`JINJA-E101`) or class prefix (`JINJA-E`).
-/// Slugs like `undefined-variable` are NOT valid.
-fn is_valid_noqa_id(id: &str, _known: &[&str]) -> bool {
-    // Must start with JINJA- and not contain lowercase (slugs have lowercase)
-    id.starts_with("JINJA-") && !id.chars().any(|c| c.is_lowercase())
+/// A valid noqa ID must be an exact member of the known-codes list (full codes or class prefixes).
+fn is_valid_noqa_id(id: &str, known: &[&str]) -> bool {
+    known.contains(&id)
 }

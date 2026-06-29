@@ -253,3 +253,26 @@ fn valid_and_invalid_noqa_ids_mixed() {
     assert!(kept.is_empty(), "valid ID must suppress E101");
     assert!(!w107s.is_empty(), "invalid ID must produce W107");
 }
+
+#[test]
+fn ulcx_unknown_uppercase_jinja_code_produces_w107() {
+    // "JINJA-FOO" starts with JINJA- and has no lowercase, but is not a known code.
+    // The old implementation accepted it silently; the fix must reject it with W107.
+    let source = "{{ x }}   {# noqa: JINJA-FOO #}";
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, w107s) = suppress_by_noqa(&diags, source);
+    assert_eq!(kept.len(), 1, "JINJA-FOO must not suppress diagnostics");
+    assert!(!w107s.is_empty(), "JINJA-FOO must produce W107 (not in known-codes list)");
+}
+
+#[test]
+fn ulcx_partial_prefix_does_not_over_suppress() {
+    // "JINJA-E10" is NOT a valid prefix (the known-prefix list has "JINJA-E1", not "JINJA-E10").
+    // With the old starts_with suppression check, JINJA-E10 silently suppressed JINJA-E101.
+    // After the fix, JINJA-E10 must be rejected as invalid → W107, no suppression.
+    let source = "{{ x }}   {# noqa: JINJA-E10 #}";
+    let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
+    let (kept, w107s) = suppress_by_noqa(&diags, source);
+    assert_eq!(kept.len(), 1, "JINJA-E10 is not a valid prefix and must not suppress");
+    assert!(!w107s.is_empty(), "JINJA-E10 must produce W107");
+}
