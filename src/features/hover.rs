@@ -316,7 +316,7 @@ fn format_macro_card(m: &MacroDefinition) -> HoverResult {
         })
         .collect();
     let sig = format!("{}({})", m.name, params.join(", "));
-    let md = compose_card(&m.name, "macro", Some(&sig), None, None);
+    let md = compose_card(&m.name, "macro", Some(&sig), m.doc.as_deref(), None);
     HoverResult {
         markdown: md,
         start_line: m.span.start_line,

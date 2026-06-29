@@ -21,6 +21,7 @@ fn macro_definition_has_name_params_body_span() {
         ],
         body: span(),
         span: span(),
+        doc: None,
     };
     assert_eq!(m.name, "post_url");
     assert_eq!(m.parameters.len(), 2);
@@ -289,6 +290,7 @@ fn make_macro(name: &str, body_start: usize, body_end: usize) -> MacroDefinition
         parameters: vec![],
         body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
         span: Span::default(),
+        doc: None,
     }
 }
 

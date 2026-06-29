@@ -29,6 +29,8 @@ pub struct MacroDefinition {
     pub parameters: Vec<Parameter>,
     pub body: Span,
     pub span: Span,
+    /// REQ-HOV-03: first `{# ... #}` comment inside the macro body, stripped of delimiters.
+    pub doc: Option<String>,
 }
 
 /// A single macro parameter (positional; optional default makes it keyword-friendly).

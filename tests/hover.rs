@@ -201,6 +201,29 @@ fn hov03_macro_hover_shows_parameters() {
         "macro parameters must appear in signature");
 }
 
+#[test]
+fn hov03_macro_docstring_appears_in_hover() {
+    let src = "{% macro render(item) %}{# Renders a single item card. #}{{ item }}{% endmacro %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "render");
+    let r = hover(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert!(r.markdown.contains("Renders a single item card."),
+        "macro docstring must appear in hover: {:?}", r.markdown);
+}
+
+#[test]
+fn hov03_macro_without_docstring_shows_only_signature() {
+    let src = "{% macro render(item) %}{{ item }}{% endmacro %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "render");
+    let r = hover(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert!(r.markdown.contains("render(item)"), "signature must still appear");
+}
+
 // ─── REQ-HOV-04: variable scope and definition site ──────────────────────────
 
 #[test]

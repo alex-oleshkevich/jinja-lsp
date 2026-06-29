@@ -173,10 +173,9 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
 
     for (key, name, span, ctrl_end) in macro_vec {
         let parameters = param_map.remove(&key).unwrap_or_default();
-        // body spans from the end of the {% macro %} control tag to the start of
-        // the matching {% endmacro %} control tag (sibling depth-counting walk).
         let body = macro_body_span(tree.root_node(), ctrl_end, bytes);
-        idx.macros.push(MacroDefinition { name, parameters, body, span });
+        let doc = extract_first_comment(bytes, body.start_byte, body.end_byte);
+        idx.macros.push(MacroDefinition { name, parameters, body, span, doc });
     }
 }
 
@@ -820,4 +819,15 @@ fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
 
 fn strip_quotes(s: &str) -> String {
     s.trim_matches(|c| c == '"' || c == '\'').to_owned()
+}
+
+/// REQ-HOV-03: find the first `{# ... #}` comment in the byte slice [start, end)
+/// and return its trimmed inner text. Returns None when no comment is present.
+fn extract_first_comment(bytes: &[u8], start: usize, end: usize) -> Option<String> {
+    let slice = std::str::from_utf8(bytes.get(start..end)?).ok()?;
+    let open = slice.find("{#")?;
+    let rest = &slice[open + 2..];
+    let close = rest.find("#}")?;
+    let inner = rest[..close].trim();
+    if inner.is_empty() { None } else { Some(inner.to_owned()) }
 }
