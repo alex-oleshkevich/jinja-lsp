@@ -12,6 +12,8 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
 };
 
+use crate::builtins::registry::Registry;
+use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::features::formatting::{format_document, format_range};
 use crate::workspace::index::WorkspaceIndex;
 use state::ServerState;
@@ -275,9 +277,46 @@ impl LanguageServer for Backend {
 
     async fn code_action(
         &self,
-        _params: CodeActionParams,
+        params: CodeActionParams,
     ) -> Result<Option<CodeActionResponse>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+
+        // Convert LSP diagnostics to internal ones.
+        let diags: Vec<crate::diagnostic::Diagnostic> = params.context.diagnostics
+            .iter()
+            .filter_map(|d| {
+                let code = match &d.code {
+                    Some(NumberOrString::String(s)) => s.clone(),
+                    _ => return None,
+                };
+                Some(crate::diagnostic::Diagnostic {
+                    code,
+                    slug: String::new(),
+                    message: d.message.clone(),
+                    file: key.clone(),
+                    line: d.range.start.line,
+                    col: d.range.start.character,
+                    severity: crate::diagnostic::DiagnosticSeverity::Warning,
+                })
+            })
+            .collect();
+
+        let registry = Registry::load_core();
+        let actions = code_actions(source, &key, &diags, index, &state.workspace, &registry);
+
+        if actions.is_empty() {
+            return Ok(None);
+        }
+
+        let lsp_actions: Vec<CodeActionOrCommand> = actions
+            .into_iter()
+            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key)))
+            .collect();
+
+        Ok(Some(lsp_actions))
     }
 
     async fn formatting(
@@ -303,6 +342,66 @@ impl LanguageServer for Backend {
         let edits = format_range(source, range.start.line, range.end.line);
         if edits.is_empty() { return Ok(None); }
         Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
+    }
+}
+
+fn path_to_uri(path: &str) -> Url {
+    if path.starts_with('/') {
+        Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap())
+    } else {
+        Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap())
+    }
+}
+
+fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
+    let kind = Some(match action.kind {
+        ActionKind::QuickFix => CodeActionKind::QUICKFIX,
+        ActionKind::RefactorExtract => CodeActionKind::REFACTOR_EXTRACT,
+        ActionKind::RefactorRewrite => CodeActionKind::REFACTOR_REWRITE,
+    });
+
+    let edit = action.edit.map(|we| {
+        if we.create_files.is_empty() {
+            // Simple case: only text changes — use the compact `changes` map.
+            let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = std::collections::HashMap::new();
+            for (path, edits) in we.changes {
+                changes.insert(path_to_uri(&path), edits.into_iter().map(to_lsp_edit).collect());
+            }
+            WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
+        } else {
+            // Complex case: file creations — must use document_changes.
+            let mut ops: Vec<DocumentChangeOperation> = we.changes
+                .into_iter()
+                .flat_map(|(path, edits)| {
+                    let uri = path_to_uri(&path);
+                    edits.into_iter().map(move |e| {
+                        DocumentChangeOperation::Edit(TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
+                            edits: vec![OneOf::Left(to_lsp_edit(e))],
+                        })
+                    })
+                })
+                .collect();
+            for (path, _content) in we.create_files {
+                ops.push(DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+                    uri: path_to_uri(&path),
+                    options: None,
+                    annotation_id: None,
+                })));
+            }
+            WorkspaceEdit { changes: None, document_changes: Some(DocumentChanges::Operations(ops)), change_annotations: None }
+        }
+    });
+
+    CodeAction {
+        title: action.title,
+        kind,
+        diagnostics: None,
+        edit,
+        command: None,
+        is_preferred: Some(action.is_preferred),
+        disabled: None,
+        data: None,
     }
 }
 
