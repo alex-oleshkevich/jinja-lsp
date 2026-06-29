@@ -24,6 +24,7 @@ use crate::features::document_highlight::{document_highlight, HighlightKind};
 use crate::features::folding::{fold_ranges, FoldKind};
 use crate::features::signature_help::signature_help as sig_help_feature;
 use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintData, InlayHintsConfig};
+use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resolve as code_lens_resolve_feature, CodeLensConfig, LensData, LensKind, LensSymbolKind};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -565,8 +566,50 @@ impl LanguageServer for Backend {
         Ok(params)
     }
 
-    async fn code_lens(&self, _params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
-        Ok(None)
+    async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let cfg = CodeLensConfig::default();
+        let lenses = code_lens_feature(&key, index, &cfg);
+        if lenses.is_empty() { return Ok(None); }
+        let result = lenses.into_iter().map(|l| {
+            let data = lens_data_to_json(&l.data);
+            CodeLens {
+                range: Range {
+                    start: Position { line: l.line, character: l.col },
+                    end: Position { line: l.line, character: l.col },
+                },
+                command: l.title.map(|title| Command {
+                    title,
+                    command: String::new(),
+                    arguments: None,
+                }),
+                data: Some(data),
+            }
+        }).collect();
+        Ok(Some(result))
+    }
+
+    async fn code_lens_resolve(&self, mut params: CodeLens) -> Result<CodeLens> {
+        let Some(data_val) = &params.data else { return Ok(params) };
+        let Some(lens_data) = lens_data_from_json(data_val) else { return Ok(params) };
+        let path = lens_data.file_path.clone();
+        let state = self.state.read().await;
+        let internal = crate::features::code_lens::CodeLens {
+            line: params.range.start.line,
+            col: params.range.start.character,
+            title: None,
+            data: lens_data,
+        };
+        let resolved = code_lens_resolve_feature(internal, &state.workspace);
+        if let Some(title) = resolved.title {
+            if !title.is_empty() {
+                params.command = Some(Command { title, command: String::new(), arguments: None });
+            }
+        }
+        drop(path);
+        Ok(params)
     }
 
     async fn code_action(
@@ -911,6 +954,46 @@ fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
         },
         new_text: e.new_text,
     }
+}
+
+fn lens_data_to_json(data: &LensData) -> serde_json::Value {
+    let sym = match data.symbol_kind { LensSymbolKind::Macro => "macro", LensSymbolKind::Block => "block" };
+    let kind = match data.lens_kind {
+        LensKind::ReferenceCount => "ref_count",
+        LensKind::InheritanceOverrides => "overrides",
+        LensKind::InheritanceExtended => "extended",
+    };
+    serde_json::json!({
+        "file_path": data.file_path,
+        "symbol_kind": sym,
+        "symbol_name": data.symbol_name,
+        "decl_line": data.decl_line,
+        "decl_col": data.decl_col,
+        "lens_kind": kind,
+    })
+}
+
+fn lens_data_from_json(val: &serde_json::Value) -> Option<LensData> {
+    let obj = val.as_object()?;
+    let symbol_kind = match obj.get("symbol_kind")?.as_str()? {
+        "macro" => LensSymbolKind::Macro,
+        "block" => LensSymbolKind::Block,
+        _ => return None,
+    };
+    let lens_kind = match obj.get("lens_kind")?.as_str()? {
+        "ref_count" => LensKind::ReferenceCount,
+        "overrides" => LensKind::InheritanceOverrides,
+        "extended" => LensKind::InheritanceExtended,
+        _ => return None,
+    };
+    Some(LensData {
+        file_path: obj.get("file_path")?.as_str()?.to_owned(),
+        symbol_kind,
+        symbol_name: obj.get("symbol_name")?.as_str()?.to_owned(),
+        decl_line: obj.get("decl_line")?.as_u64()? as u32,
+        decl_col: obj.get("decl_col")?.as_u64()? as u32,
+        lens_kind,
+    })
 }
 
 fn inlay_hint_data_to_json(data: &InlayHintData) -> serde_json::Value {
