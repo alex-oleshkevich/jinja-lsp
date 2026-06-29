@@ -125,6 +125,83 @@ fn w302_emitted_for_duplicate_macro() {
     assert!(w302.unwrap().message.contains("render"), "message must name the duplicate macro");
 }
 
+// ─── W201: unused-variable ───────────────────────────────────────────────────
+
+#[test]
+fn w201_emitted_for_set_variable_never_used() {
+    let src = "{% set x = 1 %}hello world";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w201 = diags.iter().find(|d| d.code == "JINJA-W201");
+    assert!(w201.is_some(), "W201 must be emitted for unused set variable: {diags:?}");
+    assert!(w201.unwrap().message.contains('x'), "message must name the unused variable");
+}
+
+#[test]
+fn no_w201_when_variable_is_used() {
+    let src = "{% set x = 1 %}{{ x }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W201").count(), 0, "used variable must not trigger W201");
+}
+
+// ─── W202: unused-macro ───────────────────────────────────────────────────────
+
+#[test]
+fn w202_emitted_for_macro_never_called() {
+    let src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}nothing here";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w202 = diags.iter().find(|d| d.code == "JINJA-W202");
+    assert!(w202.is_some(), "W202 must fire for locally-unused macro: {diags:?}");
+    assert!(w202.unwrap().message.contains("greet"), "message must name the macro");
+}
+
+#[test]
+fn no_w202_when_macro_is_called() {
+    let src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}{{ greet('World') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0, "called macro must not trigger W202");
+}
+
+// ─── W203: unused-import ──────────────────────────────────────────────────────
+
+#[test]
+fn w203_emitted_for_unused_import_alias() {
+    let src = r#"{% import "macros.html" as m %}hello"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("macros.html", "{% macro fn() %}{% endmacro %}")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w203 = diags.iter().find(|d| d.code == "JINJA-W203");
+    assert!(w203.is_some(), "W203 must fire for unused import alias: {diags:?}");
+    assert!(w203.unwrap().message.contains('m'), "message must name the alias");
+}
+
+#[test]
+fn no_w203_when_import_alias_is_used() {
+    let src = r#"{% import "macros.html" as m %}{{ m.fn() }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("macros.html", "{% macro fn() %}{% endmacro %}")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W203").count(), 0, "used import alias must not trigger W203");
+}
+
+#[test]
+fn w203_emitted_for_unused_from_import() {
+    let src = r#"{% from "macros.html" import post_url %}hello"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("macros.html", "{% macro post_url() %}{% endmacro %}")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w203 = diags.iter().find(|d| d.code == "JINJA-W203");
+    assert!(w203.is_some(), "W203 must fire for unused from-import: {diags:?}");
+    assert!(w203.unwrap().message.contains("post_url"), "message must name the unused name");
+}
+
 // ─── W303: duplicate-import-alias ────────────────────────────────────────────
 
 #[test]
@@ -300,4 +377,3 @@ fn server_mod_calls_publish_diagnostics() {
         "server mod must call client.publish_diagnostics after Pass 1"
     );
 }
-

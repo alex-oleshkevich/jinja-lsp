@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E102, E104, W301, W302, W303, W304, W305, W402, E401, E403, E601.
+/// Checks implemented: E001, E102, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -25,6 +25,9 @@ pub fn run_checks(
     let mut out = Vec::new();
     check_e001(path, index, &mut out);
     check_e102_e104(path, index, registry, &mut out);
+    check_w201(path, index, &mut out);
+    check_w202(path, index, &mut out);
+    check_w203(source, path, index, &mut out);
     check_w301(path, index, &mut out);
     check_w302(path, index, &mut out);
     check_w303(path, index, &mut out);
@@ -122,6 +125,111 @@ fn check_w302(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 severity: DiagnosticSeverity::Warning,
                 message: format!("duplicate macro '{}'", m.name),
             });
+        }
+    }
+}
+
+// ── W201: unused-variable ─────────────────────────────────────────────────────
+
+fn check_w201(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let used_names: std::collections::HashSet<&str> =
+        index.references.iter().map(|r| r.name.as_str()).collect();
+    for v in &index.variables {
+        // Skip variables with no valid_range (external/context vars or unpopulated bindings).
+        if v.valid_range.start_byte >= v.valid_range.end_byte {
+            continue;
+        }
+        if !used_names.contains(v.name.as_str()) {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: v.span.start_line,
+                col: v.span.start_col,
+                code: "JINJA-W201".to_owned(),
+                slug: "unused-variable".to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                message: format!("variable '{}' is assigned but never used", v.name),
+            });
+        }
+    }
+}
+
+// ── W202: unused-macro ────────────────────────────────────────────────────────
+
+fn check_w202(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let used_names: std::collections::HashSet<&str> = index.references.iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier))
+        .map(|r| r.name.as_str())
+        .collect();
+    for m in &index.macros {
+        if !used_names.contains(m.name.as_str()) {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: m.span.start_line,
+                col: m.span.start_col,
+                code: "JINJA-W202".to_owned(),
+                slug: "unused-macro".to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                message: format!("macro '{}' is defined but never called in this template", m.name),
+            });
+        }
+    }
+}
+
+// ── W203: unused-import ───────────────────────────────────────────────────────
+
+fn check_w203(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let used_names: std::collections::HashSet<&str> =
+        index.references.iter().map(|r| r.name.as_str()).collect();
+
+    let src_bytes = source.as_bytes();
+
+    for a in &index.import_aliases {
+        // Import alias namespaces (`{% import "m" as alias %}`) are used as `alias.fn()`.
+        // The attribute-access query doesn't capture them, so scan the source text directly.
+        let name = a.alias.as_bytes();
+        let mut found = used_names.contains(a.alias.as_str()); // already captured reference
+        if !found {
+            let mut pos = 0usize;
+            while pos + name.len() <= src_bytes.len() {
+                if &src_bytes[pos..pos + name.len()] == name {
+                    let before_ok = pos == 0 || !(src_bytes[pos - 1].is_ascii_alphanumeric() || src_bytes[pos - 1] == b'_');
+                    let after = pos + name.len();
+                    let after_ok = after < src_bytes.len() && src_bytes[after] == b'.'; // alias.method
+                    if before_ok && after_ok {
+                        found = true;
+                        break;
+                    }
+                }
+                pos += 1;
+            }
+        }
+        if !found {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: a.span.start_line,
+                col: a.span.start_col,
+                code: "JINJA-W203".to_owned(),
+                slug: "unused-import".to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                message: format!("import alias '{}' is never used", a.alias),
+            });
+        }
+    }
+
+    for fi in &index.from_imports {
+        for n in &fi.names {
+            let effective = n.alias.as_deref().unwrap_or(n.name.as_str());
+            if !used_names.contains(effective) {
+                out.push(Diagnostic {
+                    file: path.to_owned(),
+                    line: fi.span.start_line,
+                    col: fi.span.start_col,
+                    code: "JINJA-W203".to_owned(),
+                    slug: "unused-import".to_owned(),
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!("imported name '{}' is never used", effective),
+                });
+            }
         }
     }
 }
