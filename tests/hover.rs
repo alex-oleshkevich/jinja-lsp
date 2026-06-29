@@ -464,3 +464,14 @@ fn hov13_unknown_keyword_returns_none() {
     let result = hover(src, 0, 1, &idx, &reg, &ws);
     assert!(result.is_none(), "expected None for non-keyword position");
 }
+
+#[test]
+fn vn0z_hover_mid_multibyte_char_does_not_panic() {
+    // "é" is 2 bytes (0xC3 0xA9); byte 1 is NOT a char boundary.
+    // word_at_byte_range and byte_to_line_col must not panic.
+    let src = "{{ é }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let _result = hover(src, 0, 4, &idx, &reg, &ws); // byte 4 is mid-char (é = bytes 3-4)
+}

@@ -459,6 +459,7 @@ fn resolve_test_alias(name: &str) -> &str {
 
 /// Extract the word (identifier) at `byte` and return `(word, start_byte, end_byte)`.
 fn word_at_byte_range(source: &str, byte: usize) -> Option<(&str, usize, usize)> {
+    let byte = super::clamp_to_char_boundary(source, byte);
     if byte >= source.len() {
         return None;
     }
@@ -493,7 +494,7 @@ fn byte_range_to_span(source: &str, start_byte: usize, end_byte: usize) -> Span 
 }
 
 fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let capped = byte.min(source.len());
+    let capped = super::clamp_to_char_boundary(source, byte);
     let before = &source[..capped];
     let line = before.bytes().filter(|&b| b == b'\n').count() as u32;
     let col = before.rfind('\n').map(|i| capped - i - 1).unwrap_or(capped) as u32;
@@ -519,6 +520,7 @@ fn is_keyword_arg_name(source: &str, end_byte: usize) -> bool {
 
 /// True when `byte` is inside a `{% ... %}` statement tag.
 fn is_inside_statement_tag(source: &str, byte: usize) -> bool {
+    let byte = super::clamp_to_char_boundary(source, byte);
     if byte >= source.len() {
         return false;
     }

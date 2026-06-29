@@ -274,3 +274,13 @@ fn cmp08_from_import_macro_params_offered() {
 }
 
 fn reg() -> Registry { Registry::load_core() }
+
+#[test]
+fn bovp_detect_context_mid_multibyte_char_does_not_panic() {
+    // "é" is 2 bytes; byte 1 is NOT a char boundary.
+    // detect_context must not panic when given a mid-char byte offset.
+    let src = "{{ é }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let _items = complete(src, 0, 4, &idx, &reg(), &ws); // byte 4 is mid-char (é = bytes 3-4)
+}

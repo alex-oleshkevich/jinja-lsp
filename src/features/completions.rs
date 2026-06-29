@@ -66,7 +66,7 @@ enum CursorContext {
 // ── Context detection ─────────────────────────────────────────────────────────
 
 fn detect_context(source: &str, byte: usize) -> CursorContext {
-    let before = &source[..byte.min(source.len())];
+    let before = &source[..super::clamp_to_char_boundary(source, byte)];
 
     // Find the last position of each delimiter opener and closer.
     let render_open = before.rfind("{{");
