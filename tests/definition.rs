@@ -222,16 +222,52 @@ fn def06_unknown_identifier_returns_none() {
 
 #[test]
 fn def08_for_loop_variable_jumps_to_binding() {
+    // for-loop var: cursor on usage (second "item") must jump to the for statement (line 0).
     let src = "{% for item in items %}{{ item }}{% endfor %}";
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    // Cursor on the second "item" (in {{ item }})
     let col = src.rfind("item").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
-    // If spans are available, expect a jump. If not (all-zero spans), None is acceptable.
-    if let Some(def) = result {
-        assert_eq!(def.target_path, "test.html", "binding is in same file");
-    }
-    // Not asserting is_some() — variable spans may be all-zero in current extraction.
+    let def = result.expect("for-loop variable must resolve to its binding");
+    assert_eq!(def.target_path, "test.html");
+    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the for statement)");
+}
+
+#[test]
+fn def08_set_variable_jumps_to_binding() {
+    let src = "{% set greeting = 'hello' %}\n{{ greeting }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Cursor on "greeting" in the {{ greeting }} expression (line 1).
+    let result = go_to_definition(src, 1, 3, "test.html", &idx, &reg, &ws);
+    let def = result.expect("set variable must resolve to its binding");
+    assert_eq!(def.target_path, "test.html");
+    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the set statement)");
+}
+
+#[test]
+fn def08_with_variable_jumps_to_binding() {
+    let src = "{% with x = 42 %}{{ x }}{% endwith %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.rfind('x').unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
+    let def = result.expect("with variable must resolve to its binding");
+    assert_eq!(def.target_path, "test.html");
+    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the with statement)");
+}
+
+#[test]
+fn def08_free_variable_returns_none() {
+    // Host-owned variable (not in index): no definition jump.
+    let src = "{{ request.user }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = 3u32; // on "request"
+    let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
+    assert!(result.is_none(), "host-owned variable must return None");
 }

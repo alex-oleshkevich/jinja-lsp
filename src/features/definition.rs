@@ -67,7 +67,7 @@ pub fn go_to_definition(
     for r in &candidates {
         let result = match r.kind {
             ReferenceKind::Function | ReferenceKind::Identifier => {
-                resolve_ident(&r.name, current_path, index, registry, workspace)
+                resolve_ident(&r.name, byte, current_path, index, registry, workspace)
             }
             ReferenceKind::Attribute => {
                 // Attribute access like `macros.post_url` — resolve via alias.
@@ -149,6 +149,7 @@ pub fn go_to_definition(
 
 fn resolve_ident(
     name: &str,
+    reference_byte: usize,
     current_path: &str,
     index: &TemplateIndex,
     registry: &Registry,
@@ -194,7 +195,22 @@ fn resolve_ident(
         return None;
     }
 
-    // Free variable or unresolvable — return None.
+    // REQ-DEF-08: scope-local variable (set/for/with) — jump to its binding site.
+    // Pick the narrowest binding whose valid_range contains the reference position.
+    let var = index.variables
+        .iter()
+        .filter(|v| {
+            v.name == name
+                && v.valid_range.start_byte < v.valid_range.end_byte
+                && v.valid_range.start_byte <= reference_byte
+                && reference_byte < v.valid_range.end_byte
+        })
+        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte));
+
+    if let Some(v) = var {
+        return Some(span_to_def(current_path, &v.span));
+    }
+
     None
 }
 
