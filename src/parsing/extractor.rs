@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
+use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::workspace::{
     index::TemplateIndex,
@@ -40,18 +41,43 @@ fn ancestor<'a>(mut n: Node<'a>, kind: &str) -> Option<Node<'a>> {
     None
 }
 
-fn qry(lang: &Language, src: &str) -> Query {
-    Query::new(lang, src).expect("query compile")
+// ── pre-compiled queries ─────────────────────────────────────────────────────
+// Each query is compiled once on first access (LazyLock) instead of on every
+// extract() call. QueryCursor still stays per-call (it holds match state).
+
+macro_rules! jinja_query {
+    ($name:ident, $file:literal) => {
+        static $name: LazyLock<Query> = LazyLock::new(|| {
+            Query::new(&tree_sitter_jinja::language(), include_str!($file))
+                .expect(concat!("failed to compile query: ", $file))
+        });
+    };
 }
+
+jinja_query!(Q_MACROS,         "queries/macros.scm");
+jinja_query!(Q_PARAMS,         "queries/params.scm");
+jinja_query!(Q_BLOCKS,         "queries/blocks.scm");
+jinja_query!(Q_SET_UNPACKING,  "queries/set_unpacking.scm");
+jinja_query!(Q_SET,            "queries/set.scm");
+jinja_query!(Q_FOR_UNPACKING,  "queries/for_unpacking.scm");
+jinja_query!(Q_FOR,            "queries/for.scm");
+jinja_query!(Q_WITH,           "queries/with.scm");
+jinja_query!(Q_TRANS,          "queries/trans.scm");
+jinja_query!(Q_CALLER_ARGS,    "queries/caller_args.scm");
+jinja_query!(Q_EXTENDS,        "queries/extends.scm");
+jinja_query!(Q_INCLUDES,       "queries/includes.scm");
+jinja_query!(Q_IMPORTS,        "queries/imports.scm");
+jinja_query!(Q_FROM_IMPORTS,   "queries/from_imports.scm");
+jinja_query!(Q_IMPORT_NAMES,   "queries/import_names.scm");
+jinja_query!(Q_REFERENCES,     "queries/references.scm");
 
 // ── public API ───────────────────────────────────────────────────────────────
 
 /// Parse `source` once, run all 17 queries, merge captures into a fresh
 /// `TemplateIndex` (REQ-EXTR-03). Syntax errors (JINJA-E001) are recorded.
 pub fn extract(source: &str) -> TemplateIndex {
-    let lang = tree_sitter_jinja::language();
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("language");
+    parser.set_language(&tree_sitter_jinja::language()).expect("language");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -62,13 +88,13 @@ pub fn extract(source: &str) -> TemplateIndex {
     let mut idx = TemplateIndex::empty();
 
     collect_errors(tree.root_node(), &mut idx.syntax_errors);
-    do_macros(&lang, &tree, bytes, &mut idx);
-    do_blocks(&lang, &tree, bytes, &mut idx);
-    do_variables(&lang, &tree, bytes, &mut idx);
-    do_template_refs(&lang, &tree, bytes, &mut idx);
-    do_imports(&lang, &tree, bytes, &mut idx);
-    do_from_imports(&lang, &tree, bytes, &mut idx);
-    do_references(&lang, &tree, bytes, &mut idx);
+    do_macros(&tree, bytes, &mut idx);
+    do_blocks(&tree, bytes, &mut idx);
+    do_variables(&tree, bytes, &mut idx);
+    do_template_refs(&tree, bytes, &mut idx);
+    do_imports(&tree, bytes, &mut idx);
+    do_from_imports(&tree, bytes, &mut idx);
+    do_references(&tree, bytes, &mut idx);
 
     idx
 }
@@ -92,9 +118,9 @@ fn collect_errors(node: Node, out: &mut Vec<SyntaxError>) {
 
 // ── macros + params ──────────────────────────────────────────────────────────
 
-fn do_macros(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let mq = qry(lang, include_str!("queries/macros.scm"));
-    let pq = qry(lang, include_str!("queries/params.scm"));
+fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let mq = &*Q_MACROS;
+    let pq = &*Q_PARAMS;
 
     // (key=macro_stmt.start_byte, name, header_span, ctrl_end_byte)
     let mut macro_vec: Vec<(usize, String, Span, usize)> = vec![];
@@ -208,8 +234,8 @@ fn macro_body_span(root: Node, ctrl_end: usize, bytes: &[u8]) -> Span {
 
 // ── blocks ───────────────────────────────────────────────────────────────────
 
-fn do_blocks(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let bq = qry(lang, include_str!("queries/blocks.scm"));
+fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let bq = &*Q_BLOCKS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&bq, tree.root_node(), bytes);
 
@@ -253,26 +279,24 @@ fn do_blocks(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut 
 
 // ── variables ────────────────────────────────────────────────────────────────
 
-fn do_variables(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    // Process the "unpacking" variants first so their statement keys are known;
-    // the single-var variants skip those keys to avoid double-counting.
+fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let mut seen_set: HashMap<usize, ()> = HashMap::new();
     let mut seen_for: HashMap<usize, ()> = HashMap::new();
 
-    run_set_unpacking(lang, tree, bytes, idx, &mut seen_set);
-    run_set(lang, tree, bytes, idx, &seen_set);
-    run_for_unpacking(lang, tree, bytes, idx, &mut seen_for);
-    run_for(lang, tree, bytes, idx, &seen_for);
-    run_with(lang, tree, bytes, idx);
-    run_trans(lang, tree, bytes, idx);
-    run_caller_args(lang, tree, bytes, idx);
+    run_set_unpacking(tree, bytes, idx, &mut seen_set);
+    run_set(tree, bytes, idx, &seen_set);
+    run_for_unpacking(tree, bytes, idx, &mut seen_for);
+    run_for(tree, bytes, idx, &seen_for);
+    run_with(tree, bytes, idx);
+    run_trans(tree, bytes, idx);
+    run_caller_args(tree, bytes, idx);
 }
 
 fn run_set_unpacking(
-    lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8],
+    tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
 ) {
-    let q = qry(lang, include_str!("queries/set_unpacking.scm"));
+    let q = &*Q_SET_UNPACKING;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -299,10 +323,10 @@ fn run_set_unpacking(
 }
 
 fn run_set(
-    lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8],
+    tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
 ) {
-    let q = qry(lang, include_str!("queries/set.scm"));
+    let q = &*Q_SET;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -321,10 +345,10 @@ fn run_set(
 }
 
 fn run_for_unpacking(
-    lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8],
+    tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
 ) {
-    let q = qry(lang, include_str!("queries/for_unpacking.scm"));
+    let q = &*Q_FOR_UNPACKING;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -351,10 +375,10 @@ fn run_for_unpacking(
 }
 
 fn run_for(
-    lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8],
+    tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
 ) {
-    let q = qry(lang, include_str!("queries/for.scm"));
+    let q = &*Q_FOR;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -372,8 +396,8 @@ fn run_for(
     }
 }
 
-fn run_with(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let q = qry(lang, include_str!("queries/with.scm"));
+fn run_with(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_WITH;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -385,8 +409,8 @@ fn run_with(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut T
     }
 }
 
-fn run_trans(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let q = qry(lang, include_str!("queries/trans.scm"));
+fn run_trans(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_TRANS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -398,8 +422,8 @@ fn run_trans(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut 
     }
 }
 
-fn run_caller_args(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let q = qry(lang, include_str!("queries/caller_args.scm"));
+fn run_caller_args(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_CALLER_ARGS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -417,10 +441,10 @@ fn push_var(idx: &mut TemplateIndex, name: String, scope: VariableScope) {
 
 // ── template references ───────────────────────────────────────────────────────
 
-fn do_template_refs(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     // extends
     {
-        let q = qry(lang, include_str!("queries/extends.scm"));
+        let q = &*Q_EXTENDS;
         let mut cur = QueryCursor::new();
         let mut ms = cur.matches(&q, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
@@ -453,7 +477,7 @@ fn do_template_refs(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx
 
     // includes — collect by statement start_byte to merge ignore_missing flag
     {
-        let q = qry(lang, include_str!("queries/includes.scm"));
+        let q = &*Q_INCLUDES;
         let mut cur = QueryCursor::new();
         let mut ms = cur.matches(&q, tree.root_node(), bytes);
         // keyed by include_statement start_byte
@@ -506,8 +530,8 @@ fn do_template_refs(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx
 
 // ── imports ───────────────────────────────────────────────────────────────────
 
-fn do_imports(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let q = qry(lang, include_str!("queries/imports.scm"));
+fn do_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_IMPORTS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
@@ -539,14 +563,9 @@ fn do_imports(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut
 
 // ── from … import ─────────────────────────────────────────────────────────────
 
-fn do_from_imports(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    // from_imports.scm gives source + direct identifier names (not via import_as)
-    // import_names.scm gives all names and their aliases
-    // Strategy: collect from_imports.scm for source + key; collect import_names.scm for
-    // full name+alias data; associate by import_statement start_byte.
-
-    let fq = qry(lang, include_str!("queries/from_imports.scm"));
-    let nq = qry(lang, include_str!("queries/import_names.scm"));
+fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let fq = &*Q_FROM_IMPORTS;
+    let nq = &*Q_IMPORT_NAMES;
 
     // Collect source paths keyed by import_statement start_byte
     let mut source_map: HashMap<usize, (String, Span)> = HashMap::new();
@@ -625,8 +644,8 @@ fn do_from_imports(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx:
 
 // ── references ────────────────────────────────────────────────────────────────
 
-fn do_references(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let q = qry(lang, include_str!("queries/references.scm"));
+fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let q = &*Q_REFERENCES;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
