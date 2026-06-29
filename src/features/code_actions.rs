@@ -20,18 +20,27 @@ pub struct TextEdit {
     pub new_text: String,
 }
 
-/// Per-file text edits (REQ-ACT-09).
+/// Accumulated edits and file creations for a single code action (REQ-ACT-09).
 #[derive(Debug, Clone)]
 pub struct WorkspaceEdit {
     /// file → ordered list of edits (non-overlapping, top-to-bottom).
     pub changes: HashMap<String, Vec<TextEdit>>,
+    /// Files to create as (path, initial_content) pairs (REQ-ACT-05).
+    pub create_files: Vec<(String, String)>,
 }
 
 impl WorkspaceEdit {
     fn single(file: &str, edit: TextEdit) -> Self {
         let mut changes = HashMap::new();
         changes.insert(file.to_owned(), vec![edit]);
-        WorkspaceEdit { changes }
+        WorkspaceEdit { changes, create_files: vec![] }
+    }
+
+    fn create_file(path: &str) -> Self {
+        WorkspaceEdit {
+            changes: HashMap::new(),
+            create_files: vec![(path.to_owned(), String::new())],
+        }
     }
 }
 
@@ -92,6 +101,11 @@ pub fn code_actions(
             }
             "JINJA-E403" => {
                 if let Some(action) = insert_block_stub(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-E601" => {
+                if let Some(action) = create_template(diag) {
                     actions.push(action);
                 }
             }
@@ -311,6 +325,23 @@ fn suggest_spelling_correction(
             }
         })
         .collect()
+}
+
+// ── REQ-ACT-05 — Create a missing template file ──────────────────────────────
+
+fn create_template(diag: &Diagnostic) -> Option<CodeAction> {
+    let path = extract_quoted_name(&diag.message)?;
+    // Reject paths that escape the templates root — defense in depth (rejected upstream too).
+    if path.contains("../") || path.starts_with('/') {
+        return None;
+    }
+    Some(CodeAction {
+        title: format!("Create template `{path}`"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::create_file(&path)),
+    })
 }
 
 // ── REQ-ACT-04 — Insert a stub for a missing required block ──────────────────

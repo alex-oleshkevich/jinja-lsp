@@ -1,4 +1,4 @@
-// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02, REQ-ACT-03.
+// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02, REQ-ACT-03, REQ-ACT-04, REQ-ACT-05.
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
@@ -444,4 +444,52 @@ fn act04_indented_extends_matches_indent() {
         "  {% extends \"base.html\" %}\n  {% block content %}{% endblock %}\n  {{ content }}",
         "block stub indented to match extends line"
     );
+}
+
+// ─── REQ-ACT-05: T-11 — Create missing template ──────────────────────────────
+
+fn e601(line: u32, col: u32, path: &str) -> Diagnostic {
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-E601".to_owned(),
+        slug: "template-does-not-exist".to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: format!("template does not exist '{path}'"),
+    }
+}
+
+#[test]
+fn act05_t11_create_missing_template() {
+    let src = "{% extends \"missing/base.html\" %}";
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "missing/base.html")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1, "must offer exactly one action");
+    assert!(actions[0].title.contains("missing/base.html"), "title must name the path");
+    assert!(actions[0].is_preferred);
+    let edit = actions[0].edit.as_ref().unwrap();
+    assert_eq!(edit.create_files.len(), 1, "must request exactly one file creation");
+    assert_eq!(edit.create_files[0].0, "missing/base.html", "correct path");
+}
+
+// ─── REQ-ACT-05: T-12 — No action for escaping paths ────────────────────────
+
+#[test]
+fn act05_t12_escaping_path_no_action() {
+    let src = "{% extends \"../secret.html\" %}";
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "../secret.html")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "path escaping templates root must not get a create action");
+}
+
+#[test]
+fn act05_absolute_path_no_action() {
+    let src = "{% extends \"/etc/passwd\" %}";
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "/etc/passwd")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "absolute path must not get a create action");
 }
