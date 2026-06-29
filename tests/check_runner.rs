@@ -125,6 +125,51 @@ fn w302_emitted_for_duplicate_macro() {
     assert!(w302.unwrap().message.contains("render"), "message must name the duplicate macro");
 }
 
+// ─── W304: duplicate-from-import ─────────────────────────────────────────────
+
+#[test]
+fn w304_emitted_when_same_name_imported_twice() {
+    let src = r#"{% from "a.html" import foo %}{% from "b.html" import foo %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("a.html", "{% macro foo() %}{% endmacro %}"), ("b.html", "{% macro foo() %}{% endmacro %}")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w304 = diags.iter().find(|d| d.code == "JINJA-W304");
+    assert!(w304.is_some(), "W304 must be emitted for duplicate from-import name: {diags:?}");
+    assert!(w304.unwrap().message.contains("foo"), "message must name the duplicate: {:?}", w304);
+}
+
+#[test]
+fn no_w304_when_names_are_distinct() {
+    let src = r#"{% from "a.html" import foo %}{% from "b.html" import bar %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("a.html", "{% macro foo() %}{% endmacro %}"), ("b.html", "{% macro bar() %}{% endmacro %}")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W304").count(), 0, "distinct names must not trigger W304");
+}
+
+// ─── W305: name-shadowing ─────────────────────────────────────────────────────
+
+#[test]
+fn w305_emitted_when_inner_var_shadows_outer() {
+    // for-loop var `x` shadows set var `x` from outer scope.
+    let src = "{% set x = 1 %}{% for x in items %}{{ x }}{% endfor %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w305 = diags.iter().find(|d| d.code == "JINJA-W305");
+    assert!(w305.is_some(), "W305 must be emitted when inner var shadows outer: {diags:?}");
+    assert!(w305.unwrap().message.contains('x'), "message must name the shadowing variable: {:?}", w305);
+}
+
+#[test]
+fn no_w305_when_no_shadowing() {
+    let src = "{% set x = 1 %}{% for y in items %}{{ y }}{% endfor %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W305").count(), 0, "distinct names must not trigger W305");
+}
+
 // ─── E601: template-does-not-exist ───────────────────────────────────────────
 
 #[test]

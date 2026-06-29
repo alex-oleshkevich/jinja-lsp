@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E102, E104, W301, W302, E601.
+/// Checks implemented: E001, E102, E104, W301, W302, W304, W305, E601.
 pub fn run_checks(
     _source: &str,
     path: &str,
@@ -27,6 +27,8 @@ pub fn run_checks(
     check_e102_e104(path, index, registry, &mut out);
     check_w301(path, index, &mut out);
     check_w302(path, index, &mut out);
+    check_w304(path, index, &mut out);
+    check_w305(path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
 }
@@ -117,6 +119,66 @@ fn check_w302(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 severity: DiagnosticSeverity::Warning,
                 message: format!("duplicate macro '{}'", m.name),
             });
+        }
+    }
+}
+
+// ── W304: duplicate-from-import ───────────────────────────────────────────────
+
+fn check_w304(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let mut seen: HashMap<&str, u32> = HashMap::new();
+    for fi in &index.from_imports {
+        for n in &fi.names {
+            let effective = n.alias.as_deref().unwrap_or(n.name.as_str());
+            let count = seen.entry(effective).or_insert(0);
+            *count += 1;
+            if *count == 2 {
+                out.push(Diagnostic {
+                    file: path.to_owned(),
+                    line: fi.span.start_line,
+                    col: fi.span.start_col,
+                    code: "JINJA-W304".to_owned(),
+                    slug: "duplicate-from-import".to_owned(),
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!("'{}' imported more than once", effective),
+                });
+            }
+        }
+    }
+}
+
+// ── W305: name-shadowing ──────────────────────────────────────────────────────
+
+fn check_w305(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let vars = &index.variables;
+    for (i, inner) in vars.iter().enumerate() {
+        let inner_start = inner.valid_range.start_byte;
+        let inner_end = inner.valid_range.end_byte;
+        if inner_start >= inner_end {
+            continue;
+        }
+        for outer in vars[..i].iter() {
+            if outer.name != inner.name {
+                continue;
+            }
+            let outer_start = outer.valid_range.start_byte;
+            let outer_end = outer.valid_range.end_byte;
+            if outer_start >= outer_end {
+                continue;
+            }
+            // Inner is nested within outer.
+            if outer_start <= inner_start && inner_end <= outer_end {
+                out.push(Diagnostic {
+                    file: path.to_owned(),
+                    line: inner.span.start_line,
+                    col: inner.span.start_col,
+                    code: "JINJA-W305".to_owned(),
+                    slug: "name-shadowing".to_owned(),
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!("'{}' shadows an outer-scope variable", inner.name),
+                });
+                break; // one diagnostic per shadowed var is enough
+            }
         }
     }
 }
