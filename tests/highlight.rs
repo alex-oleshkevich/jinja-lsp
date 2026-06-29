@@ -103,6 +103,18 @@ fn hl03_macro_call_is_read_write_at_definition() {
     assert!(read_count >= 1, "call site is Read");
 }
 
+// ─── Safety: non-char-boundary byte must not panic ───────────────────────────
+
+#[test]
+fn hl_multibyte_mid_char_does_not_panic() {
+    // é is 2 bytes (0xC3 0xA9); byte 1 is NOT a char boundary.
+    let src = "{{ é }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Passing byte=3 (mid-char) must not panic — returns empty result.
+    let _results = document_highlight(src, 0, 3, &idx, &reg);
+}
+
 // ─── REQ-HL-04: non-symbol positions return empty ────────────────────────────
 
 #[test]

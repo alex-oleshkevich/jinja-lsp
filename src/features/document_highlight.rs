@@ -220,6 +220,7 @@ fn name_span_in_source(source: &str, tag_start_byte: usize, name: &str) -> Span 
 
 /// Return the word-boundary span centered at `byte`.
 fn word_span_at(source: &str, byte: usize) -> Span {
+    let byte = super::clamp_to_char_boundary(source, byte);
     let start = source[..byte]
         .rfind(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| i + 1)
@@ -242,7 +243,7 @@ fn byte_in_span(byte: usize, span: &Span) -> bool {
 }
 
 fn inside_jinja(source: &str, byte: usize) -> bool {
-    let before = &source[..byte.min(source.len())];
+    let before = &source[..super::clamp_to_char_boundary(source, byte)];
     let is_active = |open: Option<usize>, close: Option<usize>| match (open, close) {
         (Some(o), Some(c)) => o > c,
         (Some(_), None) => true,

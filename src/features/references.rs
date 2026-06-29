@@ -323,7 +323,7 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
 
 /// Returns `true` when `byte` is inside an active `{{ }}` or `{% %}` delimiter.
 fn inside_jinja(source: &str, byte: usize) -> bool {
-    let before = &source[..byte.min(source.len())];
+    let before = &source[..super::clamp_to_char_boundary(source, byte)];
     let is_active = |open: Option<usize>, close: Option<usize>| match (open, close) {
         (Some(o), Some(c)) => o > c,
         (Some(_), None) => true,

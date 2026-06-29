@@ -22,8 +22,17 @@ pub fn layer_name() -> &'static str {
     "features"
 }
 
+/// Clamp `byte` to the nearest char boundary at or before `byte`.
+/// Avoids panics when an LSP byte offset lands mid-UTF-8-sequence.
+pub(super) fn clamp_to_char_boundary(source: &str, byte: usize) -> usize {
+    let byte = byte.min(source.len());
+    // Walk backward at most 3 bytes (max UTF-8 sequence is 4 bytes).
+    (0..=byte).rev().find(|&b| source.is_char_boundary(b)).unwrap_or(0)
+}
+
 /// Extract the Jinja identifier word centered at `byte` in `source`.
 pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
+    let byte = clamp_to_char_boundary(source, byte);
     let start = source[..byte]
         .rfind(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| i + 1)
