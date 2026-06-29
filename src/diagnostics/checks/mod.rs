@@ -7,14 +7,14 @@ use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::{Diagnostic, DiagnosticSeverity},
     workspace::{
-        index::{TemplateIndex, WorkspaceIndex},
+        index::{ResolvedBinding, TemplateIndex, WorkspaceIndex},
         symbols::{ReferenceKind, TemplateRefKind},
     },
 };
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E102, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
+/// Checks implemented: E001, E101, E102, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -24,6 +24,7 @@ pub fn run_checks(
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     check_e001(path, index, &mut out);
+    check_e101(path, index, registry, workspace, &mut out);
     check_e102_e104(path, index, registry, &mut out);
     check_w201(path, index, &mut out);
     check_w202(path, index, &mut out);
@@ -51,6 +52,69 @@ fn check_e001(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
             slug: "syntax-error".to_owned(),
             severity: DiagnosticSeverity::Error,
             message: "syntax error".to_owned(),
+        });
+    }
+}
+
+// ── E101: undefined-variable ──────────────────────────────────────────────────
+
+fn check_e101(
+    path: &str,
+    index: &TemplateIndex,
+    registry: &Registry,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
+    // Names that structurally suppress E101 without a registry lookup.
+    let macro_names: std::collections::HashSet<&str> =
+        index.macros.iter().map(|m| m.name.as_str()).collect();
+    let alias_names: std::collections::HashSet<&str> =
+        index.import_aliases.iter().map(|a| a.alias.as_str()).collect();
+    let from_names: std::collections::HashSet<&str> = index
+        .from_imports
+        .iter()
+        .flat_map(|fi| {
+            fi.names
+                .iter()
+                .map(|n| n.alias.as_deref().unwrap_or(n.name.as_str()))
+        })
+        .collect();
+
+    for r in &index.references {
+        if r.kind != ReferenceKind::Identifier {
+            continue;
+        }
+        // Local variable in scope — resolve_reference handles valid_range containment.
+        if !matches!(index.resolve_reference(r, workspace), ResolvedBinding::HostOwned) {
+            continue;
+        }
+        let name = r.name.as_str();
+        // Local macro / import alias / from-import name.
+        if macro_names.contains(name) || alias_names.contains(name) || from_names.contains(name) {
+            continue;
+        }
+        // Jinja2 built-in global variable (loop, caller, varargs, …).
+        if registry.get(Category::Variable, name).is_some() {
+            continue;
+        }
+        // REQ-HINT-04: hinted context_variable suppresses, respecting template scope.
+        if let Some(entry) = registry.get(Category::ContextVariable, name) {
+            let applies = match &entry.template {
+                None => true,
+                Some(t) => path == t.as_str() || path.ends_with(&format!("/{t}")),
+            };
+            if applies {
+                continue;
+            }
+        }
+        out.push(Diagnostic {
+            file: path.to_owned(),
+            line: r.span.start_line,
+            col: r.span.start_col,
+            code: "JINJA-E101".to_owned(),
+            slug: "undefined-variable".to_owned(),
+            severity: DiagnosticSeverity::Error,
+            message: format!("'{}' is not defined", name),
         });
     }
 }

@@ -1,6 +1,6 @@
 // F01 / REQ-DIAG — check runner tests (jinja-lsp-aznq + jinja-lsp-3ayw).
 
-use jinja_lsp::builtins::registry::Registry;
+use jinja_lsp::builtins::registry::{parse_doc_str, Registry, Source};
 use jinja_lsp::diagnostic::DiagnosticSeverity;
 use jinja_lsp::diagnostics::checks::run_checks;
 use jinja_lsp::parsing::extract;
@@ -365,6 +365,124 @@ fn no_e601_for_known_extends_path() {
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E601").count(), 0);
+}
+
+// ─── E101: undefined-variable ────────────────────────────────────────────────
+
+fn registry_with_context_var(name: &str) -> Registry {
+    let mut reg = Registry::load_core();
+    let src = format!("---\nname: {name}\ncategory: context_variable\n---\nA hinted variable.");
+    if let Some((entry, _)) = parse_doc_str(&src, Source::Hint) {
+        reg.insert(entry);
+    }
+    reg
+}
+
+fn registry_with_scoped_context_var(name: &str, template: &str) -> Registry {
+    let mut reg = Registry::load_core();
+    let src = format!("---\nname: {name}\ncategory: context_variable\ntemplate: {template}\n---\nA hinted variable.");
+    if let Some((entry, _)) = parse_doc_str(&src, Source::Hint) {
+        reg.insert(entry);
+    }
+    reg
+}
+
+#[test]
+fn e101_emitted_for_undefined_identifier() {
+    let src = "{{ totally_undefined_xyz }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e101 = diags.iter().find(|d| d.code == "JINJA-E101");
+    assert!(e101.is_some(), "E101 must fire for an undefined identifier");
+    assert!(e101.unwrap().message.contains("totally_undefined_xyz"));
+}
+
+#[test]
+fn no_e101_for_locally_set_variable() {
+    let src = "{% set x = 1 %}{{ x }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "locally-set variable must not trigger E101");
+}
+
+#[test]
+fn no_e101_for_for_loop_variable() {
+    let src = "{% for item in items %}{{ item }}{% endfor %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "for-loop variable must not trigger E101");
+}
+
+#[test]
+fn no_e101_for_jinja2_global_variable() {
+    // `loop` is a Jinja2 built-in variable (Category::Variable in core registry)
+    let src = "{% for i in items %}{{ loop.index }}{% endfor %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "Jinja2 global 'loop' must not trigger E101");
+}
+
+#[test]
+fn no_e101_for_hinted_context_variable() {
+    // REQ-HINT-04: a ContextVariable hint suppresses E101
+    let src = "{{ post }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var("post");
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "hinted context_variable must suppress E101 (REQ-HINT-04)");
+}
+
+#[test]
+fn no_e101_for_scoped_hint_matching_template() {
+    // REQ-HINT-04: template-scoped hint suppresses in that template
+    let src = "{{ user }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("detail.html", src)]);
+    let reg = registry_with_scoped_context_var("user", "detail.html");
+    let diags = run_checks(src, "detail.html", &idx, &reg, &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "template-scoped hint matching template must suppress E101");
+}
+
+#[test]
+fn e101_for_scoped_hint_not_matching_template() {
+    // REQ-HINT-04: template-scoped hint must NOT suppress in other templates
+    let src = "{{ user }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("other.html", src)]);
+    let reg = registry_with_scoped_context_var("user", "detail.html");
+    let diags = run_checks(src, "other.html", &idx, &reg, &ws);
+    let e101 = diags.iter().find(|d| d.code == "JINJA-E101");
+    assert!(e101.is_some(), "template-scoped hint for 'detail.html' must not suppress E101 in 'other.html'");
+}
+
+#[test]
+fn no_e101_for_import_alias() {
+    let src = r#"{% import "macros.html" as m %}{{ m.foo }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "import alias must not trigger E101");
+}
+
+#[test]
+fn no_e101_for_local_macro_name() {
+    let src = "{% macro greet() %}hi{% endmacro %}{{ greet }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "local macro name used as identifier must not trigger E101");
 }
 
 // ─── Publish wiring contract ──────────────────────────────────────────────────
