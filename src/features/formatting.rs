@@ -33,25 +33,38 @@ pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOp
 }
 
 /// Compute per-line TextEdits between `original` and `formatted` within [start_line, end_line].
+///
+/// Falls back to a single whole-document replace when line counts differ, because per-line
+/// diffing is only correct when the formatter never adds or removes lines.
 fn line_edits(original: &str, formatted: &str, start_line: u32, end_line: u32) -> Vec<TextEdit> {
     let orig_lines: Vec<&str> = original.split('\n').collect();
     let fmt_lines: Vec<&str> = formatted.split('\n').collect();
-    let mut edits = Vec::new();
 
-    let max_line = orig_lines.len().max(fmt_lines.len()) as u32;
-    for line_no in 0..max_line {
+    if orig_lines.len() != fmt_lines.len() {
+        let last_line = (orig_lines.len().saturating_sub(1)) as u32;
+        let last_col = orig_lines.last().map(|l| l.len()).unwrap_or(0) as u32;
+        return vec![TextEdit {
+            start_line: 0,
+            start_col: 0,
+            end_line: last_line,
+            end_col: last_col,
+            new_text: formatted.to_owned(),
+        }];
+    }
+
+    let mut edits = Vec::new();
+    for (line_no, (orig, fmt)) in orig_lines.iter().zip(fmt_lines.iter()).enumerate() {
+        let line_no = line_no as u32;
         if line_no < start_line || line_no > end_line {
             continue;
         }
-        let orig = orig_lines.get(line_no as usize).copied().unwrap_or("");
-        let fmt = fmt_lines.get(line_no as usize).copied().unwrap_or("");
         if orig != fmt {
             edits.push(TextEdit {
                 start_line: line_no,
                 start_col: 0,
                 end_line: line_no,
                 end_col: orig.len() as u32,
-                new_text: fmt.to_owned(),
+                new_text: fmt.to_string(),
             });
         }
     }
