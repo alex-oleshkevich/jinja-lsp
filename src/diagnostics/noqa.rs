@@ -28,21 +28,15 @@ impl NoqaDirective {
 /// REQ-DIAG-04: scan one line of source text for noqa directives.
 pub fn parse_noqa_directives(line_text: &str, line_number: u32) -> Vec<NoqaDirective> {
     let mut directives = vec![];
-    // find all `{# ... #}` comment spans
     let mut search = line_text;
-    let mut offset = 0;
     while let Some(start) = search.find("{#") {
-        let _comment_start = offset + start;
         let rest = &search[start + 2..];
-        // find matching closing `#}`
         if let Some(end_rel) = rest.find("#}") {
             let content = rest[..end_rel].trim();
             if let Some(dir) = parse_comment(content, line_number) {
                 directives.push(dir);
             }
-            let skip = start + 2 + end_rel + 2;
-            offset += skip;
-            search = &search[skip..];
+            search = &search[start + 2 + end_rel + 2..];
         } else {
             break;
         }
