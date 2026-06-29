@@ -15,6 +15,7 @@ pub mod rename;
 pub mod semantic_tokens;
 pub mod signature_help;
 pub mod symbols;
+pub mod wrap;
 
 pub fn layer_name() -> &'static str {
     "features"
