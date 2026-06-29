@@ -26,7 +26,7 @@ impl zed::Extension for JinjaLspExtension {
         if let Some(binary) = settings {
             return Ok(zed::Command {
                 command: binary.path.unwrap_or_else(|| "jinja-lsp".to_owned()),
-                args: vec!["lsp".to_owned()],
+                args: binary.arguments.unwrap_or_else(|| vec!["lsp".to_owned()]),
                 env: Default::default(),
             });
         }
