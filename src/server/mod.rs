@@ -13,6 +13,7 @@ use tower_lsp::{
 };
 
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
+use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -116,8 +117,10 @@ impl LanguageServer for Backend {
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(true),
+                    // REQ-CMP-01: trigger chars that match TRIGGER_CHARS in features::completions.
                     trigger_characters: Some(vec![
-                        ".".into(), "|".into(), " ".into(), "\"".into(), "'".into(),
+                        "{".into(), "%".into(), " ".into(), "|".into(),
+                        ".".into(), "(".into(), ",".into(), "\"".into(),
                     ]),
                     ..Default::default()
                 }),
@@ -246,9 +249,34 @@ impl LanguageServer for Backend {
 
     async fn completion(
         &self,
-        _params: CompletionParams,
+        params: CompletionParams,
     ) -> Result<Option<CompletionResponse>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document_position.text_document.uri);
+        let pos = params.text_document_position.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let items = complete(source, pos.line, pos.character, index, &state.registry, &state.workspace);
+        if items.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(CompletionResponse::Array(
+            items.into_iter().map(to_lsp_completion_item).collect(),
+        )))
+    }
+
+    async fn completion_resolve(&self, mut item: CompletionItem) -> Result<CompletionItem> {
+        // REQ-CMP-05: fill documentation lazily from the item's data field.
+        if let Some(data) = item.data.as_ref().and_then(|d| d.as_str()) {
+            let state = self.state.read().await;
+            if let Some(doc) = resolve_doc(data, &state.registry) {
+                item.documentation = Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: doc,
+                }));
+            }
+        }
+        Ok(item)
     }
 
     async fn hover(&self, _params: HoverParams) -> Result<Option<Hover>> {
@@ -454,6 +482,29 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
         is_preferred: Some(action.is_preferred),
         disabled: None,
         data: None,
+    }
+}
+
+fn to_lsp_completion_item(item: crate::features::completions::CompletionItem) -> CompletionItem {
+    let kind = Some(match item.kind {
+        CompletionKind::Filter => CompletionItemKind::FUNCTION,
+        CompletionKind::Function => CompletionItemKind::FUNCTION,
+        CompletionKind::Test => CompletionItemKind::FUNCTION,
+        CompletionKind::Variable => CompletionItemKind::VARIABLE,
+        CompletionKind::Keyword => CompletionItemKind::KEYWORD,
+        CompletionKind::TemplatePath => CompletionItemKind::FILE,
+        CompletionKind::Attribute => CompletionItemKind::FIELD,
+    });
+    CompletionItem {
+        label: item.label,
+        kind,
+        detail: item.detail,
+        documentation: item.documentation.map(|d| Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: d,
+        })),
+        data: item.data.map(serde_json::Value::String),
+        ..Default::default()
     }
 }
 
