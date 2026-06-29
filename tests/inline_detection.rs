@@ -64,6 +64,20 @@ fn region_records_host_line_and_col() {
     assert_eq!(regions[0].host_line, 1, "must be on line 1 (0-indexed)");
 }
 
+// ---------- REQ-INLN-03: host_col is UTF-16 code units (lvi1) ---------------
+
+#[test]
+fn lvi1_host_col_counts_utf16_code_units() {
+    // "é" is 2 UTF-8 bytes but 1 UTF-16 code unit.
+    // host_col must count UTF-16 units, not bytes.
+    let source = "é = render_jinja(\"{{ x }}\")";
+    let regions = detect_inline_regions(source, &["render_jinja"]);
+    assert_eq!(regions.len(), 1);
+    // UTF-16 units before content: 'é'(1) + ' = render_jinja("'(17) = 18
+    // If bytes: 'é'(2) + ' = render_jinja("'(17) = 19 (wrong)
+    assert_eq!(regions[0].host_col, 18, "host_col must be UTF-16 code units, got {}", regions[0].host_col);
+}
+
 // ---------- REQ-INLN-01: inline grammar parses intra-delimiter content -------
 
 #[test]
