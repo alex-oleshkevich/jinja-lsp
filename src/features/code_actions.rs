@@ -1,1 +1,246 @@
-// Pure-read LSP feature handler (REQ-FOLD-06).
+// F17 — Code actions: quick-fixes derived from diagnostic catalog. REQ-ACT-01..11.
+
+use std::collections::HashMap;
+
+use crate::{diagnostic::Diagnostic, workspace::index::TemplateIndex};
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+/// A line/col range (0-based) within a single file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextEdit {
+    pub start_line: u32,
+    pub start_col: u32,
+    pub end_line: u32,
+    pub end_col: u32,
+    pub new_text: String,
+}
+
+/// Per-file text edits (REQ-ACT-09).
+#[derive(Debug, Clone)]
+pub struct WorkspaceEdit {
+    /// file → ordered list of edits (non-overlapping, top-to-bottom).
+    pub changes: HashMap<String, Vec<TextEdit>>,
+}
+
+impl WorkspaceEdit {
+    fn single(file: &str, edit: TextEdit) -> Self {
+        let mut changes = HashMap::new();
+        changes.insert(file.to_owned(), vec![edit]);
+        WorkspaceEdit { changes }
+    }
+}
+
+/// LSP CodeActionKind taxonomy (REQ-ACT-10).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActionKind {
+    QuickFix,
+    RefactorExtract,
+    RefactorRewrite,
+}
+
+/// One entry in the lightbulb menu (REQ-ACT-09/10).
+#[derive(Debug, Clone)]
+pub struct CodeAction {
+    pub title: String,
+    pub kind: ActionKind,
+    /// Triggering diagnostics (for quick-fixes).
+    pub diagnostics: Vec<Diagnostic>,
+    pub is_preferred: bool,
+    pub edit: Option<WorkspaceEdit>,
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/// Return all code actions applicable to the given diagnostics (REQ-ACT-01..11).
+///
+/// `diagnostics` should be the subset overlapping the cursor/selection range.
+pub fn code_actions(
+    source: &str,
+    file: &str,
+    diagnostics: &[Diagnostic],
+    index: &TemplateIndex,
+) -> Vec<CodeAction> {
+    let mut actions = Vec::new();
+
+    for diag in diagnostics {
+        match diag.code.as_str() {
+            "JINJA-W202" => {
+                if let Some(action) = remove_unused_macro(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-W203" => {
+                if let Some(action) = remove_unused_import(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    actions
+}
+
+// ── REQ-ACT-01 — Remove unused macro ─────────────────────────────────────────
+
+fn remove_unused_macro(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let macro_name = extract_quoted_name(&diag.message)?;
+    let macro_def = index
+        .macros
+        .iter()
+        .find(|m| m.name == macro_name && m.span.start_line == diag.line)?;
+
+    // `macro_def.body.end_byte` is the start byte of the `{% endmacro %}` control tag.
+    // Walk forward from there to find which line the endmacro is on.
+    let endmacro_line = byte_to_line(source, macro_def.body.end_byte);
+
+    // Delete from start of the opening line through end of the endmacro line.
+    let edit = TextEdit {
+        start_line: macro_def.span.start_line,
+        start_col: 0,
+        end_line: endmacro_line + 1,
+        end_col: 0,
+        new_text: String::new(),
+    };
+
+    Some(CodeAction {
+        title: format!("Remove unused macro '{macro_name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+// ── REQ-ACT-01 — Remove unused import ────────────────────────────────────────
+
+fn remove_unused_import(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let unused_name = extract_quoted_name(&diag.message)?;
+
+    // 1. Check ImportAlias ({% import "…" as alias %}).
+    if let Some(alias) = index
+        .import_aliases
+        .iter()
+        .find(|a| a.alias == unused_name && a.span.start_line == diag.line)
+    {
+        let edit = delete_whole_line(alias.span.start_line);
+        return Some(CodeAction {
+            title: format!("Remove unused import '{unused_name}'"),
+            kind: ActionKind::QuickFix,
+            diagnostics: vec![diag.clone()],
+            is_preferred: true,
+            edit: Some(WorkspaceEdit::single(file, edit)),
+        });
+    }
+
+    // 2. Check FromImport ({% from "…" import a, b, … %}).
+    let from_import = index.from_imports.iter().find(|fi| {
+        fi.span.start_line == diag.line
+            && fi.names.iter().any(|n| {
+                n.name == unused_name || n.alias.as_deref() == Some(&unused_name)
+            })
+    })?;
+
+    // Single-name import → delete the whole line.
+    if from_import.names.len() == 1 {
+        let edit = delete_whole_line(from_import.span.start_line);
+        return Some(CodeAction {
+            title: format!("Remove unused import '{unused_name}'"),
+            kind: ActionKind::QuickFix,
+            diagnostics: vec![diag.clone()],
+            is_preferred: true,
+            edit: Some(WorkspaceEdit::single(file, edit)),
+        });
+    }
+
+    // Multi-name from-import: remove only the unused name + adjacent separator/alias.
+    let line_idx = from_import.span.start_line;
+    let line = source_line(source, line_idx);
+    let new_line = remove_name_from_import_line(line, &unused_name)?;
+    let edit = TextEdit {
+        start_line: line_idx,
+        start_col: 0,
+        end_line: line_idx,
+        end_col: line.len() as u32,
+        new_text: new_line,
+    };
+    Some(CodeAction {
+        title: format!("Remove unused import '{unused_name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/// Extract the name from messages like "unused macro 'foo'" or "unused import 'bar'".
+fn extract_quoted_name(message: &str) -> Option<String> {
+    let start = message.find('\'')?;
+    let rest = &message[start + 1..];
+    let end = rest.find('\'')?;
+    Some(rest[..end].to_owned())
+}
+
+/// Return 0-based line number for the given byte offset.
+fn byte_to_line(source: &str, byte: usize) -> u32 {
+    source[..byte.min(source.len())].bytes().filter(|&b| b == b'\n').count() as u32
+}
+
+/// Return the source line (without trailing newline) at 0-based `line`.
+fn source_line(source: &str, line: u32) -> &str {
+    source.split('\n').nth(line as usize).unwrap_or("")
+}
+
+/// A whole-line delete: replaces `[line, 0) .. [line+1, 0)` with "".
+fn delete_whole_line(line: u32) -> TextEdit {
+    TextEdit {
+        start_line: line,
+        start_col: 0,
+        end_line: line + 1,
+        end_col: 0,
+        new_text: String::new(),
+    }
+}
+
+/// Remove `name` (and its adjacent `as alias` and comma/space separator) from an import line.
+///
+/// Example: `{% from "x.html" import a, b as bb %}` removing `bb`
+///       →  `{% from "x.html" import a %}`
+fn remove_name_from_import_line(line: &str, name: &str) -> Option<String> {
+    let import_kw = line.find("import ")?;
+    let after_import = import_kw + "import ".len();
+    let close = line.rfind("%}")?;
+    let names_section = line[after_import..close].trim_end();
+
+    let parts: Vec<&str> = names_section.split(',').map(|s| s.trim()).collect();
+    let kept: Vec<&str> = parts
+        .iter()
+        .copied()
+        .filter(|entry| {
+            let words: Vec<&str> = entry.split_whitespace().collect();
+            match words.as_slice() {
+                [n] => *n != name,
+                [n, "as", alias] => *n != name && *alias != name,
+                _ => true,
+            }
+        })
+        .collect();
+
+    let new_names = kept.join(", ");
+    let prefix = &line[..after_import];
+    let suffix = &line[close..]; // includes "%}"
+    Some(format!("{prefix}{new_names} {suffix}"))
+}
