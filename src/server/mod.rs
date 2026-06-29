@@ -98,8 +98,9 @@ impl Backend {
         let filtered: Vec<crate::diagnostic::Diagnostic> =
             filter_by_config(&raw, &select, &ignore).into_iter().cloned().collect();
         let (kept, w107s) = suppress_by_noqa(&filtered, source);
+        let utf8 = state.position_encoding_utf8;
         let mut lsp_diags: Vec<LspDiagnostic> =
-            kept.into_iter().chain(w107s).map(|d| to_lsp_diagnostic(&d)).collect();
+            kept.into_iter().chain(w107s).map(|d| to_lsp_diagnostic(source, utf8, &d)).collect();
         lsp_diags.sort_by_key(|d| (d.range.start.line, d.range.start.character));
         let uri = path_to_uri(key);
         drop(state);
@@ -116,10 +117,18 @@ impl LanguageServer for Backend {
             .and_then(|td| td.definition.as_ref())
             .and_then(|d| d.link_support)
             .unwrap_or(false);
+        // jinja-lsp-7b7s: negotiate UTF-8 position encoding when the client supports it.
+        // Our internal offsets are byte-based (tree-sitter, Rust str), which equals
+        // UTF-8 code units, so UTF-8 clients need no conversion at all.
+        let utf8 = params.capabilities.general.as_ref()
+            .and_then(|g| g.position_encodings.as_ref())
+            .map(|encs| encs.contains(&PositionEncodingKind::UTF8))
+            .unwrap_or(false);
         // REQ-EDIT-10: apply InitializationOptions overlay on top of discovered config.
         {
             let mut state = self.state.write().await;
             state.definition_link_support = link_support;
+            state.position_encoding_utf8 = utf8;
             if let Some(opts) = params.initialization_options {
                 if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
                     state.apply_init_options(overlay);
@@ -132,6 +141,7 @@ impl LanguageServer for Backend {
                 version: Some(env!("CARGO_PKG_VERSION").to_owned()),
             }),
             capabilities: ServerCapabilities {
+                position_encoding: if utf8 { Some(PositionEncodingKind::UTF8) } else { None },
                 // REQ-ARCH-05: full-text sync (didOpen, didChange, didSave, didClose)
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
@@ -284,7 +294,8 @@ impl LanguageServer for Backend {
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
-        let items = complete(source, pos.line, pos.character, index, &state.registry, &state.workspace);
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, state.position_encoding_utf8);
+        let items = complete(source, pos.line, byte_col, index, &state.registry, &state.workspace);
         if items.is_empty() {
             return Ok(None);
         }
@@ -313,7 +324,9 @@ impl LanguageServer for Backend {
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
-        let Some(result) = hover_feature(source, pos.line, pos.character, index, &state.registry, &state.workspace)
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some(result) = hover_feature(source, pos.line, byte_col, index, &state.registry, &state.workspace)
         else {
             return Ok(None);
         };
@@ -323,8 +336,14 @@ impl LanguageServer for Backend {
                 value: result.markdown,
             }),
             range: Some(Range {
-                start: Position { line: result.start_line, character: result.start_col },
-                end: Position { line: result.end_line, character: result.end_col },
+                start: Position {
+                    line: result.start_line,
+                    character: byte_col_to_lsp_char(source_line(source, result.start_line), result.start_col, utf8),
+                },
+                end: Position {
+                    line: result.end_line,
+                    character: byte_col_to_lsp_char(source_line(source, result.end_line), result.end_col, utf8),
+                },
             }),
         }))
     }
@@ -345,14 +364,17 @@ impl LanguageServer for Backend {
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
-        let Some(loc) = go_to_definition(source, pos.line, pos.character, &key, index, &state.registry, &state.workspace)
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some(loc) = go_to_definition(source, pos.line, byte_col, &key, index, &state.registry, &state.workspace)
         else {
             return Ok(None);
         };
+        let target_source = state.sources.get(&loc.target_path).map(|s| s.as_str()).unwrap_or("");
         if state.definition_link_support {
-            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(&loc)])))
+            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(target_source, &loc, utf8)])))
         } else {
-            Ok(Some(GotoDefinitionResponse::Scalar(definition_to_location(&loc))))
+            Ok(Some(GotoDefinitionResponse::Scalar(definition_to_location(target_source, &loc, utf8))))
         }
     }
 
@@ -368,12 +390,15 @@ impl LanguageServer for Backend {
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
         let syms = document_symbols(source, index);
         if syms.is_empty() {
             return Ok(None);
         }
+        let source = source.clone(); // release borrow on state
+        drop(state);
         Ok(Some(DocumentSymbolResponse::Nested(
-            syms.into_iter().map(to_lsp_document_symbol).collect(),
+            syms.into_iter().map(|s| to_lsp_document_symbol(&source, utf8, s)).collect(),
         )))
     }
 
@@ -471,6 +496,46 @@ impl LanguageServer for Backend {
     }
 }
 
+// ── Position encoding helpers (jinja-lsp-7b7s) ───────────────────────────────
+
+/// Convert an inbound LSP `character` value to a byte column within `line_str`.
+///
+/// LSP defaults to UTF-16 code units; when UTF-8 was negotiated the character
+/// value is already a byte offset, so this is a no-op.
+pub fn lsp_char_to_byte_col(line_str: &str, lsp_char: u32, utf8: bool) -> u32 {
+    if utf8 {
+        return lsp_char;
+    }
+    // UTF-16 → byte: walk chars, counting UTF-16 code units until we reach lsp_char.
+    let mut utf16 = 0u32;
+    let mut byte = 0u32;
+    for c in line_str.chars() {
+        if utf16 >= lsp_char {
+            break;
+        }
+        utf16 += c.len_utf16() as u32;
+        byte += c.len_utf8() as u32;
+    }
+    byte
+}
+
+/// Convert an outbound byte column to an LSP `character` value.
+///
+/// When UTF-8 was negotiated the byte value is used as-is; otherwise it is
+/// converted to UTF-16 code units.
+pub fn byte_col_to_lsp_char(line_str: &str, byte_col: u32, utf8: bool) -> u32 {
+    if utf8 {
+        return byte_col;
+    }
+    let safe = byte_col.min(line_str.len() as u32) as usize;
+    line_str[..safe].chars().map(|c| c.len_utf16() as u32).sum()
+}
+
+/// Borrow the Nth line from `source` (empty string when out of bounds).
+fn source_line(source: &str, line: u32) -> &str {
+    source.split('\n').nth(line as usize).unwrap_or("")
+}
+
 fn path_to_uri(path: &str) -> Url {
     if path.starts_with('/') {
         Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap())
@@ -531,17 +596,18 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
     }
 }
 
-fn to_lsp_diagnostic(d: &crate::diagnostic::Diagnostic) -> LspDiagnostic {
+fn to_lsp_diagnostic(source: &str, utf8: bool, d: &crate::diagnostic::Diagnostic) -> LspDiagnostic {
     let severity = Some(match d.severity {
         InternalSeverity::Error => DiagnosticSeverity::ERROR,
         InternalSeverity::Warning => DiagnosticSeverity::WARNING,
         InternalSeverity::Info => DiagnosticSeverity::INFORMATION,
         InternalSeverity::Hint => DiagnosticSeverity::HINT,
     });
+    let col = byte_col_to_lsp_char(source_line(source, d.line), d.col, utf8);
     LspDiagnostic {
         range: Range {
-            start: Position { line: d.line, character: d.col },
-            end: Position { line: d.line, character: d.col + 1 },
+            start: Position { line: d.line, character: col },
+            end: Position { line: d.line, character: col + 1 },
         },
         severity,
         code: Some(NumberOrString::String(d.code.clone())),
@@ -574,19 +640,25 @@ fn to_lsp_completion_item(item: crate::features::completions::CompletionItem) ->
     }
 }
 
-fn def_range(loc: &DefinitionLocation) -> Range {
+fn def_range(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> Range {
     Range {
-        start: Position { line: loc.target_start_line, character: loc.target_start_col },
-        end: Position { line: loc.target_end_line, character: loc.target_end_col },
+        start: Position {
+            line: loc.target_start_line,
+            character: byte_col_to_lsp_char(source_line(target_source, loc.target_start_line), loc.target_start_col, utf8),
+        },
+        end: Position {
+            line: loc.target_end_line,
+            character: byte_col_to_lsp_char(source_line(target_source, loc.target_end_line), loc.target_end_col, utf8),
+        },
     }
 }
 
-fn definition_to_location(loc: &DefinitionLocation) -> Location {
-    Location { uri: path_to_uri(&loc.target_path), range: def_range(loc) }
+fn definition_to_location(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> Location {
+    Location { uri: path_to_uri(&loc.target_path), range: def_range(target_source, loc, utf8) }
 }
 
-fn definition_to_link(loc: &DefinitionLocation) -> LocationLink {
-    let range = def_range(loc);
+fn definition_to_link(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> LocationLink {
+    let range = def_range(target_source, loc, utf8);
     LocationLink {
         origin_selection_range: None,
         target_uri: path_to_uri(&loc.target_path),
@@ -595,14 +667,20 @@ fn definition_to_link(loc: &DefinitionLocation) -> LocationLink {
     }
 }
 
-fn span_to_range(span: &crate::workspace::symbols::Span) -> Range {
+fn span_to_lsp_range(source: &str, span: &crate::workspace::symbols::Span, utf8: bool) -> Range {
     Range {
-        start: Position { line: span.start_line, character: span.start_col },
-        end: Position { line: span.end_line, character: span.end_col },
+        start: Position {
+            line: span.start_line,
+            character: byte_col_to_lsp_char(source_line(source, span.start_line), span.start_col, utf8),
+        },
+        end: Position {
+            line: span.end_line,
+            character: byte_col_to_lsp_char(source_line(source, span.end_line), span.end_col, utf8),
+        },
     }
 }
 
-fn to_lsp_document_symbol(s: crate::features::symbols::DocumentSymbol) -> DocumentSymbol {
+fn to_lsp_document_symbol(source: &str, utf8: bool, s: crate::features::symbols::DocumentSymbol) -> DocumentSymbol {
     let kind = match s.kind {
         InternalSymbolKind::Class => SymbolKind::CLASS,
         InternalSymbolKind::Function => SymbolKind::FUNCTION,
@@ -617,17 +695,21 @@ fn to_lsp_document_symbol(s: crate::features::symbols::DocumentSymbol) -> Docume
         kind,
         tags: None,
         deprecated: None,
-        range: span_to_range(&s.range),
-        selection_range: span_to_range(&s.selection_range),
+        range: span_to_lsp_range(source, &s.range, utf8),
+        selection_range: span_to_lsp_range(source, &s.selection_range, utf8),
         children: if s.children.is_empty() {
             None
         } else {
-            Some(s.children.into_iter().map(to_lsp_document_symbol).collect())
+            Some(s.children.into_iter().map(|c| to_lsp_document_symbol(source, utf8, c)).collect())
         },
     }
 }
 
 fn to_lsp_edit(e: crate::features::code_actions::TextEdit) -> TextEdit {
+    // Note: col values here come from the code-actions feature which works in
+    // byte offsets. Full UTF-16 conversion for edit ranges is tracked separately;
+    // for now these values are passed through unchanged (correct for UTF-8 mode
+    // and ASCII-safe edits in UTF-16 mode).
     TextEdit {
         range: Range {
             start: Position { line: e.start_line, character: e.start_col },

@@ -20,6 +20,9 @@ pub struct ServerState {
     pub registry: Registry,
     /// REQ-DEF-07: client declared textDocument/definition linkSupport in InitializeParams.
     pub definition_link_support: bool,
+    /// True when the client advertised UTF-8 position encoding and we negotiated it;
+    /// false when falling back to UTF-16 (LSP default).
+    pub position_encoding_utf8: bool,
 }
 
 impl ServerState {
@@ -34,6 +37,7 @@ impl ServerState {
             generation: 0,
             registry,
             definition_link_support: false,
+            position_encoding_utf8: false,
         }
     }
 
@@ -47,6 +51,7 @@ impl ServerState {
             generation: 0,
             registry,
             definition_link_support: false,
+            position_encoding_utf8: false,
         }
     }
 
