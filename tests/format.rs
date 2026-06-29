@@ -287,6 +287,31 @@ fn fmt02_t11_single_line_in_outer_block() {
 }
 
 #[test]
+fn fmt02_t12_autoescape_indents_inner_tags() {
+    // {% autoescape %} is an opener — inner {% if %} gets +1 depth.
+    let src = "{% autoescape true %}\n{% if x %}\nok\n{% endif %}\n{% endautoescape %}";
+    let want = "{% autoescape true %}\n  {% if x %}\nok\n  {% endif %}\n{% endautoescape %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t13_trans_indents_inner_tags() {
+    // {% trans %} is an opener — inner {% if %} gets +1 depth.
+    let src = "{% trans %}\n{% if x %}a{% endif %}\n{% endtrans %}";
+    let want = "{% trans %}\n  {% if x %}a{% endif %}\n{% endtrans %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t14_block_set_indents_via_reindent() {
+    // Block set (no =) is an opener — inner block gets +1 depth.
+    // Called via reindent directly because the grammar treats block-set as an error.
+    let src = "{% set nav %}\n{% block nav %}x{% endblock %}\n{% endset %}";
+    let want = "{% set nav %}\n  {% block nav %}x{% endblock %}\n{% endset %}";
+    assert_eq!(jinja_lsp::format::reindent(src, "  "), want);
+}
+
+#[test]
 fn fmt02_idempotent() {
     let inputs = [
         "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}",

@@ -117,9 +117,17 @@ fn collect_delimiter_normalizations(
 // ── REQ-FMT-02 — Block-body re-indentation ───────────────────────────────────
 
 /// Paired Jinja tags that open a new indentation level.
-const OPENERS: &[&str] = &["block", "for", "if", "elif", "else", "macro", "call", "with", "filter"];
+const OPENERS: &[&str] = &[
+    "block", "for", "if", "elif", "else",
+    "macro", "call", "with", "filter",
+    "autoescape", "trans",
+];
 /// Tags that close (or re-align at) an indentation level.
-const CLOSERS: &[&str] = &["endblock", "endfor", "endif", "endmacro", "endcall", "endwith", "endfilter", "elif", "else"];
+const CLOSERS: &[&str] = &[
+    "endblock", "endfor", "endif", "endmacro", "endcall", "endwith", "endfilter",
+    "elif", "else",
+    "endset", "endautoescape", "endtrans",
+];
 
 /// Return true if `line` is a Jinja-tag line: first non-whitespace content is `{%`.
 fn is_jinja_tag_line(line: &str) -> bool {
@@ -127,9 +135,8 @@ fn is_jinja_tag_line(line: &str) -> bool {
     t.starts_with("{%")
 }
 
-/// Extract ALL keywords from ALL `{%...%}` tags on a single line,
-/// including single-line paired tags like `{% block t %}x{% endblock %}`.
-fn jinja_tag_keywords_on_line(line: &str) -> Vec<String> {
+/// Extract ALL `(keyword, inner_content)` pairs from ALL `{%...%}` tags on a single line.
+fn jinja_tag_keywords_on_line(line: &str) -> Vec<(String, String)> {
     let mut result = Vec::new();
     let mut s = line;
     while let Some(start) = s.find("{%") {
@@ -138,7 +145,7 @@ fn jinja_tag_keywords_on_line(line: &str) -> Vec<String> {
             let inner = &after_open[..end];
             let kw_str = inner.trim_matches('-').trim();
             if let Some(first) = kw_str.split_whitespace().next() {
-                result.push(first.to_owned());
+                result.push((first.to_owned(), kw_str.to_owned()));
             }
             s = &after_open[end + 2..];
         } else {
@@ -146,6 +153,15 @@ fn jinja_tag_keywords_on_line(line: &str) -> Vec<String> {
         }
     }
     result
+}
+
+/// Return true when `(keyword, inner)` acts as a block opener that increases indentation.
+fn is_opener(kw: &str, inner: &str) -> bool {
+    if kw == "set" {
+        // Block set: `{% set name %}…{% endset %}` has no `=`; inline `{% set x = … %}` does.
+        return !inner.contains('=');
+    }
+    OPENERS.contains(&kw)
 }
 
 /// Re-indent Jinja-tag lines so their leading whitespace equals `depth × indent_unit`,
@@ -167,7 +183,7 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         }
 
         let keywords = jinja_tag_keywords_on_line(line);
-        let first_kw = keywords.first().map(|s| s.as_str()).unwrap_or("");
+        let first_kw = keywords.first().map(|(kw, _)| kw.as_str()).unwrap_or("");
 
         // Closers (endblock, endif, …) and re-aligners (elif, else) print at depth-1.
         if CLOSERS.contains(&first_kw) && depth > 0 {
@@ -187,8 +203,8 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         // pre-step above; count it only as an opener (+1) if applicable.
         // Subsequent keywords: pure openers +1, pure closers -1, realigners net 0.
         let mut delta: isize = 0;
-        for (idx, kw) in keywords.iter().enumerate() {
-            let in_openers = OPENERS.contains(&kw.as_str());
+        for (idx, (kw, inner)) in keywords.iter().enumerate() {
+            let in_openers = is_opener(kw, inner);
             let in_closers = CLOSERS.contains(&kw.as_str());
             if idx == 0 {
                 // Closer role was already handled as pre-decrement; count opener role only.
