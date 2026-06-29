@@ -4,7 +4,9 @@
 // between LSP TextEdit types and line/col coordinates.
 
 use crate::edit::TextEdit;
-use crate::format::format;
+use crate::format::format_with_options;
+
+pub use crate::format::FormatOptions;
 
 pub fn layer_name() -> &'static str {
     "formatting"
@@ -13,8 +15,8 @@ pub fn layer_name() -> &'static str {
 /// Format the entire document. Returns a minimal Vec<TextEdit>:
 /// - Empty if the source is already formatted.
 /// - A single edit per changed line replacing it with the formatted version.
-pub fn format_document(source: &str) -> Vec<TextEdit> {
-    let formatted = format(source);
+pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
+    let formatted = format_with_options(source, opts);
     if formatted == source {
         return vec![];
     }
@@ -22,8 +24,8 @@ pub fn format_document(source: &str) -> Vec<TextEdit> {
 }
 
 /// Format the document, returning only edits that fall within [start_line, end_line] (inclusive).
-pub fn format_range(source: &str, start_line: u32, end_line: u32) -> Vec<TextEdit> {
-    let formatted = format(source);
+pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOptions) -> Vec<TextEdit> {
+    let formatted = format_with_options(source, opts);
     if formatted == source {
         return vec![];
     }

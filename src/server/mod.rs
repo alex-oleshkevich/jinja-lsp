@@ -493,7 +493,11 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let edits = format_document(source);
+        let opts = crate::features::formatting::FormatOptions {
+            tab_size: params.options.tab_size,
+            insert_spaces: params.options.insert_spaces,
+        };
+        let edits = format_document(source, opts);
         if edits.is_empty() { return Ok(None); }
         Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
     }
@@ -506,7 +510,11 @@ impl LanguageServer for Backend {
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let range = params.range;
-        let edits = format_range(source, range.start.line, range.end.line);
+        let opts = crate::features::formatting::FormatOptions {
+            tab_size: params.options.tab_size,
+            insert_spaces: params.options.insert_spaces,
+        };
+        let edits = format_range(source, range.start.line, range.end.line, opts);
         if edits.is_empty() { return Ok(None); }
         Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
     }

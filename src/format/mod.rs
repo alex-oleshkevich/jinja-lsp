@@ -4,6 +4,7 @@
 // REQ-FMT-01: normalize delimiter inner spacing to exactly one space.
 // REQ-FMT-03: normalize whitespace-control marker spacing (handled by FMT-01 path).
 // REQ-FMT-04: normalize filter-pipe spacing, is-test spacing, filter-call arg commas.
+// REQ-FMT-07: honor FormattingOptions (tabSize / insertSpaces).
 
 use tree_sitter::{Node, Parser};
 
@@ -11,10 +12,31 @@ pub fn layer_name() -> &'static str {
     "format"
 }
 
-/// Format `source` by running all enabled passes.
+/// REQ-FMT-07: Formatting options from the LSP client.
+#[derive(Debug, Clone, Copy)]
+pub struct FormatOptions {
+    /// Number of spaces per indent level (ignored when `insert_spaces` is false).
+    pub tab_size: u32,
+    /// Use spaces for indentation (true) or hard tabs (false).
+    pub insert_spaces: bool,
+}
+
+impl Default for FormatOptions {
+    fn default() -> Self {
+        Self { tab_size: 2, insert_spaces: true }
+    }
+}
+
+/// Format `source` with default options (2 spaces, no tabs).
+/// Kept for backward-compatibility with the CLI `format` command.
+pub fn format(source: &str) -> String {
+    format_with_options(source, FormatOptions::default())
+}
+
+/// Format `source` respecting the given LSP FormattingOptions.
 ///
 /// Returns the source unchanged if the file has syntax errors (P3 round-trip safety).
-pub fn format(source: &str) -> String {
+pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
     let lang = tree_sitter_jinja::language();
     let mut parser = Parser::new();
     parser.set_language(&lang).expect("language");
@@ -46,8 +68,13 @@ pub fn format(source: &str) -> String {
         result
     };
 
-    // REQ-FMT-02: re-indent Jinja-tag lines.
-    let after_reindent = reindent(&after_delimiters);
+    // REQ-FMT-02 / REQ-FMT-07: re-indent Jinja-tag lines with the client's indent unit.
+    let indent_unit: String = if opts.insert_spaces {
+        " ".repeat(opts.tab_size as usize)
+    } else {
+        "\t".to_owned()
+    };
+    let after_reindent = reindent(&after_delimiters, &indent_unit);
 
     if after_reindent == source {
         source.to_owned()
@@ -121,11 +148,10 @@ fn jinja_tag_keywords_on_line(line: &str) -> Vec<String> {
     result
 }
 
-/// Re-indent Jinja-tag lines so their leading whitespace equals `depth × 2` spaces,
+/// Re-indent Jinja-tag lines so their leading whitespace equals `depth × indent_unit`,
 /// where depth is the count of open paired tags enclosing the line.
 /// Host-language lines are never modified.
-pub fn reindent(source: &str) -> String {
-    let indent_unit = "  "; // 2 spaces (configurable in the future)
+pub fn reindent(source: &str, indent_unit: &str) -> String {
     let mut depth: usize = 0;
     let mut out = String::with_capacity(source.len());
 
