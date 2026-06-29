@@ -673,9 +673,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
+        let utf8 = state.position_encoding_utf8;
+        let sources = &state.sources;
         let lsp_actions: Vec<CodeActionOrCommand> = actions
             .into_iter()
-            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key)))
+            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key, sources, utf8)))
             .collect();
 
         Ok(Some(lsp_actions))
@@ -696,7 +698,8 @@ impl LanguageServer for Backend {
                 let Some(workspace_edit) = crate::features::extract_macro::compute_extract_macro(source, path, start_line as u32, end_line as u32, name) else {
                     return Ok(None);
                 };
-                let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit);
+                let utf8 = state.position_encoding_utf8;
+                let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
                 let _ = self.client.apply_edit(lsp_edit).await;
                 Ok(None)
             }
@@ -769,9 +772,10 @@ impl LanguageServer for Backend {
             tab_size: params.options.tab_size,
             insert_spaces: params.options.insert_spaces,
         };
+        let utf8 = state.position_encoding_utf8;
         let edits = format_document(source, opts);
         if edits.is_empty() { return Ok(None); }
-        Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
+        Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
     }
 
     async fn range_formatting(
@@ -786,9 +790,10 @@ impl LanguageServer for Backend {
             tab_size: params.options.tab_size,
             insert_spaces: params.options.insert_spaces,
         };
+        let utf8 = state.position_encoding_utf8;
         let edits = format_range(source, range.start.line, range.end.line, opts);
         if edits.is_empty() { return Ok(None); }
-        Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
+        Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
     }
 }
 
@@ -840,11 +845,18 @@ fn path_to_uri(path: &str) -> Url {
     }
 }
 
-fn internal_workspace_edit_to_lsp(we: crate::edit::WorkspaceEdit) -> WorkspaceEdit {
+fn internal_workspace_edit_to_lsp(
+    we: crate::edit::WorkspaceEdit,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> WorkspaceEdit {
+    let empty = String::new();
     if we.create_files.is_empty() {
         let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = std::collections::HashMap::new();
         for (path, edits) in we.changes {
-            changes.insert(path_to_uri(&path), edits.into_iter().map(to_lsp_edit).collect());
+            let src = sources.get(&path).unwrap_or(&empty);
+            let lsp = edits.into_iter().map(|e| to_lsp_edit(e, src, utf8)).collect();
+            changes.insert(path_to_uri(&path), lsp);
         }
         WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
     } else {
@@ -871,10 +883,11 @@ fn internal_workspace_edit_to_lsp(we: crate::edit::WorkspaceEdit) -> WorkspaceEd
         }
         for (path, edits) in we.changes {
             let uri = path_to_uri(&path);
+            let src = sources.get(&path).unwrap_or(&empty);
             for e in edits {
                 ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
-                    edits: vec![OneOf::Left(to_lsp_edit(e))],
+                    edits: vec![OneOf::Left(to_lsp_edit(e, src, utf8))],
                 }));
             }
         }
@@ -882,14 +895,19 @@ fn internal_workspace_edit_to_lsp(we: crate::edit::WorkspaceEdit) -> WorkspaceEd
     }
 }
 
-fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
+fn to_lsp_action(
+    action: InternalCodeAction,
+    _file_uri: &str,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> CodeAction {
     let kind = Some(match action.kind {
         ActionKind::QuickFix => CodeActionKind::QUICKFIX,
         ActionKind::RefactorExtract => CodeActionKind::REFACTOR_EXTRACT,
         ActionKind::RefactorRewrite => CodeActionKind::REFACTOR_REWRITE,
     });
 
-    let edit = action.edit.map(internal_workspace_edit_to_lsp);
+    let edit = action.edit.map(|we| internal_workspace_edit_to_lsp(we, sources, utf8));
 
     CodeAction {
         title: action.title,
@@ -1031,15 +1049,13 @@ fn to_lsp_document_symbol(source: &str, utf8: bool, s: crate::features::symbols:
     }
 }
 
-fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
-    // Note: col values here come from the code-actions feature which works in
-    // byte offsets. Full UTF-16 conversion for edit ranges is tracked separately;
-    // for now these values are passed through unchanged (correct for UTF-8 mode
-    // and ASCII-safe edits in UTF-16 mode).
+fn to_lsp_edit(e: crate::edit::TextEdit, source: &str, utf8: bool) -> TextEdit {
+    let start_char = byte_col_to_lsp_char(source_line(source, e.start_line), e.start_col, utf8);
+    let end_char = byte_col_to_lsp_char(source_line(source, e.end_line), e.end_col, utf8);
     TextEdit {
         range: Range {
-            start: Position { line: e.start_line, character: e.start_col },
-            end: Position { line: e.end_line, character: e.end_col },
+            start: Position { line: e.start_line, character: start_char },
+            end: Position { line: e.end_line, character: end_char },
         },
         new_text: e.new_text,
     }
