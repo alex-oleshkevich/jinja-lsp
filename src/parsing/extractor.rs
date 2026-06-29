@@ -281,14 +281,15 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
 
 fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let scope_regions = build_scope_regions(tree.root_node(), bytes);
+    let source_len = bytes.len();
     let mut seen_set: HashMap<usize, ()> = HashMap::new();
     let mut seen_for: HashMap<usize, ()> = HashMap::new();
 
-    run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions);
-    run_set(tree, bytes, idx, &seen_set, &scope_regions);
-    run_for_unpacking(tree, bytes, idx, &mut seen_for);
-    run_for(tree, bytes, idx, &seen_for);
-    run_with(tree, bytes, idx);
+    run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions, source_len);
+    run_set(tree, bytes, idx, &seen_set, &scope_regions, source_len);
+    run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions);
+    run_for(tree, bytes, idx, &seen_for, &scope_regions);
+    run_with(tree, bytes, idx, &scope_regions);
     run_trans(tree, bytes, idx);
     run_caller_args(tree, bytes, idx);
 }
@@ -296,21 +297,27 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex)
 fn run_set_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
-    scope_regions: &[ScopeRegion],
+    scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_SET_UNPACKING;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
-        let mut names: Vec<String> = vec![];
+        let mut names: Vec<(String, Span)> = vec![];
         let mut key = None;
+        let mut set_ctrl_end = 0usize;
         for cap in m.captures {
             match q.capture_names()[cap.index as usize] {
                 "name" | "name2" => {
-                    names.push(txt(cap.node, bytes).to_owned());
                     if key.is_none() {
-                        key = ancestor(cap.node, "set_statement").map(|n| n.start_byte());
+                        if let Some(set_stmt) = ancestor(cap.node, "set_statement") {
+                            key = Some(set_stmt.start_byte());
+                            set_ctrl_end = ancestor(set_stmt, "control")
+                                .map(|c| c.end_byte())
+                                .unwrap_or(set_stmt.end_byte());
+                        }
                     }
+                    names.push((txt(cap.node, bytes).to_owned(), node_span(cap.node)));
                 }
                 _ => {}
             }
@@ -318,8 +325,12 @@ fn run_set_unpacking(
         if let Some(k) = key {
             seen.insert(k, ());
             let scope = scope_for_byte(scope_regions, k);
-            for name in names {
-                push_var(idx, name, scope);
+            let valid_end = enclosing_region(scope_regions, set_ctrl_end)
+                .map(|r| r.body_end)
+                .unwrap_or(source_len);
+            let valid_range = byte_span(set_ctrl_end, valid_end);
+            for (name, span) in names {
+                push_var(idx, name, scope, span, valid_range.clone());
             }
         }
     }
@@ -328,23 +339,35 @@ fn run_set_unpacking(
 fn run_set(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
-    scope_regions: &[ScopeRegion],
+    scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_SET;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut name = String::new();
+        let mut name_span = Span::default();
         let mut key = None;
+        let mut set_ctrl_end = 0usize;
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
                 name = txt(cap.node, bytes).to_owned();
-                key = ancestor(cap.node, "set_statement").map(|n| n.start_byte());
+                name_span = node_span(cap.node);
+                if let Some(set_stmt) = ancestor(cap.node, "set_statement") {
+                    key = Some(set_stmt.start_byte());
+                    set_ctrl_end = ancestor(set_stmt, "control")
+                        .map(|c| c.end_byte())
+                        .unwrap_or(set_stmt.end_byte());
+                }
             }
         }
         if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
-            let scope = scope_for_byte(scope_regions, key.unwrap_or(0));
-            push_var(idx, name, scope);
+            let k = key.unwrap_or(0);
+            let scope = scope_for_byte(scope_regions, k);
+            let valid_end = enclosing_region(scope_regions, set_ctrl_end)
+                .map(|r| r.body_end)
+                .unwrap_or(source_len);
+            push_var(idx, name, scope, name_span, byte_span(set_ctrl_end, valid_end));
         }
     }
 }
@@ -352,28 +375,40 @@ fn run_set(
 fn run_for_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
+    scope_regions: &[ScopeRegion],
 ) {
     let q = &*Q_FOR_UNPACKING;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
-        let mut names: Vec<String> = vec![];
+        let mut names: Vec<(String, Span)> = vec![];
         let mut key = None;
+        let mut for_ctrl_end = 0usize;
         for cap in m.captures {
             match q.capture_names()[cap.index as usize] {
                 "name" | "name2" => {
-                    names.push(txt(cap.node, bytes).to_owned());
                     if key.is_none() {
-                        key = ancestor(cap.node, "for_statement").map(|n| n.start_byte());
+                        if let Some(for_stmt) = ancestor(cap.node, "for_statement") {
+                            key = Some(for_stmt.start_byte());
+                            for_ctrl_end = ancestor(for_stmt, "control")
+                                .map(|c| c.end_byte())
+                                .unwrap_or(for_stmt.end_byte());
+                        }
                     }
+                    names.push((txt(cap.node, bytes).to_owned(), node_span(cap.node)));
                 }
                 _ => {}
             }
         }
         if let Some(k) = key {
             seen.insert(k, ());
-            for name in names {
-                push_var(idx, name, VariableScope::ForLoop);
+            // Find the ForLoop region whose body_start matches this for-tag's ctrl end.
+            let valid_range = scope_regions.iter()
+                .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
+                .map(|r| byte_span(r.body_start, r.body_end))
+                .unwrap_or(byte_span(for_ctrl_end, for_ctrl_end));
+            for (name, span) in names {
+                push_var(idx, name, VariableScope::ForLoop, span, valid_range.clone());
             }
         }
     }
@@ -382,33 +417,58 @@ fn run_for_unpacking(
 fn run_for(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
+    scope_regions: &[ScopeRegion],
 ) {
     let q = &*Q_FOR;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut name = String::new();
+        let mut name_span = Span::default();
         let mut key = None;
+        let mut for_ctrl_end = 0usize;
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
                 name = txt(cap.node, bytes).to_owned();
-                key = ancestor(cap.node, "for_statement").map(|n| n.start_byte());
+                name_span = node_span(cap.node);
+                if let Some(for_stmt) = ancestor(cap.node, "for_statement") {
+                    key = Some(for_stmt.start_byte());
+                    for_ctrl_end = ancestor(for_stmt, "control")
+                        .map(|c| c.end_byte())
+                        .unwrap_or(for_stmt.end_byte());
+                }
             }
         }
         if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
-            push_var(idx, name, VariableScope::ForLoop);
+            let valid_range = scope_regions.iter()
+                .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
+                .map(|r| byte_span(r.body_start, r.body_end))
+                .unwrap_or(byte_span(for_ctrl_end, for_ctrl_end));
+            push_var(idx, name, VariableScope::ForLoop, name_span, valid_range);
         }
     }
 }
 
-fn run_with(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+fn run_with(
+    tree: &tree_sitter::Tree, bytes: &[u8],
+    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion],
+) {
     let q = &*Q_WITH;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(&q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::With);
+                let name_span = node_span(cap.node);
+                let with_ctrl_end = ancestor(cap.node, "with_statement")
+                    .and_then(|s| ancestor(s, "control"))
+                    .map(|c| c.end_byte())
+                    .unwrap_or(cap.node.end_byte());
+                let valid_range = scope_regions.iter()
+                    .find(|r| r.scope == VariableScope::With && r.body_start == with_ctrl_end)
+                    .map(|r| byte_span(r.body_start, r.body_end))
+                    .unwrap_or(byte_span(with_ctrl_end, with_ctrl_end));
+                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::With, name_span, valid_range);
             }
         }
     }
@@ -421,7 +481,7 @@ fn run_trans(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::Trans);
+                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::Trans, node_span(cap.node), Span::default());
             }
         }
     }
@@ -434,14 +494,20 @@ fn run_caller_args(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "caller_var" {
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::CallBlock);
+                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::CallBlock, node_span(cap.node), Span::default());
             }
         }
     }
 }
 
-fn push_var(idx: &mut TemplateIndex, name: String, scope: VariableScope) {
-    idx.variables.push(VariableDefinition { name, scope, span: Span::default(), valid_range: Span::default() });
+fn push_var(idx: &mut TemplateIndex, name: String, scope: VariableScope, span: Span, valid_range: Span) {
+    idx.variables.push(VariableDefinition { name, scope, span, valid_range });
+}
+
+/// Compute a Span with only byte offsets set (line/col left default).
+/// Used for valid_range where line/col are not needed by the resolver.
+fn byte_span(start_byte: usize, end_byte: usize) -> Span {
+    Span { start_byte, end_byte, ..Span::default() }
 }
 
 /// A byte range within the template source that belongs to a named scope body.
@@ -457,8 +523,8 @@ struct ScopeRegion {
 }
 
 /// Walk the root's direct children to build the list of scope body regions.
-/// REQ-DATA-03/07: detects macro/block/filter/autoescape bodies so that
-/// {% set %} inside them gets the correct VariableScope.
+/// REQ-DATA-03/07: detects all scope-introducing bodies so that variables
+/// defined inside them get correct VariableScope and valid_range.
 fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion> {
     let mut regions = Vec::new();
     let mut stack: Vec<(VariableScope, usize, usize)> = Vec::new();
@@ -477,6 +543,8 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                     "block_statement" => Some(VariableScope::Block),
                     "filter_statement" => Some(VariableScope::Filter),
                     "autoescape_statement" => Some(VariableScope::Autoescape),
+                    "for_statement" => Some(VariableScope::ForLoop),
+                    "with_statement" => Some(VariableScope::With),
                     _ => None,
                 };
                 if let Some(scope) = open_scope {
@@ -484,7 +552,7 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                 } else {
                     let kw = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
                         .unwrap_or("").trim();
-                    if matches!(kw, "endmacro" | "endblock" | "endfilter" | "endautoescape") {
+                    if matches!(kw, "endmacro" | "endblock" | "endfilter" | "endautoescape" | "endfor" | "endwith") {
                         if let Some((scope, body_start, depth)) = stack.pop() {
                             regions.push(ScopeRegion {
                                 scope,
@@ -511,6 +579,13 @@ fn scope_for_byte(regions: &[ScopeRegion], byte: usize) -> VariableScope {
         .max_by_key(|r| r.depth)
         .map(|r| r.scope)
         .unwrap_or(VariableScope::Template)
+}
+
+/// Return the innermost scope region enclosing `byte`, if any.
+fn enclosing_region(regions: &[ScopeRegion], byte: usize) -> Option<&ScopeRegion> {
+    regions.iter()
+        .filter(|r| r.body_start <= byte && byte < r.body_end)
+        .max_by_key(|r| r.depth)
 }
 
 // ── template references ───────────────────────────────────────────────────────

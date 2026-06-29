@@ -1,4 +1,4 @@
-use jinja_lsp::workspace::index::{TemplateIndex, WorkspaceIndex};
+use jinja_lsp::workspace::index::{ResolvedBinding, TemplateIndex, WorkspaceIndex};
 use jinja_lsp::workspace::symbols::{
     BlockDefinition, EnclosingOwner, FromImport, ImportAlias, ImportedName, MacroDefinition, Parameter,
     Reference, ReferenceKind, Span, TemplateRefKind, TemplateReference,
@@ -346,5 +346,100 @@ fn enclosing_owner_returns_innermost_for_nested_macro_in_block() {
     match owner {
         EnclosingOwner::Macro(m) => assert_eq!(m.name, "inner", "innermost (macro) should win"),
         other => panic!("expected Macro(inner), got {other:?}"),
+    }
+}
+
+// REQ-DATA-11: reference → binding resolution ─────────────────────────────────
+
+#[test]
+fn resolve_variable_reference_finds_innermost_binding() {
+    use jinja_lsp::parsing::extract;
+    // Outer `post` set at top level; inner `post` in a for loop body.
+    // A reference to `post` inside the for loop body must resolve to the for-loop binding.
+    let src = "{% set post = 'outer' %}{% for post in items %}{{ post }}{% endfor %}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+
+    // Find the reference to `post` inside the for body (the {{ post }} expression)
+    let ref_post = idx.references.iter().find(|r| r.name == "post").expect("reference to post must exist");
+    match idx.resolve_reference(ref_post, &ws) {
+        ResolvedBinding::Variable(v) => {
+            assert_eq!(v.name, "post");
+            assert_eq!(v.scope, VariableScope::ForLoop, "innermost binding is from the for loop");
+        }
+        other => panic!("expected Variable, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolve_variable_outside_scope_returns_host_owned() {
+    use jinja_lsp::parsing::extract;
+    // `ctx_var` is a host-injected variable — no VariableDefinition exists for it.
+    let src = "{{ ctx_var }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+
+    let ref_ctx = idx.references.iter()
+        .find(|r| r.name == "ctx_var" && matches!(r.kind, ReferenceKind::Identifier))
+        .expect("identifier reference to ctx_var must exist");
+    assert!(matches!(idx.resolve_reference(ref_ctx, &ws), ResolvedBinding::HostOwned));
+}
+
+#[test]
+fn resolve_macro_call_finds_local_macro() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% macro greet(name) %}Hi{% endmacro %}{{ greet('Alice') }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+
+    let ref_greet = idx.references.iter().find(|r| r.name == "greet" && matches!(r.kind, ReferenceKind::Function)).expect("function reference to greet");
+    match idx.resolve_reference(ref_greet, &ws) {
+        ResolvedBinding::Macro(m) => assert_eq!(m.name, "greet"),
+        other => panic!("expected Macro, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolve_macro_call_finds_workspace_macro() {
+    // `post_url` is defined in "macros.html" but called from "post.html".
+    let macros_idx = {
+        use jinja_lsp::parsing::extract;
+        let mut idx = extract("{% macro post_url(post) %}/post/{{ post.slug }}{% endmacro %}");
+        idx.path = "macros.html".into();
+        idx
+    };
+    let post_idx = {
+        use jinja_lsp::parsing::extract;
+        let mut idx = extract("{{ post_url(post) }}");
+        idx.path = "post.html".into();
+        idx
+    };
+
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("macros.html".into(), macros_idx);
+
+    let ref_post_url = post_idx.references.iter()
+        .find(|r| r.name == "post_url" && matches!(r.kind, ReferenceKind::Function))
+        .expect("function reference to post_url");
+    match post_idx.resolve_reference(ref_post_url, &ws) {
+        ResolvedBinding::Macro(m) => assert_eq!(m.name, "post_url"),
+        other => panic!("expected workspace Macro, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolve_set_variable_at_top_level_binds_correctly() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% set title = 'Hello' %}{{ title }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+
+    let ref_title = idx.references.iter().find(|r| r.name == "title").expect("reference to title");
+    match idx.resolve_reference(ref_title, &ws) {
+        ResolvedBinding::Variable(v) => {
+            assert_eq!(v.name, "title");
+            assert_eq!(v.scope, VariableScope::Template);
+        }
+        other => panic!("expected Variable, got {other:?}"),
     }
 }

@@ -2,9 +2,21 @@ use std::collections::{HashMap, HashSet};
 
 use super::symbols::{
     BlockDefinition, EnclosingOwner, FromImport, ImportAlias, MacroDefinition, Reference,
-    Span, SyntaxError, TemplateRefKind, TemplateReference, VariableDefinition,
+    ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference, VariableDefinition,
 };
 use crate::parsing::extract;
+
+/// REQ-DATA-11: the definition a `Reference` binds to.
+#[derive(Debug)]
+pub enum ResolvedBinding<'a> {
+    /// A scope-local or template-level variable definition.
+    Variable(&'a VariableDefinition),
+    /// A user-defined macro (local to this template or found in the workspace).
+    Macro(&'a MacroDefinition),
+    /// The name has no template-owned definition — it is host-injected context,
+    /// an unresolved filter/test, or an un-hinted identifier.
+    HostOwned,
+}
 
 /// REQ-DATA-08: everything known about one template, from its own parse tree.
 #[derive(Debug, Clone)]
@@ -42,6 +54,69 @@ impl TemplateIndex {
             .find(|r| r.kind == TemplateRefKind::Extends && !r.is_dynamic)
     }
 
+    /// REQ-DATA-11: resolve a reference to the definition it binds to.
+    ///
+    /// - Identifier → innermost `VariableDefinition` whose `valid_range` contains the ref's span.
+    /// - Function → local `MacroDefinition`, then workspace-wide search.
+    /// - Anything else (Attribute, Filter, Test) → `HostOwned` (resolved via registry/hints).
+    pub fn resolve_reference<'a>(
+        &'a self,
+        reference: &Reference,
+        workspace: &'a WorkspaceIndex,
+    ) -> ResolvedBinding<'a> {
+        match reference.kind {
+            ReferenceKind::Identifier => {
+                // Innermost binding: smallest valid_range that still contains the reference.
+                self.variables
+                    .iter()
+                    .filter(|v| {
+                        v.name == reference.name && range_contains(&v.valid_range, &reference.span)
+                    })
+                    .min_by_key(|v| {
+                        v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte)
+                    })
+                    .map(ResolvedBinding::Variable)
+                    .unwrap_or(ResolvedBinding::HostOwned)
+            }
+            ReferenceKind::Function => {
+                // Local macro first.
+                if let Some(m) = self.macros.iter().find(|m| m.name == reference.name) {
+                    return ResolvedBinding::Macro(m);
+                }
+                // From-imports: {% from "src" import name %} or {% from "src" import name as alias %}
+                for fi in &self.from_imports {
+                    let imported = fi.names.iter().any(|n| {
+                        n.alias.as_deref().unwrap_or(n.name.as_str()) == reference.name
+                            || n.name == reference.name
+                    });
+                    if imported {
+                        if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                            // Find by original name (alias is local, original is in src).
+                            let orig = fi.names.iter()
+                                .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == reference.name)
+                                .map(|n| n.name.as_str())
+                                .unwrap_or(reference.name.as_str());
+                            if let Some(m) = src_idx.macros.iter().find(|m| m.name == orig) {
+                                return ResolvedBinding::Macro(m);
+                            }
+                        }
+                    }
+                }
+                // Workspace-wide fallback.
+                for idx in workspace.templates.values() {
+                    if let Some(m) = idx.macros.iter().find(|m| m.name == reference.name) {
+                        return ResolvedBinding::Macro(m);
+                    }
+                }
+                ResolvedBinding::HostOwned
+            }
+            // Attributes, filters, tests are resolved via registry/hints — out of scope here.
+            ReferenceKind::Attribute | ReferenceKind::Filter | ReferenceKind::Test => {
+                ResolvedBinding::HostOwned
+            }
+        }
+    }
+
     /// REQ-DATA-12: compute the innermost macro or block body containing `span`.
     /// Returns `Template` when no body encloses it.
     /// "Innermost" = smallest body (by byte length) that still contains `span`.
@@ -71,6 +146,10 @@ impl TemplateIndex {
 
 fn body_contains(body: &Span, span: &Span) -> bool {
     body.start_byte <= span.start_byte && span.end_byte <= body.end_byte
+}
+
+fn range_contains(range: &Span, span: &Span) -> bool {
+    range.start_byte <= span.start_byte && span.end_byte <= range.end_byte
 }
 
 /// REQ-DATA-09: maps each template path to its per-file index; resolved in Pass 2.
