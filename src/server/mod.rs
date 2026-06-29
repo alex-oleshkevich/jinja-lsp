@@ -19,6 +19,7 @@ use crate::diagnostics::{filter_by_config, suppress_by_noqa};
 use crate::diagnostics::checks::run_checks;
 use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
+use crate::features::references::{find_references, ReferenceLocation};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -394,8 +395,19 @@ impl LanguageServer for Backend {
         }
     }
 
-    async fn references(&self, _params: ReferenceParams) -> Result<Option<Vec<Location>>> {
-        Ok(None)
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let key = Self::uri_to_key(&params.text_document_position.text_document.uri);
+        let pos = params.text_document_position.position;
+        let include_decl = params.context.include_declaration;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let locs = find_references(source, pos.line, byte_col, &key, include_decl, index, &state.registry, &state.workspace);
+        if locs.is_empty() { return Ok(None); }
+        let locations: Vec<Location> = locs.iter().map(|r| ref_to_location(r, &state.sources, utf8)).collect();
+        Ok(Some(locations))
     }
 
     async fn document_symbol(
@@ -714,6 +726,24 @@ fn definition_to_link(target_source: &str, loc: &DefinitionLocation, utf8: bool)
         target_uri: path_to_uri(&loc.target_path),
         target_range: range,
         target_selection_range: range,
+    }
+}
+
+fn ref_to_location(r: &ReferenceLocation, sources: &std::collections::HashMap<String, String>, utf8: bool) -> Location {
+    let empty = String::new();
+    let src = sources.get(&r.path).unwrap_or(&empty);
+    Location {
+        uri: path_to_uri(&r.path),
+        range: Range {
+            start: Position {
+                line: r.start_line,
+                character: byte_col_to_lsp_char(source_line(src, r.start_line), r.start_col, utf8),
+            },
+            end: Position {
+                line: r.end_line,
+                character: byte_col_to_lsp_char(source_line(src, r.end_line), r.end_col, utf8),
+            },
+        },
     }
 }
 
