@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E102, E104, W301, W302, W304, W305, W402, E401, E601.
+/// Checks implemented: E001, E102, E104, W301, W302, W303, W304, W305, W402, E401, E403, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -27,8 +27,10 @@ pub fn run_checks(
     check_e102_e104(path, index, registry, &mut out);
     check_w301(path, index, &mut out);
     check_w302(path, index, &mut out);
+    check_w303(path, index, &mut out);
     check_w304(path, index, &mut out);
     check_w305(path, index, &mut out);
+    check_e403(path, index, workspace, &mut out);
     check_w402_e401(source, path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
@@ -124,6 +126,27 @@ fn check_w302(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     }
 }
 
+// ── W303: duplicate-import-alias ─────────────────────────────────────────────
+
+fn check_w303(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    let mut seen: HashMap<&str, u32> = HashMap::new();
+    for a in &index.import_aliases {
+        let count = seen.entry(a.alias.as_str()).or_insert(0);
+        *count += 1;
+        if *count == 2 {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: a.span.start_line,
+                col: a.span.start_col,
+                code: "JINJA-W303".to_owned(),
+                slug: "duplicate-import-alias".to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                message: format!("import alias '{}' defined more than once", a.alias),
+            });
+        }
+    }
+}
+
 // ── W304: duplicate-from-import ───────────────────────────────────────────────
 
 fn check_w304(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
@@ -180,6 +203,32 @@ fn check_w305(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 });
                 break; // one diagnostic per shadowed var is enough
             }
+        }
+    }
+}
+
+// ── E403: missing-required-block ─────────────────────────────────────────────
+
+fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+    // Only applies to child templates.
+    let extends = index.template_refs.iter().find(|r| matches!(r.kind, TemplateRefKind::Extends));
+    let Some(parent_ref) = extends else { return };
+    let Some(parent_idx) = workspace.templates.get(&parent_ref.path) else { return };
+
+    let child_block_names: std::collections::HashSet<&str> =
+        index.blocks.iter().map(|b| b.name.as_str()).collect();
+
+    for pb in &parent_idx.blocks {
+        if pb.required && !child_block_names.contains(pb.name.as_str()) {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: 0,
+                col: 0,
+                code: "JINJA-E403".to_owned(),
+                slug: "missing-required-block".to_owned(),
+                severity: DiagnosticSeverity::Error,
+                message: format!("required block '{}' is not overridden in this template", pb.name),
+            });
         }
     }
 }

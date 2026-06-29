@@ -125,6 +125,28 @@ fn w302_emitted_for_duplicate_macro() {
     assert!(w302.unwrap().message.contains("render"), "message must name the duplicate macro");
 }
 
+// ─── W303: duplicate-import-alias ────────────────────────────────────────────
+
+#[test]
+fn w303_emitted_when_same_alias_imported_twice() {
+    let src = r#"{% import "a.html" as m %}{% import "b.html" as m %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("a.html", ""), ("b.html", "")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w303 = diags.iter().find(|d| d.code == "JINJA-W303");
+    assert!(w303.is_some(), "W303 must be emitted when same alias is used twice: {diags:?}");
+    assert!(w303.unwrap().message.contains('m'), "message must name the duplicate alias");
+}
+
+#[test]
+fn no_w303_when_aliases_are_distinct() {
+    let src = r#"{% import "a.html" as m1 %}{% import "b.html" as m2 %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("a.html", ""), ("b.html", "")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W303").count(), 0, "distinct aliases must not trigger W303");
+}
+
 // ─── W304: duplicate-from-import ─────────────────────────────────────────────
 
 #[test]
@@ -168,6 +190,40 @@ fn no_w305_when_no_shadowing() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W305").count(), 0, "distinct names must not trigger W305");
+}
+
+// ─── E403: missing-required-block ─────────────────────────────────────────────
+
+#[test]
+fn e403_emitted_when_required_block_not_overridden() {
+    // base.html has `{% block title required %}{% endblock %}` — child doesn't override it.
+    let child = r#"{% extends "base.html" %}{% block content %}hello{% endblock %}"#;
+    let base = "{% block title required %}{% endblock %}{% block content %}{% endblock %}";
+    let idx = extract(child);
+    let ws = ws_with(&[("base.html", base)]);
+    let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
+    let e403 = diags.iter().find(|d| d.code == "JINJA-E403");
+    assert!(e403.is_some(), "E403 must fire when required block is missing: {diags:?}");
+    assert!(e403.unwrap().message.contains("title"), "message must name the missing block");
+}
+
+#[test]
+fn no_e403_when_required_block_is_overridden() {
+    let child = r#"{% extends "base.html" %}{% block title %}My page{% endblock %}{% block content %}hello{% endblock %}"#;
+    let base = "{% block title required %}{% endblock %}{% block content %}{% endblock %}";
+    let idx = extract(child);
+    let ws = ws_with(&[("base.html", base)]);
+    let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E403").count(), 0, "overridden required block must not trigger E403");
+}
+
+#[test]
+fn no_e403_for_non_extends_template() {
+    let src = "{% block title required %}default{% endblock %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E403").count(), 0, "non-extends template must not trigger E403");
 }
 
 // ─── W402: unreachable-content ────────────────────────────────────────────────
