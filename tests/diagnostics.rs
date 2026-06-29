@@ -17,6 +17,61 @@ fn make_diag(line: u32, code: &str, slug: &str) -> Diagnostic {
     }
 }
 
+// ---------- ADR-003: severity derived from code prefix ----------------------
+
+#[test]
+fn severity_from_code_str_e_is_error() {
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-E001"), DiagnosticSeverity::Error);
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-E601"), DiagnosticSeverity::Error);
+}
+
+#[test]
+fn severity_from_code_str_w_is_warning() {
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-W107"), DiagnosticSeverity::Warning);
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-W301"), DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn severity_from_code_str_i_is_info() {
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-I001"), DiagnosticSeverity::Info);
+}
+
+#[test]
+fn severity_from_code_str_h_is_hint() {
+    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-H001"), DiagnosticSeverity::Hint);
+}
+
+#[test]
+fn diag_code_severity_matches_prefix() {
+    // Every DiagCode's severity() must agree with its code_str() prefix.
+    let codes = [
+        DiagCode::E001, DiagCode::E101, DiagCode::E102, DiagCode::E103,
+        DiagCode::E104, DiagCode::W106, DiagCode::W107, DiagCode::W201,
+        DiagCode::W202, DiagCode::W203, DiagCode::W301, DiagCode::W302,
+        DiagCode::W303, DiagCode::W304, DiagCode::W305, DiagCode::E401,
+        DiagCode::W402, DiagCode::E403, DiagCode::E404, DiagCode::E501,
+        DiagCode::E601,
+    ];
+    for code in codes {
+        let expected = DiagnosticSeverity::from_code_str(code.code_str());
+        assert_eq!(
+            code.severity(), expected,
+            "{}.severity() must match code_str() prefix",
+            code.code_str()
+        );
+    }
+}
+
+#[test]
+fn w107_noqa_warning_uses_derived_severity() {
+    // noqa.rs W107 diagnostic must derive its severity from the code, not hardcode it
+    let src = include_str!("../src/diagnostics/noqa.rs");
+    assert!(
+        !src.contains("DiagnosticSeverity::Warning"),
+        "noqa.rs must not hardcode DiagnosticSeverity::Warning — derive it from DiagCode::W107.severity()"
+    );
+}
+
 // ---------- REQ-DIAG-01: stable kebab-case slugs ----------------------------
 
 #[test]

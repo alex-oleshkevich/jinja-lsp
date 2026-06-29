@@ -1,6 +1,7 @@
 // REQ-DIAG-04, REQ-DIAG-05, REQ-DIAG-06: noqa directive parsing and suppression.
 
-use crate::diagnostic::{Diagnostic, DiagnosticSeverity};
+use crate::diagnostic::Diagnostic;
+use crate::diagnostics::DiagCode;
 
 /// A parsed `noqa` directive from a single line of source.
 #[derive(Debug, Clone)]
@@ -128,7 +129,7 @@ pub fn suppress_by_noqa(
                                 col: 0,
                                 code: "JINJA-W107".to_owned(),
                                 slug: "invalid-noqa".to_owned(),
-                                severity: DiagnosticSeverity::Warning,
+                                severity: DiagCode::W107.severity(),
                                 message: format!("invalid noqa ID: '{code}'"),
                             });
                         }

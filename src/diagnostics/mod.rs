@@ -8,6 +8,8 @@ pub use noqa::{parse_noqa_directives, suppress_by_noqa, NoqaDirective};
 mod filter;
 mod noqa;
 
+use crate::diagnostic::DiagnosticSeverity;
+
 /// REQ-DIAG-01: every diagnostic has a stable kebab-case slug.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DiagCode {
@@ -61,6 +63,11 @@ impl DiagCode {
             Self::E501 => "wrong-call-args",
             Self::E601 => "template-does-not-exist",
         }
+    }
+
+    /// ADR-003: derive severity from the code_str() prefix letter.
+    pub fn severity(self) -> DiagnosticSeverity {
+        DiagnosticSeverity::from_code_str(self.code_str())
     }
 
     pub fn code_str(self) -> &'static str {
