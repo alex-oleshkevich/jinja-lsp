@@ -28,7 +28,7 @@ use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resol
 use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
-use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
+use crate::features::symbols::{document_symbols, workspace_symbols, SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol};
 use state::ServerState;
 
 /// REQ-ARCH-02: direct all tracing output to stderr; never stdout (stdout
@@ -457,6 +457,18 @@ impl LanguageServer for Backend {
         Ok(Some(DocumentSymbolResponse::Nested(
             syms.into_iter().map(|s| to_lsp_document_symbol(&source, utf8, s)).collect(),
         )))
+    }
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        let state = self.state.read().await;
+        let utf8 = state.position_encoding_utf8;
+        let syms = workspace_symbols(&params.query, &state.workspace);
+        if syms.is_empty() { return Ok(None); }
+        let result = syms.iter().map(|s| ws_to_lsp_symbol(s, &state.sources, utf8)).collect();
+        Ok(Some(result))
     }
 
     async fn document_highlight(
@@ -1003,6 +1015,30 @@ fn to_lsp_edit(e: crate::edit::TextEdit) -> TextEdit {
             end: Position { line: e.end_line, character: e.end_col },
         },
         new_text: e.new_text,
+    }
+}
+
+fn ws_to_lsp_symbol(sym: &InternalWorkspaceSymbol, sources: &std::collections::HashMap<String, String>, utf8: bool) -> SymbolInformation {
+    let kind = match sym.kind {
+        InternalSymbolKind::Class => SymbolKind::CLASS,
+        InternalSymbolKind::Function => SymbolKind::FUNCTION,
+        InternalSymbolKind::Variable => SymbolKind::VARIABLE,
+        InternalSymbolKind::Namespace => SymbolKind::NAMESPACE,
+        InternalSymbolKind::Module => SymbolKind::MODULE,
+    };
+    let empty = String::new();
+    let src = sources.get(&sym.container_name).unwrap_or(&empty);
+    #[allow(deprecated)]
+    SymbolInformation {
+        name: sym.name.clone(),
+        kind,
+        tags: None,
+        deprecated: None,
+        location: Location {
+            uri: path_to_uri(&sym.container_name),
+            range: span_to_lsp_range(src, &sym.location, utf8),
+        },
+        container_name: Some(sym.container_name.clone()),
     }
 }
 
