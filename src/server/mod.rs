@@ -15,6 +15,7 @@ use tower_lsp::{
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
+use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
 use state::ServerState;
@@ -279,8 +280,26 @@ impl LanguageServer for Backend {
         Ok(item)
     }
 
-    async fn hover(&self, _params: HoverParams) -> Result<Option<Hover>> {
-        Ok(None)
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
+        let pos = params.text_document_position_params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(result) = hover_feature(source, pos.line, pos.character, index, &state.registry, &state.workspace)
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: result.markdown,
+            }),
+            range: Some(Range {
+                start: Position { line: result.start_line, character: result.start_col },
+                end: Position { line: result.end_line, character: result.end_col },
+            }),
+        }))
     }
 
     async fn signature_help(
