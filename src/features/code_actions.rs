@@ -6,6 +6,10 @@ use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::Diagnostic,
     edit::{TextEdit, WorkspaceEdit},
+    features::{
+        extract_macro::compute_extract_macro,
+        wrap::{wrap_selection, WrapKind},
+    },
     workspace::index::{TemplateIndex, WorkspaceIndex},
 };
 
@@ -101,6 +105,44 @@ pub fn code_actions(
             }
             _ => {}
         }
+    }
+
+    actions
+}
+
+/// REQ-ACT-07 / REQ-ACT-08: Selection-triggered refactor actions (wrap + extract to macro).
+pub fn selection_code_actions(
+    source: &str,
+    file: &str,
+    start_line: u32,
+    end_line: u32,
+) -> Vec<CodeAction> {
+    let mut actions = Vec::new();
+
+    for (kind, title) in [
+        (WrapKind::If, "Wrap selection in {% if %}"),
+        (WrapKind::For, "Wrap selection in {% for %}"),
+        (WrapKind::Block("new_block".to_owned()), "Wrap selection in {% block %}"),
+    ] {
+        if let Some(edit) = wrap_selection(source, file, start_line, end_line, kind) {
+            actions.push(CodeAction {
+                title: title.to_owned(),
+                kind: ActionKind::RefactorRewrite,
+                diagnostics: vec![],
+                is_preferred: false,
+                edit: Some(edit),
+            });
+        }
+    }
+
+    if let Some(edit) = compute_extract_macro(source, file, start_line, end_line, "extracted_macro") {
+        actions.push(CodeAction {
+            title: "Extract selection to macro".to_owned(),
+            kind: ActionKind::RefactorExtract,
+            diagnostics: vec![],
+            is_preferred: false,
+            edit: Some(edit),
+        });
     }
 
     actions

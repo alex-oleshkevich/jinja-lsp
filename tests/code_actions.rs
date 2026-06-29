@@ -1,8 +1,8 @@
-// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02, REQ-ACT-03, REQ-ACT-04, REQ-ACT-05.
+// F17 — Code action tests: REQ-ACT-01..REQ-ACT-08.
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
-use jinja_lsp::features::code_actions::{code_actions, ActionKind, CodeAction};
+use jinja_lsp::features::code_actions::{code_actions, selection_code_actions, ActionKind, CodeAction};
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
 
@@ -665,4 +665,72 @@ fn act10_t37_import_fix_is_preferred_over_suggestions() {
     for action in actions.iter().filter(|a| a.title.contains("Did you mean")) {
         assert!(!action.is_preferred, "did-you-mean suggestions must not be isPreferred");
     }
+}
+
+// ─── REQ-ACT-08: wrap-selection ──────────────────────────────────────────────
+
+#[test]
+fn act08_t01_wrap_if_produces_refactor_rewrite_action() {
+    let src = "<p>hello</p>\n<p>world</p>";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let wrap_if = actions.iter().find(|a| a.title.contains("if")).expect("wrap-if action must exist");
+    assert!(matches!(wrap_if.kind, ActionKind::RefactorRewrite), "wrap must be RefactorRewrite");
+    assert!(wrap_if.edit.is_some(), "wrap action must have an edit");
+}
+
+#[test]
+fn act08_t02_wrap_for_produces_refactor_rewrite_action() {
+    let src = "{{ item }}";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let wrap_for = actions.iter().find(|a| a.title.contains("for")).expect("wrap-for action must exist");
+    assert!(matches!(wrap_for.kind, ActionKind::RefactorRewrite));
+}
+
+#[test]
+fn act08_t03_wrap_block_produces_refactor_rewrite_action() {
+    let src = "{{ item }}";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let wrap_block = actions.iter().find(|a| a.title.contains("block")).expect("wrap-block action must exist");
+    assert!(matches!(wrap_block.kind, ActionKind::RefactorRewrite));
+}
+
+#[test]
+fn act08_t04_wrap_if_edit_inserts_tags_around_selection() {
+    let src = "<p>hello</p>\n<p>world</p>\n<footer/>";
+    // Wrap lines 0..=1
+    let actions = selection_code_actions(src, "t.html", 0, 1);
+    let wrap_if = actions.iter().find(|a| a.title.contains("if")).unwrap();
+    let edit = wrap_if.edit.as_ref().unwrap();
+    let edits = edit.changes.get("t.html").unwrap();
+    // Should have 2 edits: open tag before start_line, close tag after end_line.
+    assert_eq!(edits.len(), 2, "wrap produces exactly 2 edits");
+    assert!(edits[0].new_text.contains("if condition"), "open edit must contain opening tag");
+    assert!(edits[1].new_text.contains("endif"), "close edit must contain closing tag");
+}
+
+// ─── REQ-ACT-07: extract-to-macro ────────────────────────────────────────────
+
+#[test]
+fn act07_t01_extract_macro_produces_refactor_extract_action() {
+    let src = "<p>hello</p>\n<p>world</p>";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let extract_action = actions.iter().find(|a| a.title.contains("macro")).expect("extract-macro action must exist");
+    assert!(matches!(extract_action.kind, ActionKind::RefactorExtract), "extract must be RefactorExtract");
+    assert!(extract_action.edit.is_some());
+}
+
+#[test]
+fn act07_t02_extract_macro_edit_replaces_selection_and_appends_definition() {
+    let src = "<p>hello</p>\n<p>world</p>";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let extract_action = actions.iter().find(|a| a.title.contains("macro")).unwrap();
+    let edit = extract_action.edit.as_ref().unwrap();
+    let edits = edit.changes.get("t.html").unwrap();
+    // Extract produces 2 edits: replace selection + append macro def.
+    assert_eq!(edits.len(), 2);
+    // First edit replaces selection with a call expression.
+    assert!(edits[0].new_text.contains("()"), "replacement must be a call");
+    // Second edit appends the macro definition.
+    assert!(edits[1].new_text.contains("macro"), "appended edit must contain macro definition");
+    assert!(edits[1].new_text.contains("endmacro"), "appended edit must close macro");
 }

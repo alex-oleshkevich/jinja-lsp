@@ -12,7 +12,7 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
 };
 
-use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
+use crate::features::code_actions::{code_actions, selection_code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::diagnostic::DiagnosticSeverity as InternalSeverity;
 use tower_lsp::lsp_types::Diagnostic as LspDiagnostic;
 use crate::diagnostics::{filter_by_config, suppress_by_noqa};
@@ -472,7 +472,20 @@ impl LanguageServer for Backend {
             })
             .collect();
 
-        let actions = code_actions(source, &key, &diags, index, &state.workspace, &state.registry);
+        let mut actions = code_actions(source, &key, &diags, index, &state.workspace, &state.registry);
+
+        // REQ-ACT-07 / REQ-ACT-08: when the client sends a non-empty range (selection),
+        // also emit refactor actions for wrap and extract-to-macro.
+        let range = &params.range;
+        if range.start != range.end {
+            let sel = selection_code_actions(
+                source,
+                &key,
+                range.start.line,
+                range.end.line,
+            );
+            actions.extend(sel);
+        }
 
         if actions.is_empty() {
             return Ok(None);
