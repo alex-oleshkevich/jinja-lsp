@@ -64,6 +64,23 @@ fn region_records_host_line_and_col() {
     assert_eq!(regions[0].host_line, 1, "must be on line 1 (0-indexed)");
 }
 
+// ---------- REQ-INLN-02: word-boundary check prevents substring false positives (2d3i) ---
+
+#[test]
+fn d2di_suffix_match_does_not_trigger() {
+    // "prerender_template_string" ends with "render_template_string" — must not match.
+    let source = r#"prerender_template_string("{{ x }}")"#;
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert!(regions.is_empty(), "suffix of longer identifier must not match: {regions:?}");
+}
+
+#[test]
+fn d2di_exact_function_name_still_matches() {
+    let source = r#"render_template_string("{{ x }}")"#;
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert_eq!(regions.len(), 1);
+}
+
 // ---------- REQ-INLN-03: host_col is UTF-16 code units (lvi1) ---------------
 
 #[test]

@@ -27,9 +27,17 @@ pub fn detect_inline_regions(source: &str, patterns: &[&str]) -> Vec<InlineRegio
         let mut search_from = 0;
         while let Some(call_pos) = source[search_from..].find(&call_prefix) {
             let abs_call = search_from + call_pos;
-            let after_paren = abs_call + call_prefix.len();
-            if let Some(region) = extract_string_literal(source, after_paren) {
-                regions.push(region);
+            // Word-boundary check: reject if the preceding byte is an identifier char,
+            // which means we matched a suffix of a longer name (e.g. "prerender").
+            let preceded_by_ident = abs_call > 0 && {
+                let b = source.as_bytes()[abs_call - 1];
+                b.is_ascii_alphanumeric() || b == b'_' || b == b'.'
+            };
+            if !preceded_by_ident {
+                let after_paren = abs_call + call_prefix.len();
+                if let Some(region) = extract_string_literal(source, after_paren) {
+                    regions.push(region);
+                }
             }
             search_from = abs_call + call_prefix.len();
         }
