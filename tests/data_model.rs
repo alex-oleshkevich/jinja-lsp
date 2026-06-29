@@ -1,6 +1,6 @@
 use jinja_lsp::workspace::index::{TemplateIndex, WorkspaceIndex};
 use jinja_lsp::workspace::symbols::{
-    BlockDefinition, FromImport, ImportAlias, ImportedName, MacroDefinition, Parameter,
+    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, ImportedName, MacroDefinition, Parameter,
     Reference, ReferenceKind, Span, TemplateRefKind, TemplateReference,
     VariableDefinition, VariableScope,
 };
@@ -279,4 +279,72 @@ fn set_at_top_level_gets_template_scope() {
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
     assert_eq!(var.unwrap().scope, VariableScope::Template, "top-level set must have Template scope");
+}
+
+// REQ-DATA-12: enclosing-owner computation ────────────────────────────────────
+
+fn make_macro(name: &str, body_start: usize, body_end: usize) -> MacroDefinition {
+    MacroDefinition {
+        name: name.to_owned(),
+        parameters: vec![],
+        body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
+        span: Span::default(),
+    }
+}
+
+fn make_block(name: &str, body_start: usize, body_end: usize) -> BlockDefinition {
+    BlockDefinition {
+        name: name.to_owned(),
+        scoped: false,
+        required: false,
+        body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
+        span: Span::default(),
+    }
+}
+
+fn query_span(start_byte: usize, end_byte: usize) -> Span {
+    Span { start_byte, end_byte, ..Span::default() }
+}
+
+#[test]
+fn enclosing_owner_returns_template_when_no_body_contains_span() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% macro m() %}body{% endmacro %}{{ x }}";
+    let idx = extract(src);
+    // "x" reference is at byte >= body_end, outside any macro body
+    let q = query_span(37, 38); // roughly where "x" is
+    let owner = idx.enclosing_owner(&q);
+    assert!(matches!(owner, EnclosingOwner::Template), "outside any body should be Template");
+}
+
+#[test]
+fn enclosing_owner_returns_macro_when_span_in_macro_body() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% macro m() %}{{ x }}{% endmacro %}";
+    let idx = extract(src);
+    // The macro body is between the end of the opening tag and start of endmacro
+    let x_byte = src.find("x").unwrap();
+    let q = query_span(x_byte, x_byte + 1);
+    let owner = idx.enclosing_owner(&q);
+    match owner {
+        EnclosingOwner::Macro(m) => assert_eq!(m.name, "m"),
+        other => panic!("expected Macro, got {other:?}"),
+    }
+}
+
+#[test]
+fn enclosing_owner_returns_innermost_for_nested_macro_in_block() {
+    // REQ-DATA-12: when both a block and a macro contain the span,
+    // the innermost (smallest containing body) wins.
+    let idx = TemplateIndex {
+        macros: vec![make_macro("inner", 50, 100)],
+        blocks: vec![make_block("outer", 10, 200)],
+        ..TemplateIndex::empty()
+    };
+    let q = query_span(60, 70); // inside both outer block and inner macro
+    let owner = idx.enclosing_owner(&q);
+    match owner {
+        EnclosingOwner::Macro(m) => assert_eq!(m.name, "inner", "innermost (macro) should win"),
+        other => panic!("expected Macro(inner), got {other:?}"),
+    }
 }

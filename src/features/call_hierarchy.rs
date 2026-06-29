@@ -6,7 +6,7 @@ use crate::{
     builtins::registry::{Category, Registry},
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
-        symbols::{MacroDefinition, ReferenceKind, Span, TemplateRefKind},
+        symbols::{EnclosingOwner, MacroDefinition, ReferenceKind, Span, TemplateRefKind},
     },
 };
 
@@ -112,19 +112,15 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
                 continue;
             }
 
-            let enclosing_name = find_enclosing_macro(tmpl_idx, &r.span).map(|m| m.name.clone());
-            let key = (tpl_path.clone(), enclosing_name.clone());
+            let enclosing = tmpl_idx.enclosing_owner(&r.span);
+            let enclosing_name = if let EnclosingOwner::Macro(m) = &enclosing { Some(m.name.clone()) } else { None };
+            let key = (tpl_path.clone(), enclosing_name);
 
             let from_range = span_to_range(&r.span);
             let entry = groups.entry(key).or_insert_with(|| {
-                let owner = if let Some(ref name) = enclosing_name {
-                    if let Some(m) = tmpl_idx.macros.iter().find(|m| &m.name == name) {
-                        macro_item(m, tpl_path)
-                    } else {
-                        template_item(tpl_path)
-                    }
-                } else {
-                    template_item(tpl_path)
+                let owner = match &enclosing {
+                    EnclosingOwner::Macro(m) => macro_item(m, tpl_path),
+                    _ => template_item(tpl_path),
                 };
                 (owner, vec![])
             });
@@ -258,14 +254,6 @@ fn global_item(name: &str, pack: &str) -> CallHierarchyItem {
         range: zero.clone(),
         selection_range: zero,
     }
-}
-
-/// Find the innermost macro in `idx` whose body span contains `span`.
-fn find_enclosing_macro<'a>(idx: &'a TemplateIndex, span: &Span) -> Option<&'a MacroDefinition> {
-    idx.macros
-        .iter()
-        .filter(|m| span_contains(&m.body, span))
-        .min_by_key(|m| m.body.end_byte.saturating_sub(m.body.start_byte))
 }
 
 /// True when `outer` fully contains `inner` (by byte offsets).

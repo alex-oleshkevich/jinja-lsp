@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::symbols::{
-    BlockDefinition, FromImport, ImportAlias, MacroDefinition, Reference, SyntaxError,
-    TemplateRefKind, TemplateReference, VariableDefinition,
+    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, MacroDefinition, Reference,
+    Span, SyntaxError, TemplateRefKind, TemplateReference, VariableDefinition,
 };
 use crate::parsing::extract;
 
@@ -41,6 +41,36 @@ impl TemplateIndex {
             .iter()
             .find(|r| r.kind == TemplateRefKind::Extends && !r.is_dynamic)
     }
+
+    /// REQ-DATA-12: compute the innermost macro or block body containing `span`.
+    /// Returns `Template` when no body encloses it.
+    /// "Innermost" = smallest body (by byte length) that still contains `span`.
+    pub fn enclosing_owner<'a>(&'a self, span: &Span) -> EnclosingOwner<'a> {
+        // Collect all candidates (macros and blocks whose body contains span).
+        let best_macro = self.macros.iter()
+            .filter(|m| m.body.start_byte < m.body.end_byte && body_contains(&m.body, span))
+            .min_by_key(|m| m.body.end_byte.saturating_sub(m.body.start_byte));
+
+        let best_block = self.blocks.iter()
+            .filter(|b| b.body.start_byte < b.body.end_byte && body_contains(&b.body, span))
+            .min_by_key(|b| b.body.end_byte.saturating_sub(b.body.start_byte));
+
+        match (best_macro, best_block) {
+            (None, None) => EnclosingOwner::Template,
+            (Some(m), None) => EnclosingOwner::Macro(m),
+            (None, Some(b)) => EnclosingOwner::Block(b),
+            (Some(m), Some(b)) => {
+                // Both contain span; pick the smaller body (innermost).
+                let m_len = m.body.end_byte.saturating_sub(m.body.start_byte);
+                let b_len = b.body.end_byte.saturating_sub(b.body.start_byte);
+                if m_len <= b_len { EnclosingOwner::Macro(m) } else { EnclosingOwner::Block(b) }
+            }
+        }
+    }
+}
+
+fn body_contains(body: &Span, span: &Span) -> bool {
+    body.start_byte <= span.start_byte && span.end_byte <= body.end_byte
 }
 
 /// REQ-DATA-09: maps each template path to its per-file index; resolved in Pass 2.

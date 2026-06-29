@@ -114,6 +114,15 @@ pub enum ReferenceKind {
     Test,
 }
 
+/// REQ-DATA-12: the innermost construct whose body contains a given span,
+/// or Template when no body encloses it.
+#[derive(Debug, Clone)]
+pub enum EnclosingOwner<'a> {
+    Macro(&'a MacroDefinition),
+    Block(&'a BlockDefinition),
+    Template,
+}
+
 /// REQ-DATA-07: exactly nine variants.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VariableScope {
