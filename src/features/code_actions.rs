@@ -109,6 +109,31 @@ pub fn code_actions(
                     actions.push(action);
                 }
             }
+            "JINJA-W301" => {
+                if let Some(action) = remove_duplicate_block(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-W302" => {
+                if let Some(action) = remove_duplicate_macro(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-W303" => {
+                if let Some(action) = remove_duplicate_import_alias(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-W304" => {
+                if let Some(action) = remove_duplicate_from_import(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
+            "JINJA-W305" => {
+                if let Some(action) = rename_shadowing_variable(file, diag, index) {
+                    actions.push(action);
+                }
+            }
             _ => {}
         }
     }
@@ -325,6 +350,167 @@ fn suggest_spelling_correction(
             }
         })
         .collect()
+}
+
+// ── REQ-ACT-06 — Shadowing and duplicate fixes ───────────────────────────────
+
+fn remove_duplicate_block(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let block_name = extract_quoted_name(&diag.message)?;
+    let block = index.blocks.iter().find(|b| b.name == block_name && b.span.start_line == diag.line)?;
+    // body.end_byte is not set for blocks; scan source for the matching {% endblock %}.
+    let endblock_ln = find_endblock_line(source, block.span.start_line);
+    let edit = delete_region_clean(source, block.span.start_line, endblock_ln + 1);
+    Some(CodeAction {
+        title: format!("Remove duplicate block '{block_name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+fn remove_duplicate_macro(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let macro_name = extract_quoted_name(&diag.message)?;
+    let macro_def = index.macros.iter().find(|m| m.name == macro_name && m.span.start_line == diag.line)?;
+    let endmacro_line = byte_to_line(source, macro_def.body.end_byte);
+    let edit = delete_region_clean(source, macro_def.span.start_line, endmacro_line + 1);
+    Some(CodeAction {
+        title: format!("Remove duplicate macro '{macro_name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+fn remove_duplicate_import_alias(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let alias_name = extract_quoted_name(&diag.message)?;
+    let alias = index.import_aliases.iter().find(|a| a.alias == alias_name && a.span.start_line == diag.line)?;
+    let edit = delete_region_clean(source, alias.span.start_line, alias.span.start_line + 1);
+    Some(CodeAction {
+        title: format!("Remove duplicate import alias '{alias_name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+fn remove_duplicate_from_import(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let name = extract_quoted_name(&diag.message)?;
+    let fi = index.from_imports.iter().find(|fi| fi.span.start_line == diag.line)?;
+    let edit = delete_region_clean(source, fi.span.start_line, fi.span.start_line + 1);
+    Some(CodeAction {
+        title: format!("Remove duplicate from-import '{name}'"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
+}
+
+fn rename_shadowing_variable(
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    use crate::workspace::symbols::ReferenceKind;
+    let var_name = extract_quoted_name(&diag.message)?;
+    let new_name = format!("{var_name}_2");
+
+    // Definition edit at the diagnostic location.
+    let def_edit = TextEdit {
+        start_line: diag.line,
+        start_col: diag.col,
+        end_line: diag.line,
+        end_col: diag.col + var_name.len() as u32,
+        new_text: new_name.clone(),
+    };
+
+    // Reference edits: all identifier references to this name on/after the definition line.
+    // (valid_range is not populated by the extractor; use line-range as a scope heuristic.)
+    let ref_edits = index.references.iter()
+        .filter(|r| r.name == var_name && r.kind == ReferenceKind::Identifier && r.span.start_line >= diag.line)
+        .map(|r| TextEdit {
+            start_line: r.span.start_line,
+            start_col: r.span.start_col,
+            end_line: r.span.start_line,
+            end_col: r.span.start_col + var_name.len() as u32,
+            new_text: new_name.clone(),
+        });
+
+    let mut edits: Vec<TextEdit> = std::iter::once(def_edit).chain(ref_edits).collect();
+    // Sort then dedup — definition and a grammar reference capture may share position.
+    edits.sort_by_key(|e| (e.start_line, e.start_col));
+    edits.dedup_by_key(|e| (e.start_line, e.start_col));
+
+    let mut changes = HashMap::new();
+    changes.insert(file.to_owned(), edits);
+    Some(CodeAction {
+        title: format!("Rename to `{new_name}`"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit { changes, create_files: vec![] }),
+    })
+}
+
+/// Scan source for the `{% endblock %}` line matching the block that opens at `from_line`.
+fn find_endblock_line(source: &str, from_line: u32) -> u32 {
+    let lines: Vec<&str> = source.split('\n').collect();
+    // Single-line block: endblock on the same line as the opening tag.
+    if let Some(line) = lines.get(from_line as usize) {
+        if line.contains("{%") && line.contains("endblock") {
+            return from_line;
+        }
+    }
+    // Multi-line block: depth-count to find the matching endblock.
+    let mut depth = 1i32;
+    for (i, line) in lines.iter().enumerate().skip(from_line as usize + 1) {
+        let t = line.trim();
+        if t.contains("{%") && t.contains("endblock") {
+            depth -= 1;
+            if depth == 0 { return i as u32; }
+        } else if t.contains("{%") && t.split_whitespace().any(|w| w == "block") {
+            depth += 1;
+        }
+    }
+    from_line
+}
+
+/// Delete lines [start_line, end_line) without leaving a blank line.
+///
+/// When start_line > 0: consumes the preceding newline instead of the following one,
+/// so adjacent content stays joined. When start_line == 0: uses the standard range.
+fn delete_region_clean(source: &str, start_line: u32, end_line: u32) -> TextEdit {
+    let last = end_line - 1; // last line to delete (inclusive)
+    if start_line > 0 {
+        let prev_len = source_line(source, start_line - 1).len() as u32;
+        let last_len = source_line(source, last).len() as u32;
+        TextEdit { start_line: start_line - 1, start_col: prev_len, end_line: last, end_col: last_len, new_text: String::new() }
+    } else {
+        TextEdit { start_line, start_col: 0, end_line, end_col: 0, new_text: String::new() }
+    }
 }
 
 // ── REQ-ACT-05 — Create a missing template file ──────────────────────────────

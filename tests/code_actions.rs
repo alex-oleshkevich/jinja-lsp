@@ -493,3 +493,139 @@ fn act05_absolute_path_no_action() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert!(actions.is_empty(), "absolute path must not get a create action");
 }
+
+// ─── REQ-ACT-06 helpers ──────────────────────────────────────────────────────
+
+fn w301(line: u32, name: &str) -> Diagnostic {
+    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W301".to_owned(),
+        slug: "duplicate-block".to_owned(), severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate block '{name}'") }
+}
+fn w302(line: u32, name: &str) -> Diagnostic {
+    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W302".to_owned(),
+        slug: "duplicate-macro".to_owned(), severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate macro '{name}'") }
+}
+fn w303(line: u32, name: &str) -> Diagnostic {
+    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W303".to_owned(),
+        slug: "duplicate-import-alias".to_owned(), severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate import alias '{name}'") }
+}
+fn w304(line: u32, name: &str) -> Diagnostic {
+    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W304".to_owned(),
+        slug: "duplicate-from-import".to_owned(), severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate from-import '{name}'") }
+}
+fn w305(line: u32, col: u32, name: &str) -> Diagnostic {
+    Diagnostic { file: "t.html".to_owned(), line, col, code: "JINJA-W305".to_owned(),
+        slug: "name-shadowing".to_owned(), severity: DiagnosticSeverity::Warning,
+        message: format!("variable '{name}' shadows outer binding") }
+}
+
+/// Apply all edits in the action's first file entry (bottom-to-top to preserve offsets).
+fn apply_all(source: &str, file: &str, action: &CodeAction) -> String {
+    let edit = action.edit.as_ref().expect("action must have an edit");
+    let edits = edit.changes.get(file).expect("edits for file");
+    let line_starts: Vec<usize> = std::iter::once(0)
+        .chain(source.char_indices().filter(|(_, c)| *c == '\n').map(|(i, _)| i + 1))
+        .collect();
+    let mut byte_edits: Vec<(usize, usize, String)> = edits.iter().map(|e| {
+        let s = line_starts.get(e.start_line as usize).copied().unwrap_or(source.len()) + e.start_col as usize;
+        let en = line_starts.get(e.end_line as usize).copied().unwrap_or(source.len()) + e.end_col as usize;
+        (s, en, e.new_text.clone())
+    }).collect();
+    // Apply bottom-to-top so earlier byte offsets are not invalidated.
+    byte_edits.sort_by_key(|e| std::cmp::Reverse(e.0));
+    let mut result = source.to_owned();
+    for (s, en, new_text) in byte_edits {
+        result = format!("{}{}{}", &result[..s], new_text, &result[en..]);
+    }
+    result
+}
+
+// ─── REQ-ACT-06: T-13 — Remove duplicate block ───────────────────────────────
+
+#[test]
+fn act06_t13_remove_duplicate_block() {
+    let src = "{% block content %}first{% endblock %}\n{% block content %}second{% endblock %}";
+    let idx = extract(src);
+    // W301 points to the duplicate (second) block at line 1
+    let diags = vec![w301(1, "content")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1, "must offer remove-duplicate action");
+    assert!(actions[0].title.contains("content"));
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(result, "{% block content %}first{% endblock %}", "later block removed");
+}
+
+// ─── REQ-ACT-06: T-14 — Remove duplicate macro ───────────────────────────────
+
+#[test]
+fn act06_t14_remove_duplicate_macro() {
+    let src = "{% macro foo() %}first{% endmacro %}\n{% macro foo() %}second{% endmacro %}";
+    let idx = extract(src);
+    let diags = vec![w302(1, "foo")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(result, "{% macro foo() %}first{% endmacro %}", "later macro removed");
+}
+
+// ─── REQ-ACT-06: T-15 — Remove duplicate import alias ────────────────────────
+
+#[test]
+fn act06_t15_remove_duplicate_import_alias() {
+    let src = "{% import \"shared.html\" as shared %}\n{% import \"other.html\" as shared %}";
+    let idx = extract(src);
+    let diags = vec![w303(1, "shared")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(result, "{% import \"shared.html\" as shared %}", "later import alias removed");
+}
+
+// ─── REQ-ACT-06: T-16 — Remove duplicate from-import ────────────────────────
+
+#[test]
+fn act06_t16_remove_duplicate_from_import() {
+    let src = "{% from \"x.html\" import foo %}\n{% from \"x.html\" import foo %}";
+    let idx = extract(src);
+    let diags = vec![w304(1, "foo")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(result, "{% from \"x.html\" import foo %}", "later from-import removed");
+}
+
+// ─── REQ-ACT-06: T-17 — Rename shadowing variable ────────────────────────────
+
+#[test]
+fn act06_t17_rename_shadowing_variable() {
+    // for-loop variable "post" shadows an outer context variable.
+    // The rename replaces the definition + all in-scope identifier references.
+    let src = "{% for post in posts %}{{ post }}{% endfor %}";
+    let idx = extract(src);
+    // W305 diagnostic at the for-loop variable definition position
+    let col = src.find("for post").map(|i| i + "for ".len()).unwrap() as u32;
+    let diags = vec![w305(0, col, "post")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1, "must offer rename action");
+    assert!(actions[0].title.contains("post_2"), "suggestion suffixes _2");
+    let result = apply_all(src, "t.html", &actions[0]);
+    assert!(result.contains("post_2"), "post renamed to post_2");
+    assert!(!result.contains("{% for post "), "definition renamed");
+}
+
+// ─── REQ-ACT-06: T-18 — Identical duplicate macro — remove the later one ─────
+
+#[test]
+fn act06_t18_identical_duplicate_macro_removes_later() {
+    let src = "{% macro foo() %}body{% endmacro %}\n{% macro foo() %}body{% endmacro %}\n{{ bar }}";
+    let idx = extract(src);
+    // W302 points to the later (second) macro
+    let diags = vec![w302(1, "foo")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(result, "{% macro foo() %}body{% endmacro %}\n{{ bar }}", "only the later macro removed");
+}
