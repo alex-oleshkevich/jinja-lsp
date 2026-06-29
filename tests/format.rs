@@ -81,6 +81,28 @@ fn fmt01_syntax_error_passthrough() {
     assert_eq!(format(bad), bad);
 }
 
+// ─── REQ-FMT-03: T-11 — Statement marker spacing ─────────────────────────────
+
+#[test]
+fn fmt03_t11_statement_marker_spacing() {
+    // {%-if x-%} → {%- if x -%}
+    assert_eq!(format("{%-if x-%}\n{%-endif-%}"), "{%- if x -%}\n{%- endif -%}");
+}
+
+#[test]
+fn fmt03_t13_one_sided_marker_preserved() {
+    // One-sided marker preserved; spacing normalized
+    assert_eq!(format("{%- if x %}body{% endif %}"), "{%- if x %}body{% endif %}");
+    assert_eq!(format("{% if x -%}body{%- endif %}"), "{% if x -%}body{%- endif %}");
+}
+
+#[test]
+fn fmt03_t14_no_marker_added() {
+    // Markers are never invented — a markerless tag stays markerless
+    let src = "{% if x %}body{% endif %}";
+    assert_eq!(format(src), src);
+}
+
 // ─── REQ-FMT-01: Idempotence ─────────────────────────────────────────────────
 
 #[test]
