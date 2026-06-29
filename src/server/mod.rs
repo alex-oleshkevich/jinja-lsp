@@ -13,6 +13,10 @@ use tower_lsp::{
 };
 
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
+use crate::diagnostic::DiagnosticSeverity as InternalSeverity;
+use tower_lsp::lsp_types::Diagnostic as LspDiagnostic;
+use crate::diagnostics::{filter_by_config, suppress_by_noqa};
+use crate::diagnostics::checks::run_checks;
 use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::hover::hover as hover_feature;
@@ -79,6 +83,27 @@ impl Backend {
 
     fn uri_to_key(uri: &Url) -> String {
         uri.path().to_owned()
+    }
+
+    /// Run checks on one file and push findings to the client (REQ-DIAG / F01).
+    async fn publish_file_diagnostics(&self, key: &str) {
+        let state = self.state.read().await;
+        let (Some(source), Some(index)) = (state.sources.get(key), state.workspace.templates.get(key))
+        else {
+            return;
+        };
+        let raw = run_checks(source, key, index, &state.registry, &state.workspace);
+        let select: Vec<&str> = state.config.lint.select.iter().map(|s| s.as_str()).collect();
+        let ignore: Vec<&str> = state.config.lint.ignore.iter().map(|s| s.as_str()).collect();
+        let filtered: Vec<crate::diagnostic::Diagnostic> =
+            filter_by_config(&raw, &select, &ignore).into_iter().cloned().collect();
+        let (kept, w107s) = suppress_by_noqa(&filtered, source);
+        let mut lsp_diags: Vec<LspDiagnostic> =
+            kept.into_iter().chain(w107s).map(|d| to_lsp_diagnostic(&d)).collect();
+        lsp_diags.sort_by_key(|d| (d.range.start.line, d.range.start.character));
+        let uri = path_to_uri(key);
+        drop(state);
+        self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
 }
 
@@ -204,6 +229,7 @@ impl LanguageServer for Backend {
         }
         let key = Self::uri_to_key(&params.text_document.uri);
         self.pass1(&key, &params.text_document.text).await;
+        self.publish_file_diagnostics(&key).await;
     }
 
     /// REQ-ARCH-05: change triggers Pass 1 (full-sync, newest content wins).
@@ -211,6 +237,7 @@ impl LanguageServer for Backend {
         if let Some(change) = params.content_changes.into_iter().last() {
             let key = Self::uri_to_key(&params.text_document.uri);
             self.pass1(&key, &change.text).await;
+            self.publish_file_diagnostics(&key).await;
         }
     }
 
@@ -501,6 +528,26 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
         is_preferred: Some(action.is_preferred),
         disabled: None,
         data: None,
+    }
+}
+
+fn to_lsp_diagnostic(d: &crate::diagnostic::Diagnostic) -> LspDiagnostic {
+    let severity = Some(match d.severity {
+        InternalSeverity::Error => DiagnosticSeverity::ERROR,
+        InternalSeverity::Warning => DiagnosticSeverity::WARNING,
+        InternalSeverity::Info => DiagnosticSeverity::INFORMATION,
+        InternalSeverity::Hint => DiagnosticSeverity::HINT,
+    });
+    LspDiagnostic {
+        range: Range {
+            start: Position { line: d.line, character: d.col },
+            end: Position { line: d.line, character: d.col + 1 },
+        },
+        severity,
+        code: Some(NumberOrString::String(d.code.clone())),
+        source: Some("jinja-lsp".to_owned()),
+        message: d.message.clone(),
+        ..Default::default()
     }
 }
 
