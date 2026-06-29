@@ -70,8 +70,8 @@ fn from_import_has_source_and_names() {
     let fi = FromImport {
         source: "blog/macros.html".into(),
         names: vec![
-            ImportedName { name: "post_url".into(), alias: None },
-            ImportedName { name: "comment_card".into(), alias: Some("cc".into()) },
+            ImportedName { name: "post_url".into(), alias: None, name_span: span() },
+            ImportedName { name: "comment_card".into(), alias: Some("cc".into()), name_span: span() },
         ],
         span: span(),
     };

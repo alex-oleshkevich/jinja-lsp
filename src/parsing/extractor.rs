@@ -749,10 +749,9 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
         }
     }
 
-    // Collect imported names keyed by import_statement start_byte
-    // For each import_statement, build Vec<ImportedName>
-    let mut names_map: HashMap<usize, HashMap<String, Option<String>>> = HashMap::new();
-    // inner HashMap: name → alias
+    // Collect imported names keyed by import_statement start_byte.
+    // Inner value: (name → (alias, name_span)).
+    let mut names_map: HashMap<usize, HashMap<String, (Option<String>, Span)>> = HashMap::new();
     {
         let mut cur = QueryCursor::new();
         let mut ms = cur.matches(&nq, tree.root_node(), bytes);
@@ -766,17 +765,18 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
                 match cap_name {
                     "name" => {
                         let n = txt(cap.node, bytes).to_owned();
-                        entry.entry(n).or_insert(None);
+                        let span = node_span(cap.node);
+                        entry.entry(n).or_insert((None, span));
                     }
                     "alias" => {
-                        // alias belongs to the most-recently-added name — find it via the
-                        // import_as node's preceding sibling identifier
                         if let Some(import_as) = cap.node.parent() {
                             if let Some(prev) = import_as.prev_named_sibling() {
                                 if prev.kind() == "identifier" {
                                     let prev_name = txt(prev, bytes).to_owned();
                                     let alias_text = txt(cap.node, bytes).to_owned();
-                                    entry.insert(prev_name, Some(alias_text));
+                                    if let Some(entry) = entry.get_mut(&prev_name) {
+                                        entry.0 = Some(alias_text);
+                                    }
                                 }
                             }
                         }
@@ -792,7 +792,7 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
         let name_alias = names_map.remove(&key).unwrap_or_default();
         let names: Vec<ImportedName> = name_alias
             .into_iter()
-            .map(|(name, alias)| ImportedName { name, alias })
+            .map(|(name, (alias, name_span))| ImportedName { name, alias, name_span })
             .collect();
         idx.from_imports.push(FromImport { source: source.clone(), names, span: span.clone() });
         idx.template_refs.push(TemplateReference {

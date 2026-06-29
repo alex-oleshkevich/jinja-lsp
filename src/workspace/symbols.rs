@@ -79,6 +79,7 @@ pub struct FromImport {
 pub struct ImportedName {
     pub name: String,
     pub alias: Option<String>,
+    pub name_span: Span,
 }
 
 /// REQ-DATA-05

@@ -100,6 +100,47 @@ fn act11_jinja_block_name_still_renames() {
     assert!(matches!(target, RenameTarget::Workspace));
 }
 
+// ─── T-05: from-import name is renamed when the macro is renamed ─────────────
+
+#[test]
+fn act11_t05_from_import_name_is_renamed() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // A template that imports "greet" by name.
+    let source = r#"{% from "macros.html" import greet %}{{ greet("World") }}"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    assert!(edit.is_some(), "expected a WorkspaceEdit");
+    let we = edit.unwrap();
+    let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
+    // There must be an edit that changes the name inside the from-import statement.
+    let has_import_edit = file_edits.iter().any(|e| e.new_text == "say_hi" && e.start_col < 40);
+    assert!(has_import_edit, "expected an edit inside the from-import statement; edits: {file_edits:?}");
+}
+
+#[test]
+fn act11_t06_from_import_with_alias_renames_name_not_alias() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // "greet as g" — renaming "greet" (the macro) must touch the name, not the alias.
+    let source = r#"{% from "macros.html" import greet as g %}{{ g("World") }}"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    assert!(edit.is_some(), "expected a WorkspaceEdit");
+    let we = edit.unwrap();
+    let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
+    // Must rename "greet" but NOT "g".
+    let has_greet_edit = file_edits.iter().any(|e| e.new_text == "say_hi");
+    assert!(has_greet_edit, "expected 'greet' to be renamed; edits: {file_edits:?}");
+    // The alias "g" itself should NOT be rewritten (it's a different name).
+    let alias_rewritten = file_edits.iter().any(|e| e.new_text == "say_hi" && e.start_col > 38);
+    assert!(!alias_rewritten, "alias 'g' must not be renamed; edits: {file_edits:?}");
+}
+
 #[test]
 #[ignore]
 fn debug_spans() {

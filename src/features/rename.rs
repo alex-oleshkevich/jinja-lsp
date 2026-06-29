@@ -179,6 +179,21 @@ fn rename_in_index(old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec
         }
     }
 
+    // From-import name positions (e.g. `from "x.html" import old_name as alias`).
+    for fi in &index.from_imports {
+        for iname in &fi.names {
+            if iname.name == old_name {
+                edits.push(TextEdit {
+                    start_line: iname.name_span.start_line,
+                    start_col: iname.name_span.start_col,
+                    end_line: iname.name_span.start_line,
+                    end_col: iname.name_span.start_col + old_name.len() as u32,
+                    new_text: new_name.to_owned(),
+                });
+            }
+        }
+    }
+
     edits.sort_by_key(|e| (e.start_line, e.start_col));
     edits.dedup_by_key(|e| (e.start_line, e.start_col));
     edits
