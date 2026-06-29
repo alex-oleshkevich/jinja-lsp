@@ -368,15 +368,29 @@ fn name_span_in(source: &str, tag_start_byte: usize, name: &str) -> Span {
         Some(s) => s,
         None => return Span::default(),
     };
-    if let Some(pos) = slice.find(name) {
-        let abs_start = tag_start_byte + pos;
-        let abs_end = abs_start + name.len();
-        let (sl, sc) = byte_to_line_col(source, abs_start);
-        let (el, ec) = byte_to_line_col(source, abs_end);
-        Span { start_byte: abs_start, end_byte: abs_end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
-    } else {
-        Span::default()
-    }
+    // Find `name` as a whole word: the byte before the match must not be an identifier char.
+    let mut search_from = 0;
+    let pos = loop {
+        match slice[search_from..].find(name) {
+            None => return Span::default(),
+            Some(rel) => {
+                let abs_rel = search_from + rel;
+                let preceded_by_ident = abs_rel > 0 && {
+                    let p = slice.as_bytes()[abs_rel - 1];
+                    p.is_ascii_alphanumeric() || p == b'_'
+                };
+                if !preceded_by_ident {
+                    break abs_rel;
+                }
+                search_from = abs_rel + 1;
+            }
+        }
+    };
+    let abs_start = tag_start_byte + pos;
+    let abs_end = abs_start + name.len();
+    let (sl, sc) = byte_to_line_col(source, abs_start);
+    let (el, ec) = byte_to_line_col(source, abs_end);
+    Span { start_byte: abs_start, end_byte: abs_end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
 }
 
 /// Convert a byte offset to (line, col) in the source.

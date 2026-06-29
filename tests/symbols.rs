@@ -13,6 +13,41 @@ fn find_sym<'a>(
     syms.iter().find(|s| s.name == name)
 }
 
+// ─── name_span_in word-boundary fix ──────────────────────────────────────────
+
+#[test]
+fn sym_q634_block_named_lock_selection_points_to_name_not_keyword() {
+    // "lock" is a substring of the keyword "block" — name_span_in must find the
+    // standalone identifier, not the occurrence inside "block".
+    let src = "{% block lock %}body{% endblock %}";
+    let idx = extract(src);
+    let syms = document_symbols(src, &idx);
+    let s = find_sym(&syms, "lock").expect("block 'lock' must appear in symbols");
+    // In "{% block lock %}", "lock" as the block name starts at byte 9.
+    // If name_span_in returns byte 4 (inside "block"), that's the bug.
+    let lock_byte = src.find(" lock ").map(|p| p + 1).unwrap() as u32;
+    assert_eq!(
+        s.selection_range.start_col, lock_byte,
+        "selection_range must point to the block name, not inside the keyword; got col {}",
+        s.selection_range.start_col
+    );
+}
+
+#[test]
+fn sym_q634_macro_named_acro_selection_points_to_name_not_keyword() {
+    // "acro" is a substring of "macro" — same class of bug.
+    let src = "{% macro acro() %}{% endmacro %}";
+    let idx = extract(src);
+    let syms = document_symbols(src, &idx);
+    let s = find_sym(&syms, "acro").expect("macro 'acro' must appear in symbols");
+    let acro_byte = src.find(" acro(").map(|p| p + 1).unwrap() as u32;
+    assert_eq!(
+        s.selection_range.start_col, acro_byte,
+        "selection_range must point to the macro name, not inside the keyword; got col {}",
+        s.selection_range.start_col
+    );
+}
+
 // ─── REQ-SYM-01: SymbolKind mapping ──────────────────────────────────────────
 
 #[test]
