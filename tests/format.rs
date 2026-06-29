@@ -261,11 +261,40 @@ fn fmt02_t08_elif_else_realign() {
 }
 
 #[test]
+fn fmt02_t09_single_line_block_no_depth_leak() {
+    // A single-line paired block (opener and closer on the same line) must leave
+    // depth unchanged so subsequent Jinja-tag lines are not over-indented.
+    let src = "{% block t %}x{% endblock %}\n{% if y %}z{% endif %}";
+    let want = "{% block t %}x{% endblock %}\n{% if y %}z{% endif %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t10_single_line_if_endif_no_depth_leak() {
+    // Same invariant as t09 for if/endif.
+    let src = "{% if x %}z{% endif %}\nafter\n{% if b %}c{% endif %}";
+    let want = "{% if x %}z{% endif %}\nafter\n{% if b %}c{% endif %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t11_single_line_in_outer_block() {
+    // A single-line inner block inside a multi-line outer block must still
+    // produce depth=1 indentation for subsequent siblings.
+    let src = "{% block outer %}\n{% block inner %}x{% endblock %}\n{% set y = 1 %}\n{% endblock %}";
+    let want = "{% block outer %}\n  {% block inner %}x{% endblock %}\n  {% set y = 1 %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
 fn fmt02_idempotent() {
     let inputs = [
         "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}",
         "{% for item in list %}\n{% if item %}\nx\n{% endif %}\n{% endfor %}",
         "{% block content %}\n  <p>hello</p>\n{% endblock %}",
+        // Single-line paired tags must be stable under repeated formatting.
+        "{% block t %}x{% endblock %}\n{% if y %}z{% endif %}",
+        "{% block outer %}\n{% block inner %}x{% endblock %}\n{% set y = 1 %}\n{% endblock %}",
     ];
     for src in inputs {
         let once = format(src);

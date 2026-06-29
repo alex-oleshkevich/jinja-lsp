@@ -100,13 +100,25 @@ fn is_jinja_tag_line(line: &str) -> bool {
     t.starts_with("{%")
 }
 
-/// Extract the first keyword from inside a `{%...%}` tag (e.g. "block", "endif").
-fn jinja_tag_keyword(line: &str) -> Option<&str> {
-    let t = line.trim_start_matches([' ', '\t']);
-    // Strip opening delimiter (with optional marker)
-    let inner = t.strip_prefix("{%-").or_else(|| t.strip_prefix("{%"))?;
-    let kw = inner.trim_start_matches([' ', '\t', '-']);
-    kw.split_whitespace().next()
+/// Extract ALL keywords from ALL `{%...%}` tags on a single line,
+/// including single-line paired tags like `{% block t %}x{% endblock %}`.
+fn jinja_tag_keywords_on_line(line: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut s = line;
+    while let Some(start) = s.find("{%") {
+        let after_open = &s[start + 2..];
+        if let Some(end) = after_open.find("%}") {
+            let inner = &after_open[..end];
+            let kw_str = inner.trim_matches('-').trim();
+            if let Some(first) = kw_str.split_whitespace().next() {
+                result.push(first.to_owned());
+            }
+            s = &after_open[end + 2..];
+        } else {
+            break;
+        }
+    }
+    result
 }
 
 /// Re-indent Jinja-tag lines so their leading whitespace equals `depth × 2` spaces,
@@ -128,12 +140,11 @@ pub fn reindent(source: &str) -> String {
             continue;
         }
 
-        let kw = jinja_tag_keyword(line).unwrap_or("");
-        let is_closer = CLOSERS.contains(&kw);
-        let is_opener = OPENERS.contains(&kw);
+        let keywords = jinja_tag_keywords_on_line(line);
+        let first_kw = keywords.first().map(|s| s.as_str()).unwrap_or("");
 
         // Closers (endblock, endif, …) and re-aligners (elif, else) print at depth-1.
-        if is_closer && depth > 0 {
+        if CLOSERS.contains(&first_kw) && depth > 0 {
             depth -= 1;
         }
 
@@ -144,10 +155,34 @@ pub fn reindent(source: &str) -> String {
         }
         out.push_str(stripped);
 
-        // Openers (block, for, if, macro, …) increase depth after writing.
-        // elif/else are closers AND openers (they de-indent the tag, then re-open).
-        if is_opener {
-            depth += 1;
+        // Compute net depth delta from ALL tags on this line.
+        //
+        // First keyword: if it is a closer, the decrement was already applied in the
+        // pre-step above; count it only as an opener (+1) if applicable.
+        // Subsequent keywords: pure openers +1, pure closers -1, realigners net 0.
+        let mut delta: isize = 0;
+        for (idx, kw) in keywords.iter().enumerate() {
+            let in_openers = OPENERS.contains(&kw.as_str());
+            let in_closers = CLOSERS.contains(&kw.as_str());
+            if idx == 0 {
+                // Closer role was already handled as pre-decrement; count opener role only.
+                if in_openers {
+                    delta += 1;
+                }
+            } else {
+                if in_openers && !in_closers {
+                    delta += 1;
+                } else if in_closers && !in_openers {
+                    delta -= 1;
+                }
+                // realigners (both opener+closer) at non-first position: net 0
+            }
+        }
+
+        if delta > 0 {
+            depth = depth.saturating_add(delta as usize);
+        } else if delta < 0 {
+            depth = depth.saturating_sub((-delta) as usize);
         }
     }
 
