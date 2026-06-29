@@ -188,6 +188,89 @@ fn state_registry_rebuilt_on_apply_init_options() {
     assert_eq!(entry.unwrap().source, Source::Custom);
 }
 
+// ─── REQ-EXT-01/02: extension packs loaded into registry from config ──────────
+
+#[test]
+fn with_config_extras_loads_pack_entries_into_registry() {
+    // config.extras = ["starlette"] → build_registry must call load_packs.
+    let mut cfg = JinjaConfig::default();
+    cfg.extras = vec!["starlette".to_owned()];
+    let state = ServerState::with_config(cfg);
+    assert!(
+        state.registry.get(Category::Function, "url_for").is_some(),
+        "starlette pack entries must be in registry after with_config(extras=[starlette])"
+    );
+}
+
+#[test]
+fn apply_init_options_extras_loads_pack_entries_into_registry() {
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Before overlay: url_for must not exist (no pack loaded)
+    assert!(state.registry.get(Category::Function, "url_for").is_none(), "url_for must not exist before pack overlay");
+
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["starlette".to_owned()]),
+        ..Default::default()
+    };
+    let _ = state.apply_init_options(overlay);
+
+    assert!(
+        state.registry.get(Category::Function, "url_for").is_some(),
+        "starlette pack entries must be in registry after apply_init_options(extras=[starlette])"
+    );
+}
+
+// ─── REQ-HINT-02: user hints loaded into registry from config.hints dirs ─────
+
+#[test]
+fn with_config_hints_dir_loads_hints_into_registry() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("my_ctx.md"),
+        "---\nname: my_ctx\ncategory: variable\n---\nContext variable doc.",
+    )
+    .unwrap();
+
+    let mut cfg = JinjaConfig::default();
+    cfg.hints = vec![dir.path().to_string_lossy().to_string()];
+    let state = ServerState::with_config(cfg);
+
+    assert!(
+        state.registry.get(Category::Variable, "my_ctx").is_some(),
+        "hint variable must be in registry after with_config(hints=[dir])"
+    );
+}
+
+#[test]
+fn apply_init_options_hints_dir_loads_hints_into_registry() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("ctx_hint.md"),
+        "---\nname: ctx_hint\ncategory: variable\n---\nHint via overlay.",
+    )
+    .unwrap();
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    assert!(state.registry.get(Category::Variable, "ctx_hint").is_none(), "hint must not exist before overlay");
+
+    let overlay = ConfigOverlay {
+        hints: Some(vec![dir.path().to_string_lossy().to_string()]),
+        ..Default::default()
+    };
+    let _ = state.apply_init_options(overlay);
+
+    assert!(
+        state.registry.get(Category::Variable, "ctx_hint").is_some(),
+        "hint variable must be in registry after apply_init_options(hints=[dir])"
+    );
+}
+
 // ─── T-06: REQ-EDIT-09 — nvim-lspconfig snippet in README has required keys ──
 
 #[test]

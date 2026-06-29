@@ -66,11 +66,20 @@ impl ServerState {
         self.config.validate()
     }
 
-    /// REQ-BLTN-07: Build a registry from core + all configured custom_builtins dirs.
+    /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +
+    /// extension packs + configured custom_builtins dirs + user hints dirs.
     fn build_registry(config: &JinjaConfig) -> Registry {
         let mut reg = Registry::load_core();
+        // REQ-EXT-02: load configured extension packs.
+        let extras: Vec<&str> = config.extras.iter().map(|s| s.as_str()).collect();
+        reg.load_packs(&extras);
+        // REQ-BLTN-07: load docs from custom_builtins dirs.
         for dir_str in &config.custom_builtins {
             reg.load_custom_builtins(Path::new(dir_str));
+        }
+        // REQ-HINT-02: load user hints from configured hints dirs.
+        for dir_str in &config.hints {
+            reg.load_hints_from_dir(Path::new(dir_str));
         }
         reg
     }
