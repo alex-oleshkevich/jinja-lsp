@@ -34,17 +34,26 @@ pub fn format(source: &str) -> String {
 
     collect_delimiter_normalizations(tree.root_node(), bytes, &mut replacements);
 
-    if replacements.is_empty() {
-        return source.to_owned();
-    }
+    // Apply delimiter normalizations right-to-left so earlier byte offsets stay valid.
+    let after_delimiters = if replacements.is_empty() {
+        source.to_owned()
+    } else {
+        replacements.sort_by_key(|r| std::cmp::Reverse(r.0));
+        let mut result = source.to_owned();
+        for (start, end, new_text) in replacements {
+            result.replace_range(start..end, &new_text);
+        }
+        result
+    };
 
-    // Apply right-to-left so earlier byte offsets stay valid.
-    replacements.sort_by_key(|r| std::cmp::Reverse(r.0));
-    let mut result = source.to_owned();
-    for (start, end, new_text) in replacements {
-        result.replace_range(start..end, &new_text);
+    // REQ-FMT-02: re-indent Jinja-tag lines.
+    let after_reindent = reindent(&after_delimiters);
+
+    if after_reindent == source {
+        source.to_owned()
+    } else {
+        after_reindent
     }
-    result
 }
 
 // ── REQ-FMT-01/03/04 — Per-delimiter normalization ───────────────────────────
@@ -76,6 +85,73 @@ fn collect_delimiter_normalizations(
             }
         }
     }
+}
+
+// ── REQ-FMT-02 — Block-body re-indentation ───────────────────────────────────
+
+/// Paired Jinja tags that open a new indentation level.
+const OPENERS: &[&str] = &["block", "for", "if", "elif", "else", "macro", "call", "with", "filter"];
+/// Tags that close (or re-align at) an indentation level.
+const CLOSERS: &[&str] = &["endblock", "endfor", "endif", "endmacro", "endcall", "endwith", "endfilter", "elif", "else"];
+
+/// Return true if `line` is a Jinja-tag line: first non-whitespace content is `{%`.
+fn is_jinja_tag_line(line: &str) -> bool {
+    let t = line.trim_start_matches([' ', '\t']);
+    t.starts_with("{%")
+}
+
+/// Extract the first keyword from inside a `{%...%}` tag (e.g. "block", "endif").
+fn jinja_tag_keyword(line: &str) -> Option<&str> {
+    let t = line.trim_start_matches([' ', '\t']);
+    // Strip opening delimiter (with optional marker)
+    let inner = t.strip_prefix("{%-").or_else(|| t.strip_prefix("{%"))?;
+    let kw = inner.trim_start_matches([' ', '\t', '-']);
+    kw.split_whitespace().next()
+}
+
+/// Re-indent Jinja-tag lines so their leading whitespace equals `depth × 2` spaces,
+/// where depth is the count of open paired tags enclosing the line.
+/// Host-language lines are never modified.
+pub fn reindent(source: &str) -> String {
+    let indent_unit = "  "; // 2 spaces (configurable in the future)
+    let mut depth: usize = 0;
+    let mut out = String::with_capacity(source.len());
+
+    for (i, line) in source.split('\n').enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+
+        if !is_jinja_tag_line(line) {
+            // Host-language line: emit verbatim.
+            out.push_str(line);
+            continue;
+        }
+
+        let kw = jinja_tag_keyword(line).unwrap_or("");
+        let is_closer = CLOSERS.contains(&kw);
+        let is_opener = OPENERS.contains(&kw);
+
+        // Closers (endblock, endif, …) and re-aligners (elif, else) print at depth-1.
+        if is_closer && depth > 0 {
+            depth -= 1;
+        }
+
+        // Write with current depth indentation.
+        let stripped = line.trim_start_matches([' ', '\t']);
+        for _ in 0..depth {
+            out.push_str(indent_unit);
+        }
+        out.push_str(stripped);
+
+        // Openers (block, for, if, macro, …) increase depth after writing.
+        // elif/else are closers AND openers (they de-indent the tag, then re-open).
+        if is_opener {
+            depth += 1;
+        }
+    }
+
+    out
 }
 
 /// Apply all active passes to a single delimiter node's text.

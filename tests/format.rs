@@ -198,6 +198,82 @@ fn fmt04_idempotent() {
     }
 }
 
+// ─── REQ-FMT-02: Block-body re-indentation ───────────────────────────────────
+
+#[test]
+fn fmt02_t01_block_body_indented() {
+    // A single block: body Jinja-tag lines get +2 spaces; endblock aligns with opener.
+    let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t02_nested_blocks_compound() {
+    // Nested blocks: depth 1 gets 2 spaces, depth 2 gets 4 spaces.
+    let src = "{% block outer %}\n{% block inner %}\nhello\n{% endblock %}\n{% endblock %}";
+    let want = "{% block outer %}\n  {% block inner %}\nhello\n  {% endblock %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t03_for_loop_body_indented() {
+    let src = "{% for item in list %}\n{% if item %}\nx\n{% endif %}\n{% endfor %}";
+    let want = "{% for item in list %}\n  {% if item %}\nx\n  {% endif %}\n{% endfor %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t04_already_indented_is_noop() {
+    // Already formatted — must not double-indent.
+    let src = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), src);
+}
+
+#[test]
+fn fmt02_t05_host_lines_untouched() {
+    // Host-language lines (non-Jinja-tag lines) keep their own indentation.
+    let src = "{% block content %}\n  <p>hello</p>\n{% endblock %}";
+    assert_eq!(format(src), src);
+}
+
+#[test]
+fn fmt02_t06_macro_body_indented() {
+    let src = "{% macro btn(label) %}\n{% if label %}\n<button>{{ label }}</button>\n{% endif %}\n{% endmacro %}";
+    let want = "{% macro btn(label) %}\n  {% if label %}\n<button>{{ label }}</button>\n  {% endif %}\n{% endmacro %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t07_inline_set_not_opener() {
+    // {% set x = value %} is an inline statement — must NOT increase depth.
+    let src = "{% block content %}\n{% set x = 1 %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% set x = 1 %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t08_elif_else_realign() {
+    // elif/else re-align with the opener (depth stays consistent for blocks).
+    let src = "{% block content %}\n{% if x %}\nhello\n{% elif y %}\nworld\n{% else %}\nfoo\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% if x %}\nhello\n  {% elif y %}\nworld\n  {% else %}\nfoo\n  {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_idempotent() {
+    let inputs = [
+        "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}",
+        "{% for item in list %}\n{% if item %}\nx\n{% endif %}\n{% endfor %}",
+        "{% block content %}\n  <p>hello</p>\n{% endblock %}",
+    ];
+    for src in inputs {
+        let once = format(src);
+        let twice = format(&once);
+        assert_eq!(once, twice, "fmt02 must be idempotent for: {src:?}");
+    }
+}
+
 // ─── REQ-FMT-05: T-20 — Host-language bytes emitted byte-for-byte ─────────────
 
 #[test]
