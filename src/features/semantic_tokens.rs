@@ -259,8 +259,11 @@ fn source_mods(source: &Source) -> u32 {
 // ── Source-text span helpers ──────────────────────────────────────────────────
 
 /// Find `name` as a whole word in `source[start_byte..]`; return `(line, col)`.
+///
+/// Skips past the opening `{% keyword` so a name equal to the keyword is not matched there.
 fn find_word_in_source(source: &str, start_byte: usize, name: &str) -> Option<(u32, u32)> {
-    let slice = source.get(start_byte..)?;
+    let search_from = start_byte + after_tag_keyword(source.get(start_byte..)?);
+    let slice = source.get(search_from..)?;
     let name_bytes = name.as_bytes();
     let slice_bytes = slice.as_bytes();
     let mut i = 0usize;
@@ -269,12 +272,21 @@ fn find_word_in_source(source: &str, start_byte: usize, name: &str) -> Option<(u
             let before_ok = i == 0 || !is_ident(slice_bytes[i - 1]);
             let after_ok = i + name.len() >= slice.len() || !is_ident(slice_bytes[i + name.len()]);
             if before_ok && after_ok {
-                return Some(byte_to_line_col(source, start_byte + i));
+                return Some(byte_to_line_col(source, search_from + i));
             }
         }
         i += 1;
     }
     None
+}
+
+/// Returns the byte offset from the start of a `{% … %}` tag to just after the first keyword.
+/// Input is the slice starting at `{%`. If the pattern isn't recognised, returns 0.
+fn after_tag_keyword(tag: &str) -> usize {
+    let inner = tag.strip_prefix("{%").unwrap_or(tag);
+    let inner = inner.trim_start_matches(['-', '+', ' ', '\t']);
+    let keyword_len = inner.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(inner.len());
+    tag.len() - inner.len() + keyword_len
 }
 
 /// Find parameter `param_name` within the parentheses of `{% macro mac_name(…) %}`.

@@ -349,3 +349,26 @@ fn sem_length_of_ascii_name_is_one_per_char() {
     assert!(param_tok.is_some());
     assert_eq!(param_tok.unwrap().length, "name".len() as u32);
 }
+
+#[test]
+fn sem_block_named_block_does_not_match_keyword() {
+    // {% block block %} — name equals keyword; token must land on the name, not the keyword
+    let src = "{% block block %}body{% endblock %}";
+    let tokens = full(src);
+    let block_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_BLOCK).collect();
+    assert!(!block_toks.is_empty(), "must emit a block token");
+    // "block" keyword starts at col 3; name "block" starts at col 9
+    let tok = block_toks[0];
+    assert_eq!(tok.start_char, 9, "token must be on the name at col 9, not the keyword at col 3; got col {}", tok.start_char);
+}
+
+#[test]
+fn sem_macro_named_macro_does_not_match_keyword() {
+    let src = "{% macro macro() %}{% endmacro %}";
+    let tokens = full(src);
+    let macro_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_MACRO).collect();
+    assert!(!macro_toks.is_empty(), "must emit a macro token");
+    // "macro" keyword at col 3; name "macro" at col 9
+    let tok = macro_toks.iter().find(|t| t.start_char == 9).expect("name token must be at col 9");
+    assert_eq!(tok.start_char, 9);
+}
