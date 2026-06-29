@@ -71,8 +71,13 @@ pub fn go_to_definition(
             }
             ReferenceKind::Attribute => {
                 // Attribute access like `macros.post_url` — resolve via alias.
+                // Special case: `self.<block>` → REQ-DEF-04 block definition.
                 let parent = parent_of_attribute(source, r.span.start_byte);
-                parent.and_then(|p| resolve_alias_attr(p, &r.name, index, workspace))
+                match parent {
+                    Some("self") => resolve_self_block(&r.name, current_path, index, workspace),
+                    Some(p) => resolve_alias_attr(p, &r.name, index, workspace),
+                    None => None,
+                }
             }
             // Filters and tests are built-ins or host-owned (REQ-DEF-06).
             ReferenceKind::Filter | ReferenceKind::Test => None,
@@ -86,6 +91,19 @@ pub fn go_to_definition(
     // resolvable), stop — REQ-DEF-06 says return nothing.
     if !candidates.is_empty() {
         return None;
+    }
+
+    // ── Fallback: self.<block>() not captured by references.scm ─────────────
+    // When the cursor is on the method name in `self.method()`, the grammar
+    // produces no Reference entry (it's an attribute+call combined form that
+    // matches neither the plain-attribute nor the plain-function pattern).
+    // Detect via text scan: if the word is immediately preceded by "self." →
+    // treat it as a self-block reference.
+    {
+        let word = word_at_byte(source, byte);
+        if !word.is_empty() && is_preceded_by_self_dot(source, byte) {
+            return resolve_self_block(word, current_path, index, workspace);
+        }
     }
 
     // ── From-import names (REQ-DEF-03) ───────────────────────────────────────
@@ -155,6 +173,10 @@ fn resolve_ident(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> Option<DefinitionLocation> {
+    // REQ-DEF-04: super() inside an overriding block → parent's same-named block.
+    if name == "super" {
+        return resolve_super(reference_byte, current_path, index, workspace);
+    }
     // Macro in the current template (REQ-DEF-01).
     if let Some(m) = index.macros.iter().find(|m| m.name == name) {
         return Some(span_to_def(current_path, &m.span));
@@ -211,6 +233,55 @@ fn resolve_ident(
         return Some(span_to_def(current_path, &v.span));
     }
 
+    None
+}
+
+/// REQ-DEF-04: `self.<block_name>` → block declaration in current template or ancestor chain.
+fn resolve_self_block(
+    block_name: &str,
+    current_path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+) -> Option<DefinitionLocation> {
+    if let Some(b) = index.blocks.iter().find(|b| b.name == block_name) {
+        return Some(span_to_def(current_path, &b.span));
+    }
+    // Current template may not be in the workspace (tests pass index separately).
+    // Use index.extends() to get the parent path, then walk from there.
+    let parent_path = index.extends()?.path.clone();
+    let chain = workspace.template_chain(&parent_path);
+    for ancestor_path in &chain {
+        if let Some(anc_idx) = workspace.templates.get(ancestor_path) {
+            if let Some(b) = anc_idx.blocks.iter().find(|b| b.name == block_name) {
+                return Some(span_to_def(ancestor_path, &b.span));
+            }
+        }
+    }
+    None
+}
+
+/// REQ-DEF-04: `super()` inside an overriding block → the parent template's same-named block.
+fn resolve_super(
+    reference_byte: usize,
+    _current_path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+) -> Option<DefinitionLocation> {
+    let containing_block = index.blocks.iter().find(|b| {
+        b.body.start_byte < b.body.end_byte
+            && b.body.start_byte <= reference_byte
+            && reference_byte < b.body.end_byte
+    })?;
+    // Use index.extends() so current template need not be in the workspace.
+    let parent_path = index.extends()?.path.clone();
+    let chain = workspace.template_chain(&parent_path);
+    for ancestor_path in &chain {
+        if let Some(anc_idx) = workspace.templates.get(ancestor_path) {
+            if let Some(anc_block) = anc_idx.blocks.iter().find(|ab| ab.name == containing_block.name) {
+                return Some(span_to_def(ancestor_path, &anc_block.span));
+            }
+        }
+    }
     None
 }
 
@@ -282,4 +353,9 @@ fn parent_of_attribute(source: &str, attr_start_byte: usize) -> Option<&str> {
 
 fn word_at_byte(source: &str, byte: usize) -> &str {
     super::word_at_byte(source, byte)
+}
+
+/// Returns true when the identifier starting at `byte` is immediately preceded by `self.`.
+fn is_preceded_by_self_dot(source: &str, byte: usize) -> bool {
+    source.get(..byte).map_or(false, |before| before.ends_with("self."))
 }

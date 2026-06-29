@@ -218,6 +218,78 @@ fn def06_unknown_identifier_returns_none() {
     assert!(result.is_none(), "unresolvable identifier must return None");
 }
 
+// ─── REQ-DEF-04: self.<block> and super() jump to block declaration ───────────
+
+#[test]
+fn def04_self_block_in_same_template_jumps_to_block() {
+    // {{ self.content() }} — cursor on "content" attribute → jump to the block declaration.
+    let src = "{% block content %}{{ self.content() }}{% endblock %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Second occurrence of "content" is the attribute in self.content()
+    let col = src.rfind("content").unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "t.html", &idx, &reg, &ws);
+    assert!(result.is_some(), "self.content() must resolve to block declaration");
+    let def = result.unwrap();
+    assert_eq!(def.target_path, "t.html", "must resolve in current template");
+}
+
+#[test]
+fn def04_self_block_in_child_jumps_to_inherited_block() {
+    // Child uses {{ self.footer() }} where footer is declared only in base.
+    let base_src = "{% block footer %}footer content{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base_src);
+    let child_src = r#"{% extends "base.html" %}{% block body %}{{ self.footer() }}{% endblock %}"#;
+    let idx = extract(child_src);
+    let reg = Registry::load_core();
+    let col = child_src.rfind("footer").unwrap() as u32;
+    let result = go_to_definition(child_src, 0, col, "child.html", &idx, &reg, &ws);
+    assert!(result.is_some(), "self.footer() must resolve to ancestor block");
+    let def = result.unwrap();
+    assert_eq!(def.target_path, "base.html", "must jump to base.html");
+}
+
+#[test]
+fn def04_self_block_unknown_returns_none() {
+    let src = "{% block content %}{{ self.nonexistent_block() }}{% endblock %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.rfind("nonexistent_block").unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "t.html", &idx, &reg, &ws);
+    assert!(result.is_none(), "self.nonexistent must return None");
+}
+
+#[test]
+fn def04_super_inside_block_jumps_to_parent_block() {
+    // Child overrides 'content'; super() inside it → parent's 'content' block.
+    let base_src = "{% block content %}base content{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base_src);
+    let child_src = r#"{% extends "base.html" %}{% block content %}{{ super() }}extra{% endblock %}"#;
+    let idx = extract(child_src);
+    let reg = Registry::load_core();
+    let col = child_src.find("super").unwrap() as u32;
+    let result = go_to_definition(child_src, 0, col, "child.html", &idx, &reg, &ws);
+    assert!(result.is_some(), "super() inside overriding block must resolve to parent block");
+    let def = result.unwrap();
+    assert_eq!(def.target_path, "base.html", "must jump to base.html's block");
+}
+
+#[test]
+fn def04_super_with_no_parent_block_returns_none() {
+    // Block exists only in child (no parent declares it) — super() can't resolve.
+    let src = "{% block content %}{{ super() }}{% endblock %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default(); // no workspace inheritance
+    let col = src.find("super").unwrap() as u32;
+    let result = go_to_definition(src, 0, col, "t.html", &idx, &reg, &ws);
+    assert!(result.is_none(), "super() with no parent block must return None");
+}
+
 // ─── REQ-DEF-08: scope-local variable → binding site ─────────────────────────
 
 #[test]
