@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E101, E102, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
+/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -25,6 +25,7 @@ pub fn run_checks(
     let mut out = Vec::new();
     check_e001(path, index, &mut out);
     check_e101(path, index, registry, workspace, &mut out);
+    check_e103(path, index, registry, workspace, &mut out);
     check_e102_e104(path, index, registry, &mut out);
     check_w201(path, index, &mut out);
     check_w202(path, index, &mut out);
@@ -113,6 +114,40 @@ fn check_e101(
             col: r.span.start_col,
             code: "JINJA-E101".to_owned(),
             slug: "undefined-variable".to_owned(),
+            severity: DiagnosticSeverity::Error,
+            message: format!("'{}' is not defined", name),
+        });
+    }
+}
+
+// ── E103: undefined-function ──────────────────────────────────────────────────
+
+fn check_e103(
+    path: &str,
+    index: &TemplateIndex,
+    registry: &Registry,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
+    for r in &index.references {
+        if r.kind != ReferenceKind::Function {
+            continue;
+        }
+        // resolve_reference covers: local macros, from-imports, workspace-wide macros.
+        if !matches!(index.resolve_reference(r, workspace), ResolvedBinding::HostOwned) {
+            continue;
+        }
+        let name = r.name.as_str();
+        // Jinja2 built-in functions (range, namespace, joiner, …).
+        if registry.get(Category::Function, name).is_some() {
+            continue;
+        }
+        out.push(Diagnostic {
+            file: path.to_owned(),
+            line: r.span.start_line,
+            col: r.span.start_col,
+            code: "JINJA-E103".to_owned(),
+            slug: "undefined-function".to_owned(),
             severity: DiagnosticSeverity::Error,
             message: format!("'{}' is not defined", name),
         });

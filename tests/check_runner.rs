@@ -485,6 +485,50 @@ fn no_e101_for_local_macro_name() {
         "local macro name used as identifier must not trigger E101");
 }
 
+// ─── E103: undefined-function ────────────────────────────────────────────────
+
+#[test]
+fn e103_emitted_for_undefined_function_call() {
+    let src = "{{ totally_fake_fn_xyz() }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e103 = diags.iter().find(|d| d.code == "JINJA-E103");
+    assert!(e103.is_some(), "E103 must fire for an undefined function call");
+    assert!(e103.unwrap().message.contains("totally_fake_fn_xyz"));
+}
+
+#[test]
+fn no_e103_for_builtin_jinja2_function() {
+    let src = "{{ range(10) }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
+        "built-in Jinja2 function 'range' must not trigger E103");
+}
+
+#[test]
+fn no_e103_for_local_macro_call() {
+    let src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}{{ greet('world') }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
+        "local macro call must not trigger E103");
+}
+
+#[test]
+fn no_e103_for_from_imported_macro_call() {
+    let macro_src = "{% macro greet(name) %}hi {{ name }}{% endmacro %}";
+    let child_src = r#"{% from "macros.html" import greet %}{{ greet("world") }}"#;
+    let idx = extract(child_src);
+    let ws = ws_with(&[("macros.html", macro_src), ("child.html", child_src)]);
+    let diags = run_checks(child_src, "child.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
+        "from-imported macro call must not trigger E103");
+}
+
 // ─── Publish wiring contract ──────────────────────────────────────────────────
 
 #[test]
