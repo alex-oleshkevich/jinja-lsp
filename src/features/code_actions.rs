@@ -1,8 +1,12 @@
 // F17 — Code actions: quick-fixes derived from diagnostic catalog. REQ-ACT-01..11.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::{diagnostic::Diagnostic, workspace::index::TemplateIndex};
+use crate::{
+    builtins::registry::{Category, Registry},
+    diagnostic::Diagnostic,
+    workspace::index::{TemplateIndex, WorkspaceIndex},
+};
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -60,6 +64,8 @@ pub fn code_actions(
     file: &str,
     diagnostics: &[Diagnostic],
     index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    registry: &Registry,
 ) -> Vec<CodeAction> {
     let mut actions = Vec::new();
 
@@ -74,6 +80,9 @@ pub fn code_actions(
                 if let Some(action) = remove_unused_import(source, file, diag, index) {
                     actions.push(action);
                 }
+            }
+            "JINJA-E103" => {
+                actions.extend(resolve_undefined_function(source, file, diag, index, workspace, registry));
             }
             _ => {}
         }
@@ -97,10 +106,8 @@ fn remove_unused_macro(
         .find(|m| m.name == macro_name && m.span.start_line == diag.line)?;
 
     // `macro_def.body.end_byte` is the start byte of the `{% endmacro %}` control tag.
-    // Walk forward from there to find which line the endmacro is on.
     let endmacro_line = byte_to_line(source, macro_def.body.end_byte);
 
-    // Delete from start of the opening line through end of the endmacro line.
     let edit = TextEdit {
         start_line: macro_def.span.start_line,
         start_col: 0,
@@ -182,6 +189,159 @@ fn remove_unused_import(
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
     })
+}
+
+// ── REQ-ACT-02 — Resolve undefined functions ──────────────────────────────────
+
+fn resolve_undefined_function(
+    _source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    registry: &Registry,
+) -> Vec<CodeAction> {
+    let Some(undef_name) = extract_quoted_name(&diag.message) else {
+        return vec![];
+    };
+
+    let mut actions = Vec::new();
+
+    // Exact workspace match → import fix (isPreferred).
+    if let Some(macro_path) = find_macro_in_workspace(workspace, &undef_name) {
+        let edit = import_text_edit(index, &macro_path, &undef_name);
+        actions.push(CodeAction {
+            title: format!("Import `{undef_name}` from \"{macro_path}\""),
+            kind: ActionKind::QuickFix,
+            diagnostics: vec![diag.clone()],
+            is_preferred: true,
+            edit: Some(WorkspaceEdit::single(file, edit)),
+        });
+    }
+
+    // Near-matches → optional import fix + "Did you mean?" (REQ-ACT-02 §T-05).
+    let threshold = edit_distance_threshold(&undef_name);
+    let candidates = near_matches(&undef_name, threshold, workspace, registry);
+
+    for candidate in &candidates {
+        // For near-match workspace macros, also offer an import fix (not preferred).
+        if let Some(macro_path) = find_macro_in_workspace(workspace, candidate) {
+            let edit = import_text_edit(index, &macro_path, candidate);
+            actions.push(CodeAction {
+                title: format!("Import `{candidate}` from \"{macro_path}\""),
+                kind: ActionKind::QuickFix,
+                diagnostics: vec![diag.clone()],
+                is_preferred: false,
+                edit: Some(WorkspaceEdit::single(file, edit)),
+            });
+        }
+        let edit = TextEdit {
+            start_line: diag.line,
+            start_col: diag.col,
+            end_line: diag.line,
+            end_col: diag.col + undef_name.len() as u32,
+            new_text: candidate.clone(),
+        };
+        actions.push(CodeAction {
+            title: format!("Did you mean `{candidate}`?"),
+            kind: ActionKind::QuickFix,
+            diagnostics: vec![diag.clone()],
+            is_preferred: false,
+            edit: Some(WorkspaceEdit::single(file, edit)),
+        });
+    }
+
+    actions
+}
+
+/// Return the 0-based line of the extends tag, if any.
+fn extends_line(index: &TemplateIndex) -> Option<u32> {
+    index.extends().map(|r| r.span.start_line)
+}
+
+/// Build a TextEdit that inserts an import line after extends (or at top).
+fn import_text_edit(index: &TemplateIndex, macro_path: &str, macro_name: &str) -> TextEdit {
+    let insert_line = extends_line(index).map(|l| l + 1).unwrap_or(0);
+    TextEdit {
+        start_line: insert_line,
+        start_col: 0,
+        end_line: insert_line,
+        end_col: 0,
+        new_text: format!("{{% from \"{macro_path}\" import {macro_name} %}}\n"),
+    }
+}
+
+/// Search all workspace templates for a macro named `name`; return its template path.
+fn find_macro_in_workspace(workspace: &WorkspaceIndex, name: &str) -> Option<String> {
+    workspace.templates.iter().find_map(|(path, idx)| {
+        idx.macros.iter().any(|m| m.name == name).then(|| path.clone())
+    })
+}
+
+/// Edit-distance threshold for near-match suggestions.
+fn edit_distance_threshold(name: &str) -> usize {
+    // Allow 1 edit for names up to 5 chars, 2 for longer names — avoids false positives.
+    if name.len() <= 5 { 1 } else { 2 }
+}
+
+/// Collect names within `threshold` edit distance from `name`, excluding exact match.
+fn near_matches(
+    name: &str,
+    threshold: usize,
+    workspace: &WorkspaceIndex,
+    registry: &Registry,
+) -> Vec<String> {
+    let mut results: Vec<(usize, String)> = Vec::new();
+
+    // Workspace macros.
+    for idx in workspace.templates.values() {
+        for m in &idx.macros {
+            if m.name != name {
+                let d = levenshtein(name, &m.name);
+                if d <= threshold {
+                    results.push((d, m.name.clone()));
+                }
+            }
+        }
+    }
+
+    // Registry functions/globals.
+    for entry in registry.iter_by_category(Category::Function) {
+        if entry.name != name {
+            let d = levenshtein(name, &entry.name);
+            if d <= threshold {
+                results.push((d, entry.name.clone()));
+            }
+        }
+    }
+
+    results.sort_by_key(|(d, _)| *d);
+    // Deduplicate by name (a name can appear in both workspace and registry).
+    let mut seen = HashSet::new();
+    results.retain(|(_, n)| seen.insert(n.clone()));
+    results.into_iter().map(|(_, n)| n).collect()
+}
+
+/// Standard Levenshtein edit distance.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let m = a.len();
+    let n = b.len();
+    if m == 0 { return n; }
+    if n == 0 { return m; }
+    // Use two rows to keep O(n) space.
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0usize; n + 1];
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

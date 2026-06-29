@@ -1,10 +1,28 @@
-// F17 — Code action tests: REQ-ACT-01 (remove unused imports and macros).
+// F17 — Code action tests: REQ-ACT-01, REQ-ACT-02.
 
+use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
-use jinja_lsp::features::code_actions::{code_actions, ActionKind};
+use jinja_lsp::features::code_actions::{code_actions, ActionKind, CodeAction};
 use jinja_lsp::parsing::extract;
+use jinja_lsp::workspace::index::WorkspaceIndex;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+fn no_ws() -> WorkspaceIndex {
+    WorkspaceIndex::default()
+}
+
+fn reg() -> Registry {
+    Registry::load_core()
+}
+
+fn ws_with(templates: &[(&str, &str)]) -> WorkspaceIndex {
+    let mut w = WorkspaceIndex::default();
+    for (path, src) in templates {
+        w.index_inline(path, src);
+    }
+    w
+}
 
 fn w202(line: u32, name: &str) -> Diagnostic {
     Diagnostic {
@@ -30,15 +48,38 @@ fn w203(line: u32, name: &str) -> Diagnostic {
     }
 }
 
-/// Apply the first edit from the first action to `source` and return the result.
-/// Implements standard LSP TextEdit byte-range replacement.
-fn apply(source: &str, actions: &[jinja_lsp::features::code_actions::CodeAction]) -> String {
+fn e103(line: u32, col: u32, name: &str) -> Diagnostic {
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-E103".to_owned(),
+        slug: "undefined-function".to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: format!("undefined function '{name}'"),
+    }
+}
+
+/// Apply the first edit from a specific action (found by title substring) to `source`.
+fn apply_by_title(source: &str, file: &str, actions: &[CodeAction], title_contains: &str) -> String {
+    let action = actions
+        .iter()
+        .find(|a| a.title.contains(title_contains))
+        .unwrap_or_else(|| panic!("no action with title containing '{title_contains}'"));
+    apply_action(source, file, action)
+}
+
+/// Apply the first edit from `actions[0]` to `source`.
+fn apply(source: &str, file: &str, actions: &[CodeAction]) -> String {
     assert!(!actions.is_empty(), "expected at least one action");
-    let edit = actions[0].edit.as_ref().expect("action must have an edit");
-    let edits = edit.changes.get("t.html").expect("must have edits for t.html");
+    apply_action(source, file, &actions[0])
+}
+
+fn apply_action(source: &str, file: &str, action: &CodeAction) -> String {
+    let edit = action.edit.as_ref().expect("action must have an edit");
+    let edits = edit.changes.get(file).unwrap_or_else(|| panic!("must have edits for {file}"));
     assert_eq!(edits.len(), 1, "expected exactly one text edit");
     let e = &edits[0];
-    // Compute byte offsets for (line, col) positions.
     let line_starts: Vec<usize> = std::iter::once(0)
         .chain(source.char_indices().filter(|(_, c)| *c == '\n').map(|(i, _)| i + 1))
         .collect();
@@ -56,13 +97,13 @@ fn act01_t01_remove_import_alias_whole_line() {
     let src = "{% import \"shared.html\" as shared %}\n{{ content }}";
     let idx = extract(src);
     let diags = vec![w203(0, "shared")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     assert!(matches!(actions[0].kind, ActionKind::QuickFix));
     assert!(actions[0].title.contains("Remove"));
     assert!(actions[0].title.contains("shared"));
     assert!(actions[0].is_preferred);
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(result, "{{ content }}", "import line must be gone, no blank line left");
 }
 
@@ -73,13 +114,13 @@ fn act01_t02_remove_unused_macro_whole_region() {
     let src = "{% macro foo() %}\n  body\n{% endmacro %}\n{{ bar }}";
     let idx = extract(src);
     let diags = vec![w202(0, "foo")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     assert!(matches!(actions[0].kind, ActionKind::QuickFix));
     assert!(actions[0].title.contains("Remove"));
     assert!(actions[0].title.contains("foo"));
     assert!(actions[0].is_preferred);
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(result, "{{ bar }}", "full macro region must be gone, no blank line left");
 }
 
@@ -90,11 +131,11 @@ fn act01_t03_remove_one_name_from_multi_name_from_import() {
     let src = "{% from \"x.html\" import a, b %}\n{{ a }}";
     let idx = extract(src);
     let diags = vec![w203(0, "b")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     assert!(matches!(actions[0].kind, ActionKind::QuickFix));
     assert!(actions[0].title.contains("b"));
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(
         result,
         "{% from \"x.html\" import a %}\n{{ a }}",
@@ -109,9 +150,9 @@ fn act01_single_name_from_import_deletes_whole_line() {
     let src = "{% from \"x.html\" import b %}\n{{ content }}";
     let idx = extract(src);
     let diags = vec![w203(0, "b")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(result, "{{ content }}", "single-name from-import → whole line deleted");
 }
 
@@ -130,7 +171,7 @@ fn act01_no_action_for_unrelated_diagnostic() {
         severity: DiagnosticSeverity::Error,
         message: "undefined variable 'foo'".to_owned(),
     }];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert!(actions.is_empty(), "non-W202/W203 diagnostic must not produce actions");
 }
 
@@ -141,9 +182,9 @@ fn act01_macro_with_multiline_body() {
     let src = "{% macro card(title) %}\n  <h1>{{ title }}</h1>\n  <p>body</p>\n{% endmacro %}\n{{ other }}";
     let idx = extract(src);
     let diags = vec![w202(0, "card")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(result, "{{ other }}", "all macro lines removed");
 }
 
@@ -154,12 +195,106 @@ fn act01_remove_aliased_name_from_multi_name_from_import() {
     let src = "{% from \"x.html\" import a, b as bb %}\n{{ a }}";
     let idx = extract(src);
     let diags = vec![w203(0, "bb")];
-    let actions = code_actions(src, "t.html", &diags, &idx);
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
-    let result = apply(src, &actions);
+    let result = apply(src, "t.html", &actions);
     assert_eq!(
         result,
         "{% from \"x.html\" import a %}\n{{ a }}",
         "aliased name and alias removed together"
     );
+}
+
+// ─── REQ-ACT-02: T-04 — Insert import after extends for exact workspace match ──
+
+#[test]
+fn act02_t04_import_fix_after_extends() {
+    let src = "{% extends \"base.html\" %}\n{{ post_url(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let ws = ws_with(&[("blog/macros.html", macro_src)]);
+    let idx = extract(src);
+    // col=3 points into "post_url" in "{{ post_url(post) }}"
+    let diags = vec![e103(1, 3, "post_url")];
+    let actions = code_actions(src, "blog/post.html", &diags, &idx, &ws, &reg());
+    let import_action = actions.iter().find(|a| a.title.contains("Import")).unwrap();
+    assert!(import_action.title.contains("post_url"));
+    assert!(import_action.title.contains("blog/macros.html"));
+    assert!(import_action.is_preferred);
+    let result = apply_by_title(src, "blog/post.html", &actions, "Import");
+    assert_eq!(
+        result,
+        "{% extends \"base.html\" %}\n{% from \"blog/macros.html\" import post_url %}\n{{ post_url(post) }}",
+        "import inserted after extends line"
+    );
+}
+
+// ─── REQ-ACT-02: T-04b — No extends: insert import at top ───────────────────
+
+#[test]
+fn act02_t04b_import_fix_at_top_when_no_extends() {
+    let src = "{{ post_url(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let ws = ws_with(&[("macros.html", macro_src)]);
+    let idx = extract(src);
+    let diags = vec![e103(0, 3, "post_url")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
+    let result = apply_by_title(src, "t.html", &actions, "Import");
+    assert_eq!(
+        result,
+        "{% from \"macros.html\" import post_url %}\n{{ post_url(post) }}",
+        "import inserted at top when no extends"
+    );
+}
+
+// ─── REQ-ACT-02: T-05 — Near-miss offers did-you-mean + import fix ──────────
+
+#[test]
+fn act02_t05_near_miss_offers_did_you_mean_and_import() {
+    let src = "{{ post_ur(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let ws = ws_with(&[("blog/macros.html", macro_src)]);
+    let idx = extract(src);
+    let diags = vec![e103(0, 3, "post_ur")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
+
+    // did-you-mean action replaces the identifier
+    let mean_action = actions
+        .iter()
+        .find(|a| a.title.contains("Did you mean") && a.title.contains("post_url"))
+        .expect("did-you-mean post_url action must be present");
+    let result = apply_action(src, "t.html", mean_action);
+    assert_eq!(result, "{{ post_url(post) }}", "identifier replaced with near-match");
+
+    // import fix also offered for near-match workspace macro (spec T-05 "import fix plus")
+    assert!(
+        actions.iter().any(|a| a.title.contains("Import") && a.title.contains("post_url")),
+        "import fix for near-match must be offered alongside did-you-mean"
+    );
+}
+
+// ─── REQ-ACT-02: T-06 — No match → no action ────────────────────────────────
+
+#[test]
+fn act02_t06_no_match_no_action() {
+    let src = "{{ zzqq(post) }}";
+    let ws = WorkspaceIndex::default();
+    let idx = extract(src);
+    let diags = vec![e103(0, 3, "zzqq")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
+    assert!(actions.is_empty(), "no match must produce no actions");
+}
+
+// ─── REQ-ACT-02: Additional — import action preferred over did-you-mean ───────
+
+#[test]
+fn act02_exact_match_is_preferred_over_near_miss() {
+    let src = "{{ post_url(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let ws = ws_with(&[("macros.html", macro_src)]);
+    let idx = extract(src);
+    let diags = vec![e103(0, 3, "post_url")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
+    let preferred = actions.iter().filter(|a| a.is_preferred).count();
+    assert_eq!(preferred, 1, "exactly one action must be preferred");
+    assert!(actions.iter().any(|a| a.is_preferred && a.title.contains("Import")));
 }
