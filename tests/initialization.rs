@@ -1,7 +1,7 @@
 // REQ-EDIT-01/02/10/11: InitializationOptions and config-overlay wiring.
 
 use jinja_lsp::builtins::registry::{Category, Source};
-use jinja_lsp::config::{ConfigOverlay, JinjaConfig};
+use jinja_lsp::config::{ConfigError, ConfigOverlay, ConfigWarning, JinjaConfig};
 use jinja_lsp::server::state::ServerState;
 
 // ─── T-01: server state stores config ────────────────────────────────────────
@@ -23,7 +23,7 @@ fn state_apply_init_options_overrides_per_key() {
         extras: Some(vec!["starlette".to_owned()]),
         ..Default::default()
     };
-    state.apply_init_options(overlay);
+    let _ = state.apply_init_options(overlay);
     assert_eq!(state.config.extras, vec!["starlette"]);
 }
 
@@ -39,7 +39,7 @@ fn state_overlay_absent_key_keeps_existing_value() {
         extras: Some(vec!["flask".to_owned()]),
         ..Default::default()
     };
-    state.apply_init_options(overlay);
+    let _ = state.apply_init_options(overlay);
     assert_eq!(state.config.extensions, vec!["html"], "extensions kept from original");
     assert_eq!(state.config.extras, vec!["flask"], "extras applied from overlay");
 }
@@ -56,7 +56,7 @@ fn json_init_options_round_trip() {
     });
     let overlay: ConfigOverlay = serde_json::from_value(json).expect("must deserialize");
     let mut state = ServerState::with_config(JinjaConfig::default());
-    state.apply_init_options(overlay);
+    let _ = state.apply_init_options(overlay);
     assert_eq!(state.config.extras, vec!["starlette"]);
     assert_eq!(state.config.lint.ignore, vec!["JINJA-W203"]);
 }
@@ -86,6 +86,50 @@ fn canonical_language_ids_are_jinja_and_jinja_html() {
     for &id in rejected {
         assert!(id != "jinja" && id != "jinja-html", "{id} must NOT be canonical");
     }
+}
+
+// ─── REQ-CFG-07: validate() is called by apply_init_options ──────────────────
+
+#[test]
+fn apply_init_options_surfaces_unknown_extras_error() {
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["nonexistent-pack".to_owned()]),
+        ..Default::default()
+    };
+    let result = state.apply_init_options(overlay);
+    assert!(
+        matches!(result, Err(ConfigError::UnknownExtra(_))),
+        "unknown extras must surface as ConfigError: {result:?}",
+    );
+}
+
+#[test]
+fn apply_init_options_surfaces_overlapping_filter_warning() {
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    let overlay = ConfigOverlay {
+        lint: Some(jinja_lsp::config::LintOverlay {
+            select: Some(vec!["JINJA-E101".to_owned()]),
+            ignore: Some(vec!["JINJA-E101".to_owned()]),
+        }),
+        ..Default::default()
+    };
+    let result = state.apply_init_options(overlay).expect("overlapping filter is a warning, not error");
+    assert!(
+        result.iter().any(|w| matches!(w, ConfigWarning::OverlappingFilter(_))),
+        "overlapping select/ignore must produce OverlappingFilter warning: {result:?}",
+    );
+}
+
+#[test]
+fn apply_init_options_valid_config_returns_empty_warnings() {
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["starlette".to_owned()]),
+        ..Default::default()
+    };
+    let result = state.apply_init_options(overlay).expect("valid config must not error");
+    assert!(result.is_empty(), "valid config must produce no warnings: {result:?}");
 }
 
 // ─── T-REG-01: REQ-BLTN-07 — registry loads custom_builtins from config at init
@@ -137,7 +181,7 @@ fn state_registry_rebuilt_on_apply_init_options() {
         custom_builtins: Some(vec![dir.path().to_string_lossy().to_string()]),
         ..Default::default()
     };
-    state.apply_init_options(overlay);
+    let _ = state.apply_init_options(overlay);
 
     let entry = state.registry.get(Category::Filter, "overlay_filter");
     assert!(entry.is_some(), "custom builtin must be in registry after apply_init_options");

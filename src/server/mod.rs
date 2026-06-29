@@ -124,14 +124,23 @@ impl LanguageServer for Backend {
             .and_then(|g| g.position_encodings.as_ref())
             .map(|encs| encs.contains(&PositionEncodingKind::UTF8))
             .unwrap_or(false);
-        // REQ-EDIT-10: apply InitializationOptions overlay on top of discovered config.
+        // REQ-EDIT-10 / REQ-CFG-07: apply InitializationOptions overlay and validate.
         {
             let mut state = self.state.write().await;
             state.definition_link_support = link_support;
             state.position_encoding_utf8 = utf8;
             if let Some(opts) = params.initialization_options {
                 if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
-                    state.apply_init_options(overlay);
+                    match state.apply_init_options(overlay) {
+                        Ok(warnings) => {
+                            for w in &warnings {
+                                tracing::warn!("jinja-lsp config warning: {w:?}");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("jinja-lsp config error: {e}");
+                        }
+                    }
                 }
             }
         }
@@ -227,7 +236,14 @@ impl LanguageServer for Backend {
     /// REQ-EDIT-02: editor settings changes re-apply the config overlay.
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
         if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings) {
-            self.state.write().await.apply_init_options(overlay);
+            match self.state.write().await.apply_init_options(overlay) {
+                Ok(warnings) => {
+                    for w in &warnings {
+                        tracing::warn!("jinja-lsp config warning: {w:?}");
+                    }
+                }
+                Err(e) => tracing::error!("jinja-lsp config error: {e}"),
+            }
         }
     }
 

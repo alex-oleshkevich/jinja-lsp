@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use crate::{
     builtins::registry::Registry,
-    config::{ConfigOverlay, JinjaConfig},
+    config::{ConfigError, ConfigOverlay, ConfigWarning, JinjaConfig},
     parsing::extract,
     workspace::{build_workspace, index::WorkspaceIndex},
 };
@@ -55,10 +55,15 @@ impl ServerState {
         }
     }
 
-    /// REQ-EDIT-10: Apply an InitializationOptions (or didChangeConfiguration) overlay.
-    pub fn apply_init_options(&mut self, overlay: ConfigOverlay) {
+    /// REQ-EDIT-10 / REQ-CFG-07: Apply an InitializationOptions overlay and validate.
+    /// Returns validation warnings on success, or an error for invalid config.
+    pub fn apply_init_options(
+        &mut self,
+        overlay: ConfigOverlay,
+    ) -> Result<Vec<ConfigWarning>, ConfigError> {
         self.config.apply_overlay(overlay);
         self.registry = Self::build_registry(&self.config);
+        self.config.validate()
     }
 
     /// REQ-BLTN-07: Build a registry from core + all configured custom_builtins dirs.
