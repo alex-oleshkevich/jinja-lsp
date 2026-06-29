@@ -96,7 +96,8 @@ fn do_macros(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut 
     let mq = qry(lang, include_str!("queries/macros.scm"));
     let pq = qry(lang, include_str!("queries/params.scm"));
 
-    let mut macro_vec: Vec<(usize, String, Span)> = vec![];
+    // (key=macro_stmt.start_byte, name, header_span, ctrl_end_byte)
+    let mut macro_vec: Vec<(usize, String, Span, usize)> = vec![];
     {
         let mut cur = QueryCursor::new();
         let mut ms = cur.matches(&mq, tree.root_node(), bytes);
@@ -104,10 +105,15 @@ fn do_macros(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut 
             for cap in m.captures {
                 if mq.capture_names()[cap.index as usize] == "name" {
                     if let Some(stmt) = ancestor(cap.node, "macro_statement") {
+                        // Walk up to the control node ({% ... %}) to get its end byte.
+                        let ctrl_end = ancestor(stmt, "control")
+                            .map(|c| c.end_byte())
+                            .unwrap_or(stmt.end_byte());
                         macro_vec.push((
                             stmt.start_byte(),
                             txt(cap.node, bytes).to_owned(),
                             node_span(stmt),
+                            ctrl_end,
                         ));
                     }
                 }
@@ -139,9 +145,64 @@ fn do_macros(lang: &Language, tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut 
         }
     }
 
-    for (key, name, span) in macro_vec {
+    for (key, name, span, ctrl_end) in macro_vec {
         let parameters = param_map.remove(&key).unwrap_or_default();
-        idx.macros.push(MacroDefinition { name, parameters, body: span.clone(), span });
+        // body spans from the end of the {% macro %} control tag to the start of
+        // the matching {% endmacro %} control tag (sibling depth-counting walk).
+        let body = macro_body_span(tree.root_node(), ctrl_end, bytes);
+        idx.macros.push(MacroDefinition { name, parameters, body, span });
+    }
+}
+
+/// Compute the body span for a macro by walking the AST siblings from the
+/// opening `{% macro %}` control node (whose end byte is `ctrl_end`) forward,
+/// counting nested macro opens/closes, until the matching `{% endmacro %}` is
+/// found.  Returns a Span covering [ctrl_end .. endmacro_ctrl.start_byte()].
+fn macro_body_span(root: Node, ctrl_end: usize, bytes: &[u8]) -> Span {
+    let mut c = root.walk();
+    if !c.goto_first_child() {
+        return Span::default();
+    }
+
+    let mut found = false;
+    let mut depth = 0usize;
+    loop {
+        let node = c.node();
+        if !found && node.kind() == "control" && node.end_byte() == ctrl_end {
+            // Found the opening control tag for this macro.
+            found = true;
+            depth = 1;
+        } else if found && node.kind() == "control" {
+            // control → statement → (macro_statement | anonymous "endmacro")
+            if let Some(stmt) = node.named_child(0) {
+                let inner_kind = stmt.named_child(0).map(|n| n.kind()).unwrap_or("");
+                if inner_kind == "macro_statement" {
+                    depth += 1;
+                } else {
+                    let s = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
+                        .unwrap_or("");
+                    if s.trim() == "endmacro" {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Span {
+                                start_byte: ctrl_end,
+                                end_byte: node.start_byte(),
+                                ..Span::default()
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        if !c.goto_next_sibling() {
+            break;
+        }
+    }
+    // Fallback: no endmacro found; body covers to end of source.
+    Span {
+        start_byte: ctrl_end,
+        end_byte: bytes.len(),
+        ..Span::default()
     }
 }
 
