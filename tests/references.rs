@@ -187,3 +187,54 @@ fn ref01b_aliased_import_usage_classified_as_symbol() {
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
     assert!(!results.is_empty(), "aliased macro usage must be classified as a symbol and yield references");
 }
+
+// ─── REQ-REF-01: block references across workspace ───────────────────────────
+
+#[test]
+fn ref01_block_references_collected_workspace_wide() {
+    // Two templates share a block named "content"; cursor on the block in the child.
+    let child = "{% extends \"base.html\" %}{% block content %}hello{% endblock %}";
+    let base = "{% block content %}{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base);
+    ws.index_inline("child.html", child);
+    let idx = extract(child);
+    let reg = Registry::load_core();
+    let col = child.find("content").unwrap() as u32;
+    let results = find_references(child, 0, col, "child.html", true, &idx, &reg, &ws);
+    assert!(results.len() >= 2, "both block declarations must be collected: {results:?}");
+    let paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
+    assert!(paths.contains(&"child.html"), "child.html must appear");
+    assert!(paths.contains(&"base.html"), "base.html must appear");
+}
+
+#[test]
+fn ref01_block_cursor_on_declaration_collects_all_templates() {
+    let base = "{% block sidebar %}{% endblock %}";
+    let child = "{% extends \"base.html\" %}{% block sidebar %}content{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base);
+    ws.index_inline("child.html", child);
+    let idx = extract(base);
+    let reg = Registry::load_core();
+    let col = base.find("sidebar").unwrap() as u32;
+    let results = find_references(base, 0, col, "base.html", true, &idx, &reg, &ws);
+    assert!(results.len() >= 2, "both sidebar blocks must be in results: {results:?}");
+}
+
+// ─── REQ-REF-01: import-alias namespace usages ───────────────────────────────
+
+#[test]
+fn ref01_import_alias_namespace_usages_collected() {
+    // `{% import "m.html" as macros %}{{ macros.post_url() }}` — cursor on "macros"
+    // in the usage site must yield both the import declaration and the usage.
+    let src = r#"{% import "m.html" as macros %}{{ macros.post_url() }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    ws.index_inline("m.html", "{% macro post_url() %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let col = src.rfind("macros").unwrap() as u32;
+    let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
+    assert!(!results.is_empty(), "import alias usage must yield references: {results:?}");
+}

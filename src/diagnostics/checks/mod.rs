@@ -14,9 +14,9 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E102, E104, W301, W302, W304, W305, E601.
+/// Checks implemented: E001, E102, E104, W301, W302, W304, W305, W402, E401, E601.
 pub fn run_checks(
-    _source: &str,
+    source: &str,
     path: &str,
     index: &TemplateIndex,
     registry: &Registry,
@@ -29,6 +29,7 @@ pub fn run_checks(
     check_w302(path, index, &mut out);
     check_w304(path, index, &mut out);
     check_w305(path, index, &mut out);
+    check_w402_e401(source, path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
 }
@@ -181,6 +182,69 @@ fn check_w305(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
             }
         }
     }
+}
+
+// ── W402: unreachable-content / E401: invalid-super ──────────────────────────
+
+fn check_w402_e401(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+    // Only applies to child templates (those that extend a parent).
+    let is_child = index.template_refs.iter().any(|r| matches!(r.kind, TemplateRefKind::Extends));
+    if !is_child {
+        return;
+    }
+
+    // Collect block body byte ranges ([body_start, body_end) = content between the tags).
+    let block_ranges: Vec<(usize, usize)> = index.blocks.iter()
+        .filter(|b| b.body.start_byte < b.body.end_byte)
+        .map(|b| (b.body.start_byte, b.body.end_byte))
+        .collect();
+
+    let inside_block = |byte: usize| block_ranges.iter().any(|&(s, e)| s <= byte && byte < e);
+
+    // W402: variables set outside any block are unreachable in a child template.
+    for v in &index.variables {
+        if !inside_block(v.span.start_byte) {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: v.span.start_line,
+                col: v.span.start_col,
+                code: "JINJA-W402".to_owned(),
+                slug: "unreachable-content".to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                message: format!("'{}' is outside any block and will not render in this extends template", v.name),
+            });
+        }
+    }
+
+    // E401: {{ super() }} outside any block has no parent block context.
+    let needle = b"super()";
+    let src_bytes = source.as_bytes();
+    let mut pos = 0;
+    while pos + needle.len() <= src_bytes.len() {
+        if &src_bytes[pos..pos + needle.len()] == needle && !inside_block(pos) {
+            let (line, col) = byte_to_line_col(source, pos);
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line,
+                col,
+                code: "JINJA-E401".to_owned(),
+                slug: "invalid-super".to_owned(),
+                severity: DiagnosticSeverity::Error,
+                message: "super() called outside a block".to_owned(),
+            });
+        }
+        pos += 1;
+    }
+}
+
+fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
+    let byte = byte.min(source.len());
+    let (mut line, mut col) = (0u32, 0u32);
+    for (i, c) in source.char_indices() {
+        if i >= byte { break; }
+        if c == '\n' { line += 1; col = 0; } else { col += 1; }
+    }
+    (line, col)
 }
 
 // ── E601: template-does-not-exist ─────────────────────────────────────────────

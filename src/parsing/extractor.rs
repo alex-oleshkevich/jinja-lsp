@@ -239,13 +239,15 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let mut ms = cur.matches(&bq, tree.root_node(), bytes);
 
     // blocks.scm has two patterns; required blocks match both — deduplicate by start_byte.
-    let mut seen: HashMap<usize, usize> = HashMap::new();
+    // Value: (block_idx_in_idx, ctrl_end_byte) where ctrl_end is end of {% block name %} tag.
+    let mut seen: HashMap<usize, (usize, usize)> = HashMap::new();
 
     while let Some(m) = ms.next() {
         let mut name = String::new();
         let mut span = Span::default();
         let mut key = 0usize;
         let mut required = false;
+        let mut ctrl_end = 0usize;
 
         for cap in m.captures {
             match bq.capture_names()[cap.index as usize] {
@@ -254,6 +256,9 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                     if let Some(bs) = cap.node.parent() {
                         key = bs.start_byte();
                         span = node_span(bs);
+                        ctrl_end = ancestor(bs, "control")
+                            .map(|c| c.end_byte())
+                            .unwrap_or(bs.end_byte());
                     }
                 }
                 "required" => required = true,
@@ -265,13 +270,23 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
             continue;
         }
 
-        if let Some(&i) = seen.get(&key) {
+        if let Some(&(i, _)) = seen.get(&key) {
             if required {
                 idx.blocks[i].required = true;
             }
         } else {
-            seen.insert(key, idx.blocks.len());
+            seen.insert(key, (idx.blocks.len(), ctrl_end));
             idx.blocks.push(BlockDefinition { name, scoped: false, required, body: Span::default(), span });
+        }
+    }
+
+    // Populate BlockDefinition.body using scope regions (which track endblock positions).
+    let scope_regions = build_scope_regions(tree.root_node(), bytes);
+    for (_, (i, ctrl_end)) in &seen {
+        if let Some(region) = scope_regions.iter().find(|r| {
+            r.scope == VariableScope::Block && r.body_start == *ctrl_end
+        }) {
+            idx.blocks[*i].body = byte_span(region.body_start, region.body_end);
         }
     }
 }

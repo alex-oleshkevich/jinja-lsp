@@ -170,6 +170,48 @@ fn no_w305_when_no_shadowing() {
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W305").count(), 0, "distinct names must not trigger W305");
 }
 
+// ─── W402: unreachable-content ────────────────────────────────────────────────
+
+#[test]
+fn w402_set_outside_block_in_extends_template() {
+    let src = r#"{% extends "base.html" %}{% set x = 1 %}{% block content %}{% endblock %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    let w402 = diags.iter().find(|d| d.code == "JINJA-W402");
+    assert!(w402.is_some(), "W402 must be emitted for set outside block in extends template: {diags:?}");
+}
+
+#[test]
+fn no_w402_for_non_extends_template() {
+    let src = "{% set x = 1 %}{{ x }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W402").count(), 0, "non-extends template must not trigger W402");
+}
+
+// ─── E401: invalid-super ──────────────────────────────────────────────────────
+
+#[test]
+fn e401_super_outside_block() {
+    let src = r#"{% extends "base.html" %}{{ super() }}{% block content %}{% endblock %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    let e401 = diags.iter().find(|d| d.code == "JINJA-E401");
+    assert!(e401.is_some(), "E401 must be emitted for super() outside block: {diags:?}");
+}
+
+#[test]
+fn no_e401_super_inside_block() {
+    let src = r#"{% extends "base.html" %}{% block content %}{{ super() }}{% endblock %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}base{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E401").count(), 0, "super() inside block must not trigger E401");
+}
+
 // ─── E601: template-does-not-exist ───────────────────────────────────────────
 
 #[test]
@@ -202,3 +244,4 @@ fn server_mod_calls_publish_diagnostics() {
         "server mod must call client.publish_diagnostics after Pass 1"
     );
 }
+
