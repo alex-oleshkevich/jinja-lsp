@@ -276,3 +276,168 @@ fn hov09_block_hover_shows_name() {
     assert!(r.markdown.contains("content"), "block name must appear");
     assert!(r.markdown.contains("block"), "block kind must appear");
 }
+
+// ─── REQ-HOV-10: imported names resolve through the import ───────────────────
+
+#[test]
+fn hov10_from_import_name_shows_source() {
+    // {% from "macros.html" import render_post %}
+    // Hovering on "render_post" should show import source info.
+    let src = r#"{% from "macros.html" import render_post %}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "render_post");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for imported name");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("macros.html"), "source template must appear in hover");
+}
+
+#[test]
+fn hov10_from_import_alias_shows_aliased_name() {
+    // Hovering on alias "rp" should show it's an alias of "render_post".
+    let src = r#"{% from "macros.html" import render_post as rp %}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // hover on the alias "rp"
+    let col = col_of(src, " rp") + 1; // skip the space
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for import alias");
+    let r = result.unwrap();
+    let md = r.markdown.to_lowercase();
+    assert!(md.contains("alias") || md.contains("render_post"), "alias relationship must appear");
+}
+
+#[test]
+fn hov10_import_alias_shows_source() {
+    // {% import "macros.html" as macros %}
+    // Hovering on "macros" (the namespace alias) should show source info.
+    let src = r#"{% import "macros.html" as macros %}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = last_col_of(src, "macros");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for namespace import alias");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("macros.html"), "source template must appear in namespace import hover");
+}
+
+// ─── REQ-HOV-11: keyword-argument names show their bound parameter ────────────
+
+#[test]
+fn hov11_keyword_arg_name_shows_parameter() {
+    // truncate has a keyword arg "length"
+    let src = "{{ text | truncate(length=80) }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "length");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for keyword arg 'length'");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.contains("length") || r.markdown.contains("truncate"),
+        "keyword arg or callee must appear; got: {:?}", r.markdown
+    );
+}
+
+// ─── REQ-HOV-12: special objects render their registry doc ───────────────────
+
+#[test]
+fn hov12_loop_inside_for_shows_doc() {
+    let src = "{% for i in items %}{{ loop.index }}{% endfor %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Hover on "loop" (the special object)
+    let col = col_of(src, "loop.index"); // col of "loop"
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for special object 'loop'");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("loop"),
+        "loop special object doc must appear; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov12_caller_shows_doc() {
+    let src = "{% macro render() %}{{ caller() }}{% endmacro %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "caller");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for special object 'caller'");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("caller"),
+        "caller doc must appear; got: {:?}", r.markdown
+    );
+}
+
+// ─── REQ-HOV-13: statement keywords show a tag description ───────────────────
+
+#[test]
+fn hov13_for_keyword_shows_description() {
+    let src = "{% for item in items %}{{ item }}{% endfor %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Hover on "for" keyword
+    let col = col_of(src, "for");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for 'for' keyword");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("for") || r.markdown.to_lowercase().contains("loop") || r.markdown.to_lowercase().contains("iterate"),
+        "for-keyword doc must describe looping; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov13_if_keyword_shows_description() {
+    let src = "{% if condition %}yes{% endif %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "if");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for 'if' keyword");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("if") || r.markdown.to_lowercase().contains("condition"),
+        "if-keyword doc must mention condition; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov13_block_keyword_shows_description() {
+    let src = "{% block content %}body{% endblock %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Hover on the "block" keyword (before "content")
+    let col = 3u32; // "{%" is 2 chars + space, "block" starts at 3
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for 'block' keyword");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("block") || r.markdown.to_lowercase().contains("inherit"),
+        "block-keyword doc must appear; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov13_unknown_keyword_returns_none() {
+    // Plain HTML — no Jinja tag keyword recognized here
+    let src = "<div>hello</div>";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, 1, &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None for non-keyword position");
+}
