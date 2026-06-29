@@ -485,6 +485,65 @@ fn no_e101_for_local_macro_name() {
         "local macro name used as identifier must not trigger E101");
 }
 
+// ─── E404: recursive-import ──────────────────────────────────────────────────
+
+#[test]
+fn e404_emitted_for_direct_cycle() {
+    // a.html imports b.html, b.html imports a.html — a cycle
+    let a_src = r#"{% import "b.html" as b %}"#;
+    let b_src = r#"{% import "a.html" as a %}"#;
+    let idx_a = extract(a_src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("a.html", a_src);
+    ws.index_inline("b.html", b_src);
+    let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
+    let e404 = diags.iter().find(|d| d.code == "JINJA-E404");
+    assert!(e404.is_some(), "E404 must fire when a.html and b.html import each other");
+    assert!(e404.unwrap().message.contains("b.html"), "message must name the cyclic target");
+}
+
+#[test]
+fn e404_emitted_for_indirect_cycle() {
+    // a → b → c → a
+    let a_src = r#"{% import "b.html" as b %}"#;
+    let b_src = r#"{% import "c.html" as c %}"#;
+    let c_src = r#"{% import "a.html" as a %}"#;
+    let idx_a = extract(a_src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("a.html", a_src);
+    ws.index_inline("b.html", b_src);
+    ws.index_inline("c.html", c_src);
+    let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
+    assert!(diags.iter().any(|d| d.code == "JINJA-E404"),
+        "E404 must fire for indirect cycle a→b→c→a");
+}
+
+#[test]
+fn no_e404_for_non_cyclic_import() {
+    let a_src = r#"{% import "b.html" as b %}"#;
+    let b_src = "{% macro foo() %}hi{% endmacro %}";
+    let idx_a = extract(a_src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("a.html", a_src);
+    ws.index_inline("b.html", b_src);
+    let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
+        "non-cyclic import must not trigger E404");
+}
+
+#[test]
+fn no_e404_for_extends_no_cycle() {
+    let child = r#"{% extends "base.html" %}{% block content %}hi{% endblock %}"#;
+    let base = "{% block content %}{% endblock %}";
+    let idx = extract(child);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("child.html", child);
+    ws.index_inline("base.html", base);
+    let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
+    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
+        "linear extends chain must not trigger E404");
+}
+
 // ─── E103: undefined-function ────────────────────────────────────────────────
 
 #[test]

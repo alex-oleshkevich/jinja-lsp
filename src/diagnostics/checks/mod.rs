@@ -1,7 +1,7 @@
 // REQ-DIAG-01..06, F01: check runner — pure reads over TemplateIndex/WorkspaceIndex.
 // Each check emits zero or more Diagnostics; the caller applies noqa + config filters.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     builtins::registry::{Category, Registry},
@@ -14,7 +14,7 @@ use crate::{
 
 /// Run all Pass-1 (per-file) checks and return the raw findings.
 ///
-/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E601.
+/// Checks implemented: E001, E101, E102, E103, E104, W201, W202, W203, W301, W302, W303, W304, W305, W402, E401, E403, E404, E601.
 pub fn run_checks(
     source: &str,
     path: &str,
@@ -36,6 +36,7 @@ pub fn run_checks(
     check_w304(path, index, &mut out);
     check_w305(path, index, &mut out);
     check_e403(path, index, workspace, &mut out);
+    check_e404(path, index, workspace, &mut out);
     check_w402_e401(source, path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
@@ -501,6 +502,54 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
         if c == '\n' { line += 1; col = 0; } else { col += 1; }
     }
     (line, col)
+}
+
+// ── E404: recursive-import ────────────────────────────────────────────────────
+
+fn check_e404(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+    for tr in &index.template_refs {
+        if tr.is_dynamic || tr.ignore_missing {
+            continue;
+        }
+        if !matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From) {
+            continue;
+        }
+        let mut visited = HashSet::new();
+        visited.insert(path.to_owned());
+        if import_chain_contains(tr.path.as_str(), path, &mut visited, workspace) {
+            out.push(Diagnostic {
+                file: path.to_owned(),
+                line: tr.span.start_line,
+                col: tr.span.start_col,
+                code: "JINJA-E404".to_owned(),
+                slug: "recursive-import".to_owned(),
+                severity: DiagnosticSeverity::Error,
+                message: format!("import of '{}' creates a recursive cycle", tr.path),
+            });
+        }
+    }
+}
+
+fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<String>, workspace: &WorkspaceIndex) -> bool {
+    if current == target {
+        return true;
+    }
+    if !visited.insert(current.to_owned()) {
+        return false;
+    }
+    let Some(idx) = workspace.templates.get(current) else { return false };
+    for tr in &idx.template_refs {
+        if tr.is_dynamic || tr.ignore_missing {
+            continue;
+        }
+        if !matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From) {
+            continue;
+        }
+        if import_chain_contains(tr.path.as_str(), target, visited, workspace) {
+            return true;
+        }
+    }
+    false
 }
 
 // ── E601: template-does-not-exist ─────────────────────────────────────────────
