@@ -538,9 +538,9 @@ fn source_line(source: &str, line: u32) -> &str {
 
 fn path_to_uri(path: &str) -> Url {
     if path.starts_with('/') {
-        Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap())
+        Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
     } else {
-        Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap())
+        Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
     }
 }
 

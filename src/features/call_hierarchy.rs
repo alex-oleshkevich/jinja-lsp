@@ -118,8 +118,11 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
             let from_range = span_to_range(&r.span);
             let entry = groups.entry(key).or_insert_with(|| {
                 let owner = if let Some(ref name) = enclosing_name {
-                    let m = tmpl_idx.macros.iter().find(|m| &m.name == name).unwrap();
-                    macro_item(m, tpl_path)
+                    if let Some(m) = tmpl_idx.macros.iter().find(|m| &m.name == name) {
+                        macro_item(m, tpl_path)
+                    } else {
+                        template_item(tpl_path)
+                    }
                 } else {
                     template_item(tpl_path)
                 };

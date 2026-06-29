@@ -301,7 +301,7 @@ fn build_tree(flat: Vec<FlatNode>) -> Vec<DocumentSymbol> {
     // Move symbols into the tree. `Option::take` ensures each index is visited once.
     let mut nodes: Vec<Option<FlatNode>> = flat.into_iter().map(Some).collect();
     fn build(i: usize, nodes: &mut Vec<Option<FlatNode>>, cl: &[Vec<usize>]) -> DocumentSymbol {
-        let mut node = nodes[i].take().unwrap();
+        let mut node = nodes[i].take().expect("flat-node visited twice — parent-child index is inconsistent");
         for &ci in &cl[i] {
             node.sym.children.push(build(ci, nodes, cl));
         }

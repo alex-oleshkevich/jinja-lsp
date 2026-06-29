@@ -82,17 +82,20 @@ fn detect_context(source: &str, byte: usize) -> CursorContext {
     }
 
     // Pick the later (innermost) active delimiter.
+    // Safety: render_active ↔ render_open.is_some(); stmt_active ↔ stmt_open.is_some().
     match (render_active, stmt_active) {
         (false, false) => CursorContext::Outside,
-        (true, false) => classify_render(before, render_open.unwrap()),
-        (false, true) => classify_stmt(before, stmt_open.unwrap()),
+        (true, false) => classify_render(before, render_open.expect("render_active guarantees render_open is Some")),
+        (false, true) => classify_stmt(before, stmt_open.expect("stmt_active guarantees stmt_open is Some")),
         (true, true) => {
             // Both active (unusual but can happen if `{{` appears inside `{% %}`).
             // The later opener wins.
-            if render_open.unwrap() > stmt_open.unwrap() {
-                classify_render(before, render_open.unwrap())
+            let r = render_open.expect("render_active guarantees render_open is Some");
+            let s = stmt_open.expect("stmt_active guarantees stmt_open is Some");
+            if r > s {
+                classify_render(before, r)
             } else {
-                classify_stmt(before, stmt_open.unwrap())
+                classify_stmt(before, s)
             }
         }
     }
