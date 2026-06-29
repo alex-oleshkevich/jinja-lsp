@@ -13,6 +13,7 @@ use tower_lsp::{
 };
 
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
+use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
 use state::ServerState;
@@ -83,10 +84,19 @@ impl Backend {
 impl LanguageServer for Backend {
     /// REQ-ARCH-08: declare capabilities matching the feature set.
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        // REQ-DEF-07: record whether the client supports LocationLink for goto_definition.
+        let link_support = params.capabilities.text_document.as_ref()
+            .and_then(|td| td.definition.as_ref())
+            .and_then(|d| d.link_support)
+            .unwrap_or(false);
         // REQ-EDIT-10: apply InitializationOptions overlay on top of discovered config.
-        if let Some(opts) = params.initialization_options {
-            if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
-                self.state.write().await.apply_init_options(overlay);
+        {
+            let mut state = self.state.write().await;
+            state.definition_link_support = link_support;
+            if let Some(opts) = params.initialization_options {
+                if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
+                    state.apply_init_options(overlay);
+                }
             }
         }
         Ok(InitializeResult {
@@ -254,9 +264,22 @@ impl LanguageServer for Backend {
 
     async fn goto_definition(
         &self,
-        _params: GotoDefinitionParams,
+        params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
+        let pos = params.text_document_position_params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(loc) = go_to_definition(source, pos.line, pos.character, &key, index, &state.registry, &state.workspace)
+        else {
+            return Ok(None);
+        };
+        if state.definition_link_support {
+            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(&loc)])))
+        } else {
+            Ok(Some(GotoDefinitionResponse::Scalar(definition_to_location(&loc))))
+        }
     }
 
     async fn references(&self, _params: ReferenceParams) -> Result<Option<Vec<Location>>> {
@@ -431,6 +454,27 @@ fn to_lsp_action(action: InternalCodeAction, _file_uri: &str) -> CodeAction {
         is_preferred: Some(action.is_preferred),
         disabled: None,
         data: None,
+    }
+}
+
+fn def_range(loc: &DefinitionLocation) -> Range {
+    Range {
+        start: Position { line: loc.target_start_line, character: loc.target_start_col },
+        end: Position { line: loc.target_end_line, character: loc.target_end_col },
+    }
+}
+
+fn definition_to_location(loc: &DefinitionLocation) -> Location {
+    Location { uri: path_to_uri(&loc.target_path), range: def_range(loc) }
+}
+
+fn definition_to_link(loc: &DefinitionLocation) -> LocationLink {
+    let range = def_range(loc);
+    LocationLink {
+        origin_selection_range: None,
+        target_uri: path_to_uri(&loc.target_path),
+        target_range: range,
+        target_selection_range: range,
     }
 }
 

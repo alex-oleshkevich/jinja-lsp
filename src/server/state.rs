@@ -18,6 +18,8 @@ pub struct ServerState {
     pub generation: u64,
     /// REQ-BLTN-07: unified doc registry — core + custom_builtins from config.
     pub registry: Registry,
+    /// REQ-DEF-07: client declared textDocument/definition linkSupport in InitializeParams.
+    pub definition_link_support: bool,
 }
 
 impl ServerState {
@@ -31,6 +33,7 @@ impl ServerState {
             sources: HashMap::new(),
             generation: 0,
             registry,
+            definition_link_support: false,
         }
     }
 
@@ -43,6 +46,7 @@ impl ServerState {
             sources: HashMap::new(),
             generation: 0,
             registry,
+            definition_link_support: false,
         }
     }
 
