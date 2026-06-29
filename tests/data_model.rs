@@ -225,3 +225,58 @@ fn workspace_index_can_compute_template_chain() {
     let chain = ws.template_chain("blog/post.html");
     assert_eq!(chain, vec!["blog/post.html", "base.html"]);
 }
+
+// REQ-DATA-03/07: VariableScope derived from syntactic context ───────────────
+
+#[test]
+fn set_inside_block_gets_block_scope() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% block content %}{% set x = 1 %}{% endblock %}";
+    let idx = extract(src);
+    let var = idx.variables.iter().find(|v| v.name == "x");
+    assert!(var.is_some(), "variable x should be extracted");
+    assert_eq!(
+        var.unwrap().scope, VariableScope::Block,
+        "set inside block must have Block scope"
+    );
+}
+
+#[test]
+fn set_inside_macro_gets_macro_scope() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% macro m() %}{% set x = 1 %}{% endmacro %}";
+    let idx = extract(src);
+    let var = idx.variables.iter().find(|v| v.name == "x");
+    assert!(var.is_some(), "variable x should be extracted");
+    assert_eq!(var.unwrap().scope, VariableScope::Macro, "set inside macro must have Macro scope");
+}
+
+#[test]
+fn set_inside_filter_gets_filter_scope() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% filter upper %}{% set x = 1 %}{% endfilter %}";
+    let idx = extract(src);
+    let var = idx.variables.iter().find(|v| v.name == "x");
+    assert!(var.is_some(), "variable x should be extracted");
+    assert_eq!(var.unwrap().scope, VariableScope::Filter, "set inside filter must have Filter scope");
+}
+
+#[test]
+fn set_inside_autoescape_gets_autoescape_scope() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% autoescape true %}{% set x = 1 %}{% endautoescape %}";
+    let idx = extract(src);
+    let var = idx.variables.iter().find(|v| v.name == "x");
+    assert!(var.is_some(), "variable x should be extracted");
+    assert_eq!(var.unwrap().scope, VariableScope::Autoescape, "set inside autoescape must have Autoescape scope");
+}
+
+#[test]
+fn set_at_top_level_gets_template_scope() {
+    use jinja_lsp::parsing::extract;
+    let src = "{% set x = 1 %}";
+    let idx = extract(src);
+    let var = idx.variables.iter().find(|v| v.name == "x");
+    assert!(var.is_some(), "variable x should be extracted");
+    assert_eq!(var.unwrap().scope, VariableScope::Template, "top-level set must have Template scope");
+}

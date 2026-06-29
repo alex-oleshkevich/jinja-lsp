@@ -280,11 +280,12 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
 // ── variables ────────────────────────────────────────────────────────────────
 
 fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+    let scope_regions = build_scope_regions(tree.root_node(), bytes);
     let mut seen_set: HashMap<usize, ()> = HashMap::new();
     let mut seen_for: HashMap<usize, ()> = HashMap::new();
 
-    run_set_unpacking(tree, bytes, idx, &mut seen_set);
-    run_set(tree, bytes, idx, &seen_set);
+    run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions);
+    run_set(tree, bytes, idx, &seen_set, &scope_regions);
     run_for_unpacking(tree, bytes, idx, &mut seen_for);
     run_for(tree, bytes, idx, &seen_for);
     run_with(tree, bytes, idx);
@@ -295,6 +296,7 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex)
 fn run_set_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
+    scope_regions: &[ScopeRegion],
 ) {
     let q = &*Q_SET_UNPACKING;
     let mut cur = QueryCursor::new();
@@ -315,8 +317,9 @@ fn run_set_unpacking(
         }
         if let Some(k) = key {
             seen.insert(k, ());
+            let scope = scope_for_byte(scope_regions, k);
             for name in names {
-                push_var(idx, name, VariableScope::Template);
+                push_var(idx, name, scope);
             }
         }
     }
@@ -325,6 +328,7 @@ fn run_set_unpacking(
 fn run_set(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
+    scope_regions: &[ScopeRegion],
 ) {
     let q = &*Q_SET;
     let mut cur = QueryCursor::new();
@@ -339,7 +343,8 @@ fn run_set(
             }
         }
         if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
-            push_var(idx, name, VariableScope::Template);
+            let scope = scope_for_byte(scope_regions, key.unwrap_or(0));
+            push_var(idx, name, scope);
         }
     }
 }
@@ -437,6 +442,75 @@ fn run_caller_args(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
 
 fn push_var(idx: &mut TemplateIndex, name: String, scope: VariableScope) {
     idx.variables.push(VariableDefinition { name, scope, span: Span::default(), valid_range: Span::default() });
+}
+
+/// A byte range within the template source that belongs to a named scope body.
+/// Jinja2 control tags are siblings in the flat tree, so scope bodies are
+/// identified by the byte range between opener and closer control tags.
+#[derive(Debug, Clone, Copy)]
+struct ScopeRegion {
+    scope: VariableScope,
+    body_start: usize,
+    body_end: usize,
+    /// Stack depth at the time this region was opened — used to pick innermost.
+    depth: usize,
+}
+
+/// Walk the root's direct children to build the list of scope body regions.
+/// REQ-DATA-03/07: detects macro/block/filter/autoescape bodies so that
+/// {% set %} inside them gets the correct VariableScope.
+fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion> {
+    let mut regions = Vec::new();
+    let mut stack: Vec<(VariableScope, usize, usize)> = Vec::new();
+
+    let mut c = root.walk();
+    if !c.goto_first_child() {
+        return regions;
+    }
+    loop {
+        let node = c.node();
+        if node.kind() == "control" {
+            if let Some(stmt) = node.named_child(0) {
+                let inner_kind = stmt.named_child(0).map(|n| n.kind()).unwrap_or("");
+                let open_scope = match inner_kind {
+                    "macro_statement" => Some(VariableScope::Macro),
+                    "block_statement" => Some(VariableScope::Block),
+                    "filter_statement" => Some(VariableScope::Filter),
+                    "autoescape_statement" => Some(VariableScope::Autoescape),
+                    _ => None,
+                };
+                if let Some(scope) = open_scope {
+                    stack.push((scope, node.end_byte(), stack.len()));
+                } else {
+                    let kw = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
+                        .unwrap_or("").trim();
+                    if matches!(kw, "endmacro" | "endblock" | "endfilter" | "endautoescape") {
+                        if let Some((scope, body_start, depth)) = stack.pop() {
+                            regions.push(ScopeRegion {
+                                scope,
+                                body_start,
+                                body_end: node.start_byte(),
+                                depth,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if !c.goto_next_sibling() {
+            break;
+        }
+    }
+    regions
+}
+
+/// Return the innermost scope region that contains `byte`, or Template if none.
+fn scope_for_byte(regions: &[ScopeRegion], byte: usize) -> VariableScope {
+    regions.iter()
+        .filter(|r| r.body_start <= byte && byte < r.body_end)
+        .max_by_key(|r| r.depth)
+        .map(|r| r.scope)
+        .unwrap_or(VariableScope::Template)
 }
 
 // ── template references ───────────────────────────────────────────────────────
