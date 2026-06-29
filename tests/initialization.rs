@@ -1,5 +1,6 @@
 // REQ-EDIT-01/02/10/11: InitializationOptions and config-overlay wiring.
 
+use jinja_lsp::builtins::registry::{Category, Source};
 use jinja_lsp::config::{ConfigOverlay, JinjaConfig};
 use jinja_lsp::server::state::ServerState;
 
@@ -85,6 +86,62 @@ fn canonical_language_ids_are_jinja_and_jinja_html() {
     for &id in rejected {
         assert!(id != "jinja" && id != "jinja-html", "{id} must NOT be canonical");
     }
+}
+
+// ─── T-REG-01: REQ-BLTN-07 — registry loads custom_builtins from config at init
+
+#[test]
+fn state_registry_loads_custom_builtins_from_config() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("my_filter.md"),
+        "---\nname: my_filter\ncategory: filter\n---\nCustom filter doc.",
+    )
+    .unwrap();
+
+    let mut cfg = JinjaConfig::default();
+    cfg.custom_builtins = vec![dir.path().to_string_lossy().to_string()];
+
+    let state = ServerState::with_config(cfg);
+
+    let entry = state.registry.get(Category::Filter, "my_filter");
+    assert!(entry.is_some(), "custom builtin must be in registry after with_config");
+    assert_eq!(entry.unwrap().source, Source::Custom);
+}
+
+// ─── T-REG-02: REQ-BLTN-07 — registry rebuilt on apply_init_options with custom_builtins
+
+#[test]
+fn state_registry_rebuilt_on_apply_init_options() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("overlay_filter.md"),
+        "---\nname: overlay_filter\ncategory: filter\n---\nAdded via overlay.",
+    )
+    .unwrap();
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Before overlay: custom filter must not be present
+    assert!(
+        state.registry.get(Category::Filter, "overlay_filter").is_none(),
+        "filter must not exist before overlay"
+    );
+
+    let overlay = ConfigOverlay {
+        custom_builtins: Some(vec![dir.path().to_string_lossy().to_string()]),
+        ..Default::default()
+    };
+    state.apply_init_options(overlay);
+
+    let entry = state.registry.get(Category::Filter, "overlay_filter");
+    assert!(entry.is_some(), "custom builtin must be in registry after apply_init_options");
+    assert_eq!(entry.unwrap().source, Source::Custom);
 }
 
 // ─── T-06: REQ-EDIT-09 — nvim-lspconfig snippet in README has required keys ──

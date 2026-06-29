@@ -12,7 +12,6 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
 };
 
-use crate::builtins::registry::Registry;
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::features::formatting::{format_document, format_range};
 use state::ServerState;
@@ -318,8 +317,7 @@ impl LanguageServer for Backend {
             })
             .collect();
 
-        let registry = Registry::load_core();
-        let actions = code_actions(source, &key, &diags, index, &state.workspace, &registry);
+        let actions = code_actions(source, &key, &diags, index, &state.workspace, &state.registry);
 
         if actions.is_empty() {
             return Ok(None);
