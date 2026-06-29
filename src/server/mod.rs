@@ -176,8 +176,12 @@ impl LanguageServer for Backend {
         }
     }
 
-    /// REQ-ARCH-05: open triggers Pass 1.
+    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers Pass 1 only for Jinja language IDs.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let lang = params.text_document.language_id.as_str();
+        if lang != "jinja" && lang != "jinja-html" {
+            return;
+        }
         let key = Self::uri_to_key(&params.text_document.uri);
         self.pass1(&key, &params.text_document.text).await;
     }

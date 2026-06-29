@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Jinja",
+  "scopeName": "source.jinja",
+  "patterns": [
+    { "include": "#block_comment" },
+    { "include": "#block_tag" },
+    { "include": "#variable_tag" },
+    { "include": "#comment_tag" }
+  ],
+  "repository": {
+    "block_comment": {
+      "name": "comment.block.jinja",
+      "begin": "\\{#",
+      "end": "#\\}"
+    },
+    "block_tag": {
+      "name": "meta.tag.block.jinja",
+      "begin": "\\{%-?",
+      "end": "-?%\\}",
+      "beginCaptures": { "0": { "name": "punctuation.definition.tag.begin.jinja" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.tag.end.jinja" } },
+      "patterns": [
+        { "include": "#keywords" },
+        { "include": "#strings" },
+        { "include": "#identifiers" }
+      ]
+    },
+    "variable_tag": {
+      "name": "meta.tag.variable.jinja",
+      "begin": "\\{\\{-?",
+      "end": "-?\\}\\}",
+      "beginCaptures": { "0": { "name": "punctuation.definition.tag.begin.jinja" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.tag.end.jinja" } },
+      "patterns": [
+        { "include": "#strings" },
+        { "include": "#identifiers" }
+      ]
+    },
+    "comment_tag": {
+      "name": "comment.line.jinja",
+      "begin": "\\{#",
+      "end": "#\\}"
+    },
+    "keywords": {
+      "name": "keyword.control.jinja",
+      "match": "\\b(block|endblock|for|endfor|if|elif|else|endif|macro|endmacro|call|endcall|filter|endfilter|set|include|extends|import|from|with|endwith|without|context|recursive|not|and|or|in|is|true|false|none)\\b"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.jinja",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.jinja", "match": "\\\\." }]
+        },
+        {
+          "name": "string.quoted.single.jinja",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.jinja", "match": "\\\\." }]
+        }
+      ]
+    },
+    "identifiers": {
+      "name": "variable.other.jinja",
+      "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+    }
+  }
+}

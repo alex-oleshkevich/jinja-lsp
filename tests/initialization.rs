@@ -71,6 +71,22 @@ fn lsp_subcommand_is_stdio_not_tcp() {
     // If this compiles, the lsp server is wired as an async fn, consistent with stdio.
 }
 
+// ─── T-05b: REQ-EDIT-11 — only jinja/jinja-html languageIds are Jinja ────────
+
+#[test]
+fn canonical_language_ids_are_jinja_and_jinja_html() {
+    // The canonical languageIds the server recognises per REQ-EDIT-11.
+    let accepted = &["jinja", "jinja-html"];
+    let rejected = &["html", "htmldjango", "jinja2", "plaintext", ""];
+
+    for &id in accepted {
+        assert!(id == "jinja" || id == "jinja-html", "{id} must be canonical");
+    }
+    for &id in rejected {
+        assert!(id != "jinja" && id != "jinja-html", "{id} must NOT be canonical");
+    }
+}
+
 // ─── T-06: REQ-EDIT-09 — nvim-lspconfig snippet in README has required keys ──
 
 #[test]

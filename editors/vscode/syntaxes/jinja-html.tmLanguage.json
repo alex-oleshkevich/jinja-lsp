@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Jinja HTML",
+  "scopeName": "text.html.jinja",
+  "patterns": [
+    { "include": "text.html.basic" },
+    { "include": "source.jinja" }
+  ]
+}
