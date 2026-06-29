@@ -23,6 +23,11 @@ pub struct ServerState {
     /// True when the client advertised UTF-8 position encoding and we negotiated it;
     /// false when falling back to UTF-16 (LSP default).
     pub position_encoding_utf8: bool,
+    /// REQ-CFG-10: absolute path of the discovered config file (jinja.toml or pyproject.toml).
+    /// None when running zero-config.
+    pub config_file_path: Option<String>,
+    /// REQ-CFG-10: workspace root path — needed to re-discover config on reload.
+    pub workspace_root: Option<String>,
 }
 
 impl ServerState {
@@ -38,6 +43,8 @@ impl ServerState {
             registry,
             definition_link_support: false,
             position_encoding_utf8: false,
+            config_file_path: None,
+            workspace_root: None,
         }
     }
 
@@ -52,6 +59,8 @@ impl ServerState {
             registry,
             definition_link_support: false,
             position_encoding_utf8: false,
+            config_file_path: None,
+            workspace_root: None,
         }
     }
 

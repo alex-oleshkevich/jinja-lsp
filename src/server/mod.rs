@@ -119,6 +119,42 @@ impl Backend {
         drop(state);
         self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
+
+    /// REQ-CFG-10: re-parse the config file and reload affected state.
+    async fn reload_config_file(&self, file_path: &str) {
+        let root = {
+            let state = self.state.read().await;
+            state.workspace_root.clone()
+        };
+        let Some(root) = root else { return };
+        let root_path = std::path::Path::new(&root);
+        let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
+            Ok(pair) => pair,
+            Err(e) => {
+                // REQ-CFG-10: invalid config on reload retains the previous config.
+                tracing::warn!("jinja-lsp: config reload parse error (retaining previous): {e}");
+                return;
+            }
+        };
+        let dirs: Vec<std::path::PathBuf>;
+        let exts: Vec<String>;
+        {
+            let mut state = self.state.write().await;
+            state.config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
+            dirs = new_config.resolved_template_dirs(root_path);
+            exts = new_config.extensions.clone();
+            state.reset_config(new_config);
+        }
+        let new_workspace = tokio::task::spawn_blocking(move || {
+            let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+            let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+        })
+        .await
+        .unwrap_or_default();
+        self.state.write().await.workspace = new_workspace;
+        tracing::info!("jinja-lsp: config reloaded from {file_path}");
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -146,9 +182,9 @@ impl LanguageServer for Backend {
                     .and_then(|f| f.uri.to_file_path().ok())
             });
 
-        // REQ-CFG-01: discover config from project root; fall back to defaults.
-        let discovered_config = root_path.as_deref()
-            .and_then(|root| crate::config::JinjaConfig::discover(root).ok())
+        // REQ-CFG-01 / REQ-CFG-10: discover config from project root; record path for live reload.
+        let (discovered_config, config_file_path) = root_path.as_deref()
+            .and_then(|root| crate::config::JinjaConfig::discover_with_path(root).ok())
             .unwrap_or_default();
 
         // Build workspace index in a blocking thread — may read many files from disk.
@@ -172,6 +208,8 @@ impl LanguageServer for Backend {
             state.definition_link_support = link_support;
             state.position_encoding_utf8 = utf8;
             state.workspace = initial_workspace;
+            state.config_file_path = config_file_path.map(|p| p.to_string_lossy().into_owned());
+            state.workspace_root = root_path.as_ref().map(|p| p.to_string_lossy().into_owned());
             state.reset_config(discovered_config);
             if let Some(opts) = params.initialization_options {
                 if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
@@ -271,6 +309,27 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "jinja-lsp initialized")
             .await;
+        // REQ-CFG-10 / REQ-ARCH-06: register config file watchers so the client
+        // notifies us when jinja.toml or pyproject.toml changes on disk.
+        let watchers = vec![
+            FileSystemWatcher {
+                glob_pattern: GlobPattern::String("**/jinja.toml".to_owned()),
+                kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
+            },
+            FileSystemWatcher {
+                glob_pattern: GlobPattern::String("**/pyproject.toml".to_owned()),
+                kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
+            },
+        ];
+        let registration = Registration {
+            id: "jinja-lsp-config-watcher".to_owned(),
+            method: "workspace/didChangeWatchedFiles".to_owned(),
+            register_options: serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
+                watchers,
+            })
+            .ok(),
+        };
+        let _ = self.client.register_capability(vec![registration]).await;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -323,18 +382,27 @@ impl LanguageServer for Backend {
     /// REQ-ARCH-06: watched-files dispatch — config and template file changes.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         for change in &params.changes {
+            let key = Self::uri_to_key(&change.uri);
+            // REQ-CFG-10: detect config file changes (jinja.toml or pyproject.toml).
+            let is_config_file = {
+                let state = self.state.read().await;
+                state.config_file_path.as_deref() == Some(&key)
+                    || change.uri.path().ends_with("jinja.toml")
+                    || change.uri.path().ends_with("pyproject.toml")
+            };
+            if is_config_file {
+                self.reload_config_file(change.uri.path()).await;
+                continue;
+            }
             match change.typ {
                 FileChangeType::CREATED | FileChangeType::CHANGED => {
                     // template file: Pass 1 + schedule Pass 2
-                    let key = Self::uri_to_key(&change.uri);
-                    // read from disk — watched files aren't open buffers
                     if let Ok(source) = std::fs::read_to_string(change.uri.path()) {
                         self.pass1(&key, &source).await;
                         self.pass2().await;
                     }
                 }
                 FileChangeType::DELETED => {
-                    let key = Self::uri_to_key(&change.uri);
                     self.state.write().await.workspace.templates.remove(&key);
                 }
                 _ => {}

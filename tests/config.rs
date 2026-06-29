@@ -217,3 +217,32 @@ fn malformed_overlay_does_not_panic() {
     // must not panic; unknown fields are ignored
     let _ = overlay;
 }
+
+// ---------- REQ-CFG-10: discover_with_path returns config file path ----------
+
+#[test]
+fn discover_with_path_returns_jinja_toml_path() {
+    let root = tmpdir("cfg10_path_jinja");
+    fs::write(root.join("jinja.toml"), r#"extensions = ["html"]"#).unwrap();
+    let (cfg, path) = JinjaConfig::discover_with_path(&root).unwrap();
+    assert_eq!(cfg.extensions, vec!["html"]);
+    assert!(path.is_some(), "must return jinja.toml path");
+    assert!(path.unwrap().ends_with("jinja.toml"), "path must point to jinja.toml");
+}
+
+#[test]
+fn discover_with_path_returns_none_when_no_config_file() {
+    let root = tmpdir("cfg10_no_file");
+    let (_, path) = JinjaConfig::discover_with_path(&root).unwrap();
+    assert!(path.is_none(), "must return None when no config file found");
+}
+
+#[test]
+fn discover_with_path_returns_pyproject_path() {
+    let root = tmpdir("cfg10_path_pyproject");
+    fs::write(root.join("pyproject.toml"), "[tool.jinja]\nextensions = [\"jinja\"]\n").unwrap();
+    let (cfg, path) = JinjaConfig::discover_with_path(&root).unwrap();
+    assert_eq!(cfg.extensions, vec!["jinja"]);
+    assert!(path.is_some());
+    assert!(path.unwrap().ends_with("pyproject.toml"));
+}

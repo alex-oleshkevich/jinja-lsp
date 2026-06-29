@@ -50,6 +50,12 @@ impl Default for JinjaConfig {
 impl JinjaConfig {
     /// REQ-CFG-01: walk up from `root` looking for jinja.toml, then pyproject.toml.
     pub fn discover(root: &Path) -> Result<Self, ConfigError> {
+        Ok(Self::discover_with_path(root)?.0)
+    }
+
+    /// Like `discover`, but also returns the path of the config file that was found.
+    /// Returns `(config, Some(path))` when a file was found, or `(defaults, None)`.
+    pub fn discover_with_path(root: &Path) -> Result<(Self, Option<std::path::PathBuf>), ConfigError> {
         let mut dir = root.to_owned();
         loop {
             // 1. jinja.toml
@@ -57,7 +63,7 @@ impl JinjaConfig {
             if jinja_toml.is_file() {
                 let raw = fs::read_to_string(&jinja_toml)
                     .map_err(|e| ConfigError::Io(e.to_string()))?;
-                return Self::from_jinja_toml(&raw);
+                return Ok((Self::from_jinja_toml(&raw)?, Some(jinja_toml)));
             }
             // 2. pyproject.toml with [tool.jinja]
             let pyproject = dir.join("pyproject.toml");
@@ -65,7 +71,7 @@ impl JinjaConfig {
                 let raw = fs::read_to_string(&pyproject)
                     .map_err(|e| ConfigError::Io(e.to_string()))?;
                 if let Some(cfg) = Self::from_pyproject(&raw)? {
-                    return Ok(cfg);
+                    return Ok((cfg, Some(pyproject)));
                 }
             }
             match dir.parent() {
@@ -74,7 +80,7 @@ impl JinjaConfig {
             }
         }
         // no config found — return zero-config defaults
-        Ok(Self::default())
+        Ok((Self::default(), None))
     }
 
     fn from_jinja_toml(raw: &str) -> Result<Self, ConfigError> {
