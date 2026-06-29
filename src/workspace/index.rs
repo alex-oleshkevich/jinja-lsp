@@ -221,18 +221,33 @@ impl WorkspaceIndex {
         let mut seen = HashSet::new();
 
         loop {
-            if !seen.insert(current.clone()) {
+            let key = match self.resolve_key(&current) {
+                Some(k) => k.to_owned(),
+                None => break,
+            };
+            if !seen.insert(key.clone()) {
                 break; // cycle guard
             }
-            if !self.templates.contains_key(&current) {
-                break; // unresolved reference — chain stops here
-            }
-            chain.push(current.clone());
-            match self.templates.get(&current).and_then(|idx| idx.extends()) {
+            chain.push(key.clone());
+            match self.templates.get(&key).and_then(|idx| idx.extends()) {
                 Some(r) => current = r.path.clone(),
                 None => break,
             }
         }
         chain
+    }
+
+    // Maps an extends target (relative path) to the actual map key, handling
+    // the mismatch between relative keys (build_workspace) and absolute keys (server).
+    fn resolve_key<'a>(&'a self, target: &'a str) -> Option<&'a str> {
+        if self.templates.contains_key(target) {
+            return Some(target);
+        }
+        let suffix_fwd = format!("/{target}");
+        let suffix_bwd = format!("\\{target}");
+        self.templates
+            .keys()
+            .find(|k| k.ends_with(&suffix_fwd) || k.ends_with(&suffix_bwd))
+            .map(|k| k.as_str())
     }
 }

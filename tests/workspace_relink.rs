@@ -3,6 +3,33 @@ use std::{collections::HashMap, path::Path};
 use jinja_lsp::workspace::{build_workspace, index::WorkspaceIndex};
 use jinja_lsp::parsing::extract;
 
+// ── REQ-DATA-10: template_chain resolves across absolute-path keys ─────────
+
+#[test]
+fn cnvx_template_chain_resolves_with_absolute_keys() {
+    // Simulates the LSP server: templates are stored under absolute-path keys
+    // (uri.path()), but extends targets in Jinja source are relative strings.
+    // template_chain must resolve "base.html" → "/abs/templates/base.html".
+    let mut ws = WorkspaceIndex::default();
+    let abs_base = "/abs/templates/base.html";
+    let abs_post = "/abs/templates/blog/post.html";
+
+    let mut base_idx = extract("{% block content %}{% endblock %}");
+    base_idx.path = abs_base.to_owned();
+    ws.templates.insert(abs_base.to_owned(), base_idx);
+
+    let mut post_idx = extract(r#"{% extends "base.html" %}"#);
+    post_idx.path = abs_post.to_owned();
+    ws.templates.insert(abs_post.to_owned(), post_idx);
+
+    let chain = ws.template_chain(abs_post);
+    assert_eq!(
+        chain,
+        vec![abs_post, abs_base],
+        "absolute-key workspace must follow extends to resolved ancestor: {chain:?}"
+    );
+}
+
 fn tdir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/templates")
 }
