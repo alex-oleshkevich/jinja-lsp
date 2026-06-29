@@ -1,6 +1,7 @@
 // One handler module per LSP feature (REQ-FOLD-06).
 // Each is a pure-read handler dispatched from server.rs.
 pub mod call_hierarchy;
+pub mod extract_macro;
 pub mod code_actions;
 pub mod code_lens;
 pub mod completions;
