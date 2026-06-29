@@ -43,7 +43,7 @@ fn pass1_updates_only_changed_file() {
 fn generation_increments_on_update() {
     use jinja_lsp::server::state::ServerState;
 
-    let mut state = ServerState { workspace: WorkspaceIndex { templates: HashMap::new() }, generation: 0 };
+    let mut state = ServerState { workspace: WorkspaceIndex { templates: HashMap::new() }, sources: HashMap::new(), generation: 0 };
     let gen0 = state.generation;
     state.update_file("x.html", "{% set a = 1 %}");
     assert!(state.generation > gen0, "generation must increment after update_file");

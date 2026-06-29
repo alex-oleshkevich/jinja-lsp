@@ -12,6 +12,7 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
 };
 
+use crate::features::formatting::{format_document, format_range};
 use crate::workspace::index::WorkspaceIndex;
 use state::ServerState;
 
@@ -38,6 +39,7 @@ impl Backend {
             client,
             state: Arc::new(RwLock::new(ServerState {
                 workspace: WorkspaceIndex::default(),
+                sources: std::collections::HashMap::new(),
                 generation: 0,
             })),
         }
@@ -280,16 +282,37 @@ impl LanguageServer for Backend {
 
     async fn formatting(
         &self,
-        _params: DocumentFormattingParams,
+        params: DocumentFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let edits = format_document(source);
+        if edits.is_empty() { return Ok(None); }
+        Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
     }
 
     async fn range_formatting(
         &self,
-        _params: DocumentRangeFormattingParams,
+        params: DocumentRangeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let range = params.range;
+        let edits = format_range(source, range.start.line, range.end.line);
+        if edits.is_empty() { return Ok(None); }
+        Ok(Some(edits.into_iter().map(to_lsp_edit).collect()))
+    }
+}
+
+fn to_lsp_edit(e: crate::features::code_actions::TextEdit) -> TextEdit {
+    TextEdit {
+        range: Range {
+            start: Position { line: e.start_line, character: e.start_col },
+            end: Position { line: e.end_line, character: e.end_col },
+        },
+        new_text: e.new_text,
     }
 }
 
