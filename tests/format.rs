@@ -198,6 +198,55 @@ fn fmt04_idempotent() {
     }
 }
 
+// ─── REQ-FMT-05: T-20 — Host-language bytes emitted byte-for-byte ─────────────
+
+#[test]
+fn fmt05_t20_html_bytes_untouched() {
+    let src = "<p class=\"lead\">{{name}}</p>\n<a href=\"url\">link</a>";
+    assert_eq!(format(src), "<p class=\"lead\">{{ name }}</p>\n<a href=\"url\">link</a>");
+}
+
+#[test]
+fn fmt05_t21_attribute_values_untouched() {
+    // Spaces inside host attribute values never trimmed
+    let src = "<a href=\"  x  \">{{ text }}</a>";
+    assert_eq!(format(src), src);
+}
+
+#[test]
+fn fmt05_t22_blank_line_preserved() {
+    // Blank host lines inside a block are reproduced exactly
+    let src = "{% if x %}\n\n<p>text</p>\n\n{% endif %}";
+    assert_eq!(format(src), src);
+}
+
+// ─── REQ-FMT-06: T-24/T-25 — Idempotence and syntax-error passthrough ────────
+
+#[test]
+fn fmt06_t24_idempotent_across_all_passes() {
+    let inputs = [
+        "{{x}}\n{%if y%}\nhello\n{%endif%}",
+        "{{ name|upper|trim }}",
+        "{{ x | truncate( 20,true ) }}",
+        "<p>{{title}}</p>",
+        "{{ post is  defined }}",
+        "{%- if x -%}body{%- endif -%}",
+        "{{ {'a': 1,'b': 2} }}",
+    ];
+    for src in inputs {
+        let once = format(src);
+        let twice = format(&once);
+        assert_eq!(once, twice, "not idempotent: {src:?}");
+    }
+}
+
+#[test]
+fn fmt06_t27_syntax_error_passthrough() {
+    // A file with a syntax error is returned byte-for-byte
+    let bad = "{{ unclosed\n{% broken";
+    assert_eq!(format(bad), bad);
+}
+
 #[test]
 #[ignore]
 fn dump_filter_tree() {
