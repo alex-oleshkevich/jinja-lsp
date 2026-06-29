@@ -19,13 +19,18 @@ fn walk(dir: &Path, extensions: &[&str], out: &mut Vec<PathBuf>) {
         Err(_) => return,
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(&path, extensions, out);
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if extensions.contains(&ext) {
-                out.push(path);
+        // file_type() does NOT follow symlinks — prevents symlink-cycle recursion.
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            walk(&entry.path(), extensions, out);
+        } else if ft.is_file() {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if extensions.contains(&ext) {
+                    out.push(path);
+                }
             }
         }
+        // symlinks (ft.is_symlink()) are intentionally skipped
     }
 }

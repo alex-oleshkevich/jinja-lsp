@@ -2,6 +2,22 @@ use std::path::Path;
 
 use jinja_lsp::parsing::discover_templates;
 
+#[test]
+#[cfg(unix)]
+fn e81b_symlink_cycle_does_not_loop() {
+    use std::os::unix::fs::symlink;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let sub = tmp.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("page.html"), "content").unwrap();
+    // 'sub/loop' → tmp root: a symlink cycle
+    symlink(tmp.path(), sub.join("loop")).unwrap();
+    // Symlink dirs must not be recursed: exactly one result, no duplicates.
+    let found = discover_templates(&[tmp.path()], &["html"]);
+    assert_eq!(found.len(), 1, "symlink cycle must not produce duplicates: {found:?}");
+    assert_eq!(found[0].file_name(), Some(std::ffi::OsStr::new("page.html")));
+}
+
 fn tdir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/templates")
 }
