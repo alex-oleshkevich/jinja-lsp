@@ -60,13 +60,21 @@ struct Event {
     end_line: u32,
 }
 
+fn count_newlines(s: &str) -> u32 {
+    s.bytes().filter(|&b| b == b'\n').count() as u32
+}
+
 fn scan_events(source: &str) -> Vec<Event> {
     let mut events = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
+    let mut current_line: u32 = 0;
 
     while i < bytes.len() {
         if i + 1 >= bytes.len() {
+            if bytes[i] == b'\n' {
+                current_line += 1;
+            }
             i += 1;
             continue;
         }
@@ -74,18 +82,20 @@ fn scan_events(source: &str) -> Vec<Event> {
         if bytes[i] == b'{' && bytes[i + 1] == b'#' {
             if let Some(close_rel) = source[i + 2..].find("#}") {
                 let tag_end = i + 2 + close_rel + 2;
-                let sl = byte_to_line(source, i);
-                let el = byte_to_line(source, tag_end.saturating_sub(1));
+                let sl = current_line;
+                let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
                 events.push(Event { kind: EventKind::Comment, start_line: sl, end_line: el });
+                current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;
             }
         } else if bytes[i] == b'{' && bytes[i + 1] == b'{' {
             if let Some(close_rel) = source[i + 2..].find("}}") {
                 let tag_end = i + 2 + close_rel + 2;
-                let sl = byte_to_line(source, i);
-                let el = byte_to_line(source, tag_end.saturating_sub(1));
+                let sl = current_line;
+                let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
                 events.push(Event { kind: EventKind::Tag, start_line: sl, end_line: el });
+                current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;
             }
@@ -93,15 +103,19 @@ fn scan_events(source: &str) -> Vec<Event> {
             if let Some(close_rel) = source[i + 2..].find("%}") {
                 let inner = &source[i + 2..i + 2 + close_rel];
                 let tag_end = i + 2 + close_rel + 2;
-                let sl = byte_to_line(source, i);
-                let el = byte_to_line(source, tag_end.saturating_sub(1));
+                let sl = current_line;
+                let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
                 let kind = classify_statement(inner);
                 events.push(Event { kind, start_line: sl, end_line: el });
+                current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;
             }
         }
 
+        if bytes[i] == b'\n' {
+            current_line += 1;
+        }
         i += source[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
     }
 
@@ -194,10 +208,4 @@ fn build_ranges(events: &[Event]) -> Vec<FoldRange> {
 
     // Unclosed openers remaining on stack → no range (REQ-FOLD2-06).
     result
-}
-
-// ── Utility ───────────────────────────────────────────────────────────────────
-
-fn byte_to_line(source: &str, byte: usize) -> u32 {
-    source[..byte.min(source.len())].bytes().filter(|&b| b == b'\n').count() as u32
 }
