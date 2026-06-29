@@ -90,6 +90,11 @@ pub fn code_actions(
             "JINJA-E104" => {
                 actions.extend(suggest_spelling_correction(file, diag, Category::Test, registry));
             }
+            "JINJA-E403" => {
+                if let Some(action) = insert_block_stub(source, file, diag, index) {
+                    actions.push(action);
+                }
+            }
             _ => {}
         }
     }
@@ -306,6 +311,37 @@ fn suggest_spelling_correction(
             }
         })
         .collect()
+}
+
+// ── REQ-ACT-04 — Insert a stub for a missing required block ──────────────────
+
+fn insert_block_stub(
+    source: &str,
+    file: &str,
+    diag: &Diagnostic,
+    index: &TemplateIndex,
+) -> Option<CodeAction> {
+    let block_name = extract_quoted_name(&diag.message)?;
+    let extends_ln = extends_line(index)?;
+    let line_str = source_line(source, extends_ln);
+    let indent_len = line_str.len() - line_str.trim_start().len();
+    let indent = &line_str[..indent_len];
+    let insert_ln = extends_ln + 1;
+    let new_text = format!("{indent}{{% block {block_name} %}}{{% endblock %}}\n");
+    let edit = TextEdit {
+        start_line: insert_ln,
+        start_col: 0,
+        end_line: insert_ln,
+        end_col: 0,
+        new_text,
+    };
+    Some(CodeAction {
+        title: format!("Insert `{block_name}` block"),
+        kind: ActionKind::QuickFix,
+        diagnostics: vec![diag.clone()],
+        is_preferred: true,
+        edit: Some(WorkspaceEdit::single(file, edit)),
+    })
 }
 
 /// Return the 0-based line of the extends tag, if any.

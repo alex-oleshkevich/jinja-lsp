@@ -388,3 +388,60 @@ fn act03_filter_action_replaces_name_in_source() {
     let result = apply_action(src, "t.html", lower_action);
     assert_eq!(result, "{{ x | lower }}", "filter name replaced correctly");
 }
+
+// ─── REQ-ACT-04: T-10 — Insert block stub after extends ──────────────────────
+
+fn e403(line: u32, col: u32, name: &str) -> Diagnostic {
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-E403".to_owned(),
+        slug: "missing-required-block".to_owned(),
+        severity: DiagnosticSeverity::Error,
+        message: format!("missing required block '{name}'"),
+    }
+}
+
+#[test]
+fn act04_t10_insert_block_stub_after_extends() {
+    let src = "{% extends \"base.html\" %}\n{{ content }}";
+    let idx = extract(src);
+    let diags = vec![e403(0, 0, "content")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1, "must offer exactly one action");
+    assert!(actions[0].title.contains("content"), "title must name the block");
+    assert!(actions[0].is_preferred, "block stub fix is the only option — must be preferred");
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(
+        result,
+        "{% extends \"base.html\" %}\n{% block content %}{% endblock %}\n{{ content }}",
+        "block stub inserted after extends line"
+    );
+}
+
+#[test]
+fn act04_no_extends_no_action() {
+    // E403 with no extends in index → no action (should not happen in practice but must be safe)
+    let src = "{{ content }}";
+    let idx = extract(src);
+    let diags = vec![e403(0, 0, "content")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "no extends → no block stub action");
+}
+
+#[test]
+fn act04_indented_extends_matches_indent() {
+    // Indentation is taken from the extends line and applied to the block stub.
+    let src = "  {% extends \"base.html\" %}\n  {{ content }}";
+    let idx = extract(src);
+    let diags = vec![e403(0, 0, "content")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(
+        result,
+        "  {% extends \"base.html\" %}\n  {% block content %}{% endblock %}\n  {{ content }}",
+        "block stub indented to match extends line"
+    );
+}
