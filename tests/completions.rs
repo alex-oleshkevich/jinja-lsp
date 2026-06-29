@@ -208,6 +208,31 @@ fn cmp12_path_context_offers_workspace_templates() {
     assert!(labels.contains(&"base.html"), "workspace template must be offered: {labels:?}");
 }
 
+#[test]
+fn cmp12_single_quoted_path_also_triggers_template_completion() {
+    // Single-quoted string in extends must also enter TemplatePath context.
+    let src = "{% extends '";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", "{% block content %}{% endblock %}");
+    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"base.html"), "single-quoted extends must offer workspace templates: {labels:?}");
+}
+
+#[test]
+fn cmp12_include_single_quoted_path_triggers_completion() {
+    let src = "{% include '";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("nav.html", "");
+    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"nav.html"), "single-quoted include must offer workspace templates: {labels:?}");
+}
+
 // ─── REQ-CMP-08: keyword-argument name completion inside call parens ──────────
 
 #[test]

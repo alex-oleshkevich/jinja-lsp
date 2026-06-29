@@ -179,10 +179,21 @@ fn last_identifier(s: &str) -> &str {
     &trimmed[start..]
 }
 
-/// True when `text` contains an odd number of `"` characters (meaning the last
-/// string literal is not yet closed).
+/// True when `text` ends inside an unclosed string literal (either `"` or `'`).
 fn has_unclosed_string(text: &str) -> bool {
-    text.chars().filter(|&c| c == '"').count() % 2 == 1
+    let mut in_string = false;
+    let mut quote_char = '"';
+    for c in text.chars() {
+        if in_string {
+            if c == quote_char {
+                in_string = false;
+            }
+        } else if c == '"' || c == '\'' {
+            in_string = true;
+            quote_char = c;
+        }
+    }
+    in_string
 }
 
 /// REQ-CMP-08: if `inner` ends with an unclosed `identifier(…`, return the callee name.
