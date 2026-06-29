@@ -21,6 +21,7 @@ use crate::features::completions::{complete, resolve_doc, CompletionKind};
 use crate::features::definition::{go_to_definition, DefinitionLocation};
 use crate::features::references::{find_references, ReferenceLocation};
 use crate::features::document_highlight::{document_highlight, HighlightKind};
+use crate::features::folding::{fold_ranges, FoldKind};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
 use crate::features::symbols::{document_symbols, SymbolKind as InternalSymbolKind};
@@ -459,9 +460,25 @@ impl LanguageServer for Backend {
 
     async fn folding_range(
         &self,
-        _params: FoldingRangeParams,
+        params: FoldingRangeParams,
     ) -> Result<Option<Vec<FoldingRange>>> {
-        Ok(None)
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let ranges = fold_ranges(source);
+        if ranges.is_empty() { return Ok(None); }
+        let result = ranges.iter().map(|r| FoldingRange {
+            start_line: r.start_line,
+            start_character: None,
+            end_line: r.end_line,
+            end_character: None,
+            kind: Some(match r.kind {
+                FoldKind::Region => FoldingRangeKind::Region,
+                FoldKind::Comment => FoldingRangeKind::Comment,
+            }),
+            collapsed_text: None,
+        }).collect();
+        Ok(Some(result))
     }
 
     async fn inlay_hint(
