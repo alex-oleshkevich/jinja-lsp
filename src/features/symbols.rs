@@ -406,7 +406,7 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
             line += 1;
             col = 0;
         } else {
-            col += 1;
+            col += ch.len_utf8() as u32;
         }
         pos += ch.len_utf8();
     }

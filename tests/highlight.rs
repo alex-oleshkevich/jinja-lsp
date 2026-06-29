@@ -115,6 +115,31 @@ fn hl_multibyte_mid_char_does_not_panic() {
     let _results = document_highlight(src, 0, 3, &idx, &reg);
 }
 
+// ─── imij/9cfn: column unit must be bytes, not char counts ───────────────────
+
+#[test]
+fn hl_9cfn_write_highlight_col_matches_byte_offset_after_multibyte() {
+    // "{# café #}" is 11 bytes (é = 2 bytes) but 10 chars.
+    // "x" in the set tag that follows appears at different byte vs char positions.
+    // byte_to_line_col must count bytes so Write and Read spans use the same unit.
+    let src = "{# café #}{% set x = 1 %}{{ x }}";
+    // Find byte offsets of "x" (first occurrence is in the set tag).
+    let write_byte = src.find("x").unwrap() as u32;
+    let read_byte = src.rfind("x").unwrap() as u32;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let highlights = document_highlight(src, 0, write_byte, &idx, &reg);
+    assert!(!highlights.is_empty(), "must find highlights for x after multibyte prefix");
+    let write_hl = highlights.iter().find(|h| h.kind == HighlightKind::Write);
+    let read_hl = highlights.iter().find(|h| h.kind == HighlightKind::Read);
+    if let (Some(w), Some(r)) = (write_hl, read_hl) {
+        // Write is from make_span→byte_to_line_col; Read is from extractor byte columns.
+        // After the fix both must equal the byte position.
+        assert_eq!(w.range.start_col, write_byte, "Write start_col must be byte offset, got {}", w.range.start_col);
+        assert_eq!(r.range.start_col, read_byte, "Read start_col must be byte offset, got {}", r.range.start_col);
+    }
+}
+
 // ─── REQ-HL-04: non-symbol positions return empty ────────────────────────────
 
 #[test]
