@@ -19,7 +19,7 @@ fn file_based_index(dir_suffix: &str) -> jinja_lsp::workspace::index::TemplateIn
 }
 
 fn inline_index() -> jinja_lsp::workspace::index::TemplateIndex {
-    let mut ws = WorkspaceIndex { templates: HashMap::new() };
+    let mut ws = WorkspaceIndex { templates: HashMap::new(), ..Default::default() };
     ws.index_inline("render#0", JINJA);
     ws.templates.into_values().next().unwrap()
 }
@@ -60,7 +60,7 @@ fn inline_regions_have_same_variables_as_files() {
 
 #[test]
 fn inline_entry_is_in_workspace_index() {
-    let mut ws = WorkspaceIndex { templates: HashMap::new() };
+    let mut ws = WorkspaceIndex { templates: HashMap::new(), ..Default::default() };
     ws.index_inline("render#0", JINJA);
     assert!(ws.templates.contains_key("render#0"), "inline entry must be keyed by the given key");
 }

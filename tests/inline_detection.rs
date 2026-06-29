@@ -88,7 +88,7 @@ fn inline_region_indexes_like_standalone_file() {
     let source = r#"render_template_string("{% set x = 1 %}")"#;
     let regions = detect_inline_regions(source, &["render_template_string"]);
 
-    let mut ws = WorkspaceIndex { templates: HashMap::new() };
+    let mut ws = WorkspaceIndex { templates: HashMap::new(), ..Default::default() };
     ws.index_inline("views.py#0", &regions[0].content);
 
     assert!(ws.templates.contains_key("views.py#0"));

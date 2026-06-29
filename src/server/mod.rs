@@ -48,23 +48,29 @@ impl Backend {
         self.state.write().await.update_file(key, source);
     }
 
-    /// Pass 2 (REQ-ARCH-04): relink the workspace.  Called debounced (on save
-    /// or after idle); the generation guard discards stale relinks.
+    /// Pass 2 (REQ-ARCH-04 / REQ-EXTR-06): relink the workspace — build the
+    /// import graph and assemble template chains.  Generation-guarded: if Pass 1
+    /// runs while the blocking relink is in progress the stale result is discarded.
     async fn pass2(&self) {
-        let gen_snapshot = self.state.read().await.generation;
+        let (gen_snapshot, workspace_snapshot) = {
+            let state = self.state.read().await;
+            (state.generation, state.workspace.clone())
+        };
 
-        // Relink is currently a no-op — template_chain() resolves lazily from
-        // the HashMap, so no extra relink step is needed.  When cross-file
-        // diagnostics land (F01) this becomes meaningful.
-        tokio::task::spawn_blocking(move || {
-            // placeholder: expensive relink work would go here
-            let _ = gen_snapshot;
+        let relinked = tokio::task::spawn_blocking(move || {
+            let mut ws = workspace_snapshot;
+            ws.relink();
+            ws
         })
         .await
         .ok();
 
-        // generation guard: only apply if no newer Pass 1 ran while we worked
-        // (already satisfied because relink is currently trivial)
+        if let Some(relinked) = relinked {
+            let mut state = self.state.write().await;
+            if state.generation == gen_snapshot {
+                state.workspace = relinked;
+            }
+        }
     }
 
     fn uri_to_key(uri: &Url) -> String {

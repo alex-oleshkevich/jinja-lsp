@@ -182,7 +182,7 @@ fn workspace_index_maps_paths_to_template_indexes() {
             syntax_errors: vec![],
         },
     );
-    let ws = WorkspaceIndex { templates };
+    let ws = WorkspaceIndex { templates, ..Default::default() };
     assert!(ws.templates.contains_key("blog/post.html"));
 }
 
@@ -220,7 +220,7 @@ fn workspace_index_can_compute_template_chain() {
     let mut templates = HashMap::new();
     templates.insert("base.html".into(), base);
     templates.insert("blog/post.html".into(), post);
-    let ws = WorkspaceIndex { templates };
+    let ws = WorkspaceIndex { templates, ..Default::default() };
 
     let chain = ws.template_chain("blog/post.html");
     assert_eq!(chain, vec!["blog/post.html", "base.html"]);
