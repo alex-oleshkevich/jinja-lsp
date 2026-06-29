@@ -28,6 +28,12 @@ use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resol
 use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
 use crate::features::hover::hover as hover_feature;
 use crate::features::formatting::{format_document, format_range};
+use crate::features::semantic_tokens::{
+    semantic_tokens_full as stok_full,
+    semantic_tokens_range as stok_range,
+    SemanticToken as InternalSemanticToken,
+    TOKEN_TYPES, TOKEN_MODIFIERS,
+};
 use crate::features::symbols::{document_symbols, workspace_symbols, SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol};
 use state::ServerState;
 
@@ -191,8 +197,8 @@ impl LanguageServer for Backend {
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
                             legend: SemanticTokensLegend {
-                                token_types: vec![],
-                                token_modifiers: vec![],
+                                token_types: TOKEN_TYPES.iter().map(|s| SemanticTokenType::new(*s)).collect(),
+                                token_modifiers: TOKEN_MODIFIERS.iter().map(|s| SemanticTokenModifier::new(*s)).collect(),
                             },
                             full: Some(SemanticTokensFullOptions::Bool(true)),
                             range: Some(true),
@@ -761,6 +767,34 @@ impl LanguageServer for Backend {
         Ok(Some(result))
     }
 
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let tokens = stok_full(source, index, &state.registry, &state.workspace);
+        if tokens.is_empty() { return Ok(None); }
+        let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
+    }
+
+    async fn semantic_tokens_range(
+        &self,
+        params: SemanticTokensRangeParams,
+    ) -> Result<Option<SemanticTokensRangeResult>> {
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let tokens = stok_range(source, params.range.start.line, params.range.end.line, index, &state.registry, &state.workspace);
+        if tokens.is_empty() { return Ok(None); }
+        let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
+        Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens { result_id: None, data })))
+    }
+
     async fn formatting(
         &self,
         params: DocumentFormattingParams,
@@ -1222,6 +1256,90 @@ fn inlay_hint_data_from_json(val: &serde_json::Value) -> Option<InlayHintData> {
             block_name: obj.get("block_name")?.as_str()?.to_owned(),
         }),
         _ => None,
+    }
+}
+
+/// Convert internal byte-based SemanticTokens to the LSP wire format (delta-encoded).
+///
+/// The LSP protocol requires delta-encoded positions in the negotiated encoding (UTF-16 by
+/// default, UTF-8 when negotiated). `tokens` must already be sorted by (line, start_char).
+fn tokens_to_lsp_data(tokens: &[InternalSemanticToken], source: &str, utf8: bool) -> Vec<SemanticToken> {
+    let mut data = Vec::with_capacity(tokens.len());
+    let mut prev_line = 0u32;
+    let mut prev_wire_char = 0u32;
+    for tok in tokens {
+        let line_str = source_line(source, tok.line);
+        let (wire_char, wire_length) = if utf8 {
+            (tok.start_char, tok.length)
+        } else {
+            let wc = byte_col_to_lsp_char(line_str, tok.start_char, false);
+            let byte_start = tok.start_char as usize;
+            let byte_end = (tok.start_char + tok.length) as usize;
+            let name_text = line_str.get(byte_start..byte_end.min(line_str.len())).unwrap_or("");
+            let wl: u32 = name_text.chars().map(|c| c.len_utf16() as u32).sum();
+            (wc, wl)
+        };
+        let delta_line = tok.line - prev_line;
+        let delta_start = if delta_line == 0 { wire_char - prev_wire_char } else { wire_char };
+        data.push(SemanticToken {
+            delta_line,
+            delta_start,
+            length: wire_length,
+            token_type: tok.token_type,
+            token_modifiers_bitset: tok.token_modifiers,
+        });
+        prev_line = tok.line;
+        prev_wire_char = wire_char;
+    }
+    data
+}
+
+#[cfg(test)]
+mod server_tests {
+    use super::*;
+    use crate::features::semantic_tokens::SemanticToken as IST;
+
+    #[test]
+    fn delta_encoding_two_tokens_same_line() {
+        // Two tokens on line 0: x at col 3 (len 1), y at col 7 (len 1).
+        let tokens = vec![
+            IST { line: 0, start_char: 3, length: 1, token_type: 1, token_modifiers: 0 },
+            IST { line: 0, start_char: 7, length: 1, token_type: 1, token_modifiers: 0 },
+        ];
+        let data = tokens_to_lsp_data(&tokens, "{{ x }} {{ y }}", true);
+        assert_eq!(data[0].delta_line, 0);
+        assert_eq!(data[0].delta_start, 3, "first token at col 3");
+        assert_eq!(data[0].length, 1);
+        assert_eq!(data[1].delta_line, 0);
+        assert_eq!(data[1].delta_start, 4, "second token: delta 7-3=4 from first");
+    }
+
+    #[test]
+    fn delta_encoding_two_tokens_diff_lines() {
+        let tokens = vec![
+            IST { line: 0, start_char: 3, length: 1, token_type: 1, token_modifiers: 0 },
+            IST { line: 1, start_char: 5, length: 2, token_type: 3, token_modifiers: 4 },
+        ];
+        let src = "{{ x }}\n{{ ab | f }}";
+        let data = tokens_to_lsp_data(&tokens, src, true);
+        assert_eq!(data[0].delta_line, 0);
+        assert_eq!(data[0].delta_start, 3);
+        assert_eq!(data[1].delta_line, 1, "line jumped by 1");
+        assert_eq!(data[1].delta_start, 5, "absolute col on new line");
+        assert_eq!(data[1].token_type, 3);
+        assert_eq!(data[1].token_modifiers_bitset, 4);
+    }
+
+    #[test]
+    fn utf16_length_for_ascii_equals_byte_length() {
+        let tokens = vec![
+            IST { line: 0, start_char: 3, length: 5, token_type: 0, token_modifiers: 0 },
+        ];
+        let src = "{{ hello }}";
+        let data_utf8 = tokens_to_lsp_data(&tokens, src, true);
+        let data_utf16 = tokens_to_lsp_data(&tokens, src, false);
+        assert_eq!(data_utf8[0].length, 5, "UTF-8 mode: length=5 (bytes)");
+        assert_eq!(data_utf16[0].length, 5, "UTF-16 mode: ASCII length same as byte length");
     }
 }
 

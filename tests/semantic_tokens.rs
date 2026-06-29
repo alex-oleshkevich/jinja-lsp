@@ -321,3 +321,31 @@ fn sem04_tokens_sorted_by_line_then_char() {
         );
     }
 }
+
+// ─── Wire encoding: start_char is a byte column (internal representation) ────
+// The server converts to UTF-16 before sending. Tests here verify the internal
+// byte-based representation that the server conversion function receives.
+
+#[test]
+fn sem_internal_positions_are_byte_based() {
+    // "{{ x }}" — 'x' is at byte column 3.
+    let src = "{{ x }}";
+    let tokens = full(src);
+    let x_tok = tokens.iter().find(|t| t.token_type == TT_VARIABLE);
+    assert!(x_tok.is_some(), "should produce a variable token for 'x'");
+    assert_eq!(x_tok.unwrap().start_char, 3, "'x' is at byte column 3 in '{{ x }}'");
+    assert_eq!(x_tok.unwrap().length, 1, "'x' has byte length 1");
+}
+
+#[test]
+fn sem_length_of_ascii_name_is_one_per_char() {
+    // ASCII names: byte length == UTF-16 length, so no encoding mismatch.
+    let src = "{% macro hello(name) %}{{ name }}{% endmacro %}";
+    let tokens = full(src);
+    let macro_tok = tokens.iter().find(|t| t.token_type == TT_MACRO);
+    assert!(macro_tok.is_some());
+    assert_eq!(macro_tok.unwrap().length, "hello".len() as u32);
+    let param_tok = tokens.iter().find(|t| t.token_type == TT_PARAMETER);
+    assert!(param_tok.is_some());
+    assert_eq!(param_tok.unwrap().length, "name".len() as u32);
+}
