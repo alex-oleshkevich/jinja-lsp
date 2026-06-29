@@ -1,8 +1,6 @@
 // Architecture integration tests: REQ-ARCH-01, REQ-ARCH-02, REQ-ARCH-03.
 
-use std::{collections::HashMap, fs};
-
-use jinja_lsp::workspace::index::WorkspaceIndex;
+use std::fs;
 
 // ---------- REQ-ARCH-03: Pass 1 extracts one file ---------------------------
 
@@ -43,7 +41,7 @@ fn pass1_updates_only_changed_file() {
 fn generation_increments_on_update() {
     use jinja_lsp::server::state::ServerState;
 
-    let mut state = ServerState { workspace: WorkspaceIndex { templates: HashMap::new() }, sources: HashMap::new(), generation: 0 };
+    let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
     let gen0 = state.generation;
     state.update_file("x.html", "{% set a = 1 %}");
     assert!(state.generation > gen0, "generation must increment after update_file");

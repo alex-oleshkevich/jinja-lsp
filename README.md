@@ -41,10 +41,38 @@ The server is launched as a subprocess and speaks LSP over stdio (`jinja-lsp lsp
 
 ### Neovim
 
+Using [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) — paste this into `~/.config/nvim/init.lua`:
+
+```lua
+local lspconfig = require("lspconfig")
+local configs   = require("lspconfig.configs")
+
+if not configs.jinja_lsp then
+  configs.jinja_lsp = {
+    default_config = {
+      cmd       = { "jinja-lsp", "lsp" },
+      filetypes = { "jinja", "jinja.html", "htmldjango" },
+      root_dir  = lspconfig.util.root_pattern("jinja.toml", "pyproject.toml", ".git"),
+      -- mirrors jinja.toml; all keys optional — overlay on top of any discovered config file
+      init_options = {
+        templates = { "templates", "..." },
+        extras    = {},
+        hints     = {},
+        lint      = { select = {}, ignore = {} },
+      },
+    },
+  }
+end
+
+lspconfig.jinja_lsp.setup({})
+```
+
+Neovim 0.11+: you can also use the built-in `vim.lsp.config` API instead:
+
 ```lua
 vim.lsp.config('jinja_lsp', {
   cmd = { 'jinja-lsp', 'lsp' },
-  filetypes = { 'jinja', 'jinja2', 'html', 'htmldjango' },
+  filetypes = { 'jinja', 'jinja.html', 'htmldjango' },
   root_markers = { 'jinja.toml', 'pyproject.toml', '.git' },
 })
 vim.lsp.enable('jinja_lsp')

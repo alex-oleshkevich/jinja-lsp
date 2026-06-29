@@ -15,7 +15,6 @@ use tower_lsp::{
 use crate::builtins::registry::Registry;
 use crate::features::code_actions::{code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::features::formatting::{format_document, format_range};
-use crate::workspace::index::WorkspaceIndex;
 use state::ServerState;
 
 /// REQ-ARCH-02: direct all tracing output to stderr; never stdout (stdout
@@ -39,11 +38,9 @@ impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            state: Arc::new(RwLock::new(ServerState {
-                workspace: WorkspaceIndex::default(),
-                sources: std::collections::HashMap::new(),
-                generation: 0,
-            })),
+            state: Arc::new(RwLock::new(ServerState::with_config(
+                crate::config::JinjaConfig::default(),
+            ))),
         }
     }
 
@@ -79,7 +76,13 @@ impl Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     /// REQ-ARCH-08: declare capabilities matching the feature set.
-    async fn initialize(&self, _params: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        // REQ-EDIT-10: apply InitializationOptions overlay on top of discovered config.
+        if let Some(opts) = params.initialization_options {
+            if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
+                self.state.write().await.apply_init_options(overlay);
+            }
+        }
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "jinja-lsp".to_owned(),
@@ -164,6 +167,13 @@ impl LanguageServer for Backend {
 
     async fn shutdown(&self) -> Result<()> {
         Ok(())
+    }
+
+    /// REQ-EDIT-02: editor settings changes re-apply the config overlay.
+    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
+        if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings) {
+            self.state.write().await.apply_init_options(overlay);
+        }
     }
 
     /// REQ-ARCH-05: open triggers Pass 1.
