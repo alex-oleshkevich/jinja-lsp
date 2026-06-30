@@ -194,3 +194,43 @@ fn hl_nvch_block_named_block_write_span_not_on_keyword() {
     assert!(!write.is_empty(), "must have a Write highlight");
     assert_eq!(write[0].range.start_col, 9, "Write span must be on the name at col 9, not the keyword at col 3");
 }
+
+// ─── eafo: word-boundary guard for set/for keywords ─────────────────────────
+
+#[test]
+fn hl_eafo_var_with_set_suffix_in_name_not_write_site() {
+    // "reset" ends with "set" — the old `before.ends_with("set")` would wrongly
+    // treat `{% set reset = ... %}{{ reset }}` as the write site being "reset"
+    // when the cursor is on the read `{{ reset }}`. But here, a variable named
+    // "forset" must NOT trigger a false write site because the token before it
+    // is "forset" which ends with "set" but is not the keyword "set".
+    let src = "{% set x = 1 %}{% set infor = 2 %}{{ x }}{{ infor }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Cursor on read of "x" — write span must point to the {% set x … %} binding
+    let col = src.find("{{ x }}").unwrap() as u32 + 3;
+    let results = document_highlight(src, 0, col, &idx, &reg);
+    let write: Vec<_> = results.iter().filter(|r| r.kind == HighlightKind::Write).collect();
+    assert_eq!(write.len(), 1, "must find exactly one Write for 'x'");
+    // "x" appears at col 7 in "{% set x = 1 %}"
+    let x_set_col = src.find("{% set x").unwrap() as u32 + 7;
+    assert_eq!(write[0].range.start_col, x_set_col, "write span must be the set binding");
+}
+
+#[test]
+fn hl_eafo_for_keyword_requires_word_boundary() {
+    // "therefor" ends with "for" but is not the keyword — must not match as a
+    // for-loop binding. Simple smoke test: a plain set variable named "item"
+    // whose name appears after "therefor" in a comment must still resolve correctly.
+    let src = "{% for item in items %}{{ item }}{% endfor %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Cursor on "item" in the read position.
+    let col = src.find("{{ item }}").unwrap() as u32 + 3;
+    let results = document_highlight(src, 0, col, &idx, &reg);
+    let write: Vec<_> = results.iter().filter(|r| r.kind == HighlightKind::Write).collect();
+    assert_eq!(write.len(), 1, "for-loop target must produce exactly one Write");
+    // "item" appears at col 7 in "{% for item in items %}"
+    let for_item_col = src.find("{% for item").unwrap() as u32 + 7;
+    assert_eq!(write[0].range.start_col, for_item_col, "write span must be the for binding");
+}

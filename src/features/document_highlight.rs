@@ -189,9 +189,9 @@ fn find_variable_write_span(source: &str, name: &str) -> Option<Span> {
             if before_ok && after_ok {
                 let before = source[..i].trim_end_matches(|c: char| c.is_whitespace());
                 let after = source[i + name.len()..].trim_start_matches(|c: char| c.is_whitespace());
-                let is_for = before.ends_with("for") || before.ends_with(',');
-                let is_set = before.ends_with("set");
-                let for_ok = is_for && (after.starts_with("in") || after.starts_with(','));
+                let is_for = ends_with_keyword(before, "for") || before.ends_with(',');
+                let is_set = ends_with_keyword(before, "set");
+                let for_ok = is_for && (starts_with_keyword(after, "in") || after.starts_with(','));
                 let set_ok = is_set;
                 if for_ok || set_ok {
                     return Some(make_span(source, i, i + name.len()));
@@ -201,6 +201,30 @@ fn find_variable_write_span(source: &str, name: &str) -> Option<Span> {
         i += source[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
     }
     None
+}
+
+/// True when `s` ends with `kw` and the character before it (if any) is not an identifier char.
+fn ends_with_keyword(s: &str, kw: &str) -> bool {
+    if let Some(prefix) = s.strip_suffix(kw) {
+        prefix.is_empty() || {
+            let c = prefix.chars().next_back().unwrap();
+            !c.is_alphanumeric() && c != '_'
+        }
+    } else {
+        false
+    }
+}
+
+/// True when `s` starts with `kw` and the character after it (if any) is not an identifier char.
+fn starts_with_keyword(s: &str, kw: &str) -> bool {
+    if let Some(rest) = s.strip_prefix(kw) {
+        rest.is_empty() || {
+            let c = rest.chars().next().unwrap();
+            !c.is_alphanumeric() && c != '_'
+        }
+    } else {
+        false
+    }
 }
 
 /// Return the span of `name` within the tag starting at `tag_start_byte`.
