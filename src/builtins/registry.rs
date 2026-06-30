@@ -157,10 +157,10 @@ pub fn parse_doc_str(src: &str, source: Source) -> Option<(DocEntry, Vec<AttrDoc
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-/// REQ-BLTN-01: registry keyed by (category, name).
+/// REQ-BLTN-01: registry keyed by category then name.
 pub struct Registry {
-    entries: HashMap<(Category, String), DocEntry>,
-    attributes: HashMap<(String, String), AttrDoc>,
+    entries: HashMap<Category, HashMap<String, DocEntry>>,
+    attributes: HashMap<String, HashMap<String, AttrDoc>>,
 }
 
 impl Registry {
@@ -173,54 +173,63 @@ impl Registry {
 
     /// REQ-BLTN-02: insert with priority merge — higher-priority source wins.
     pub fn insert(&mut self, entry: DocEntry) {
-        let key = (entry.category, entry.name.clone());
-        if let Some(existing) = self.entries.get(&key) {
+        let inner = self.entries.entry(entry.category).or_default();
+        if let Some(existing) = inner.get(&entry.name) {
             if existing.source.priority() >= entry.source.priority() {
                 return; // existing wins
             }
         }
-        self.entries.insert(key, entry);
+        inner.insert(entry.name.clone(), entry);
     }
 
     pub fn insert_attr(&mut self, attr: AttrDoc) {
         self.attributes
-            .insert((attr.parent.clone(), attr.attr.clone()), attr);
+            .entry(attr.parent.clone())
+            .or_default()
+            .insert(attr.attr.clone(), attr);
     }
 
-    /// REQ-BLTN-01: exact lookup by (category, name).
+    /// REQ-BLTN-01: exact lookup by (category, name) — zero allocation.
     pub fn get(&self, category: Category, name: &str) -> Option<&DocEntry> {
-        self.entries.get(&(category, name.to_owned()))
+        self.entries.get(&category)?.get(name)
     }
 
     /// REQ-BLTN-01: scan by name across all categories.
     pub fn scan_by_name(&self, name: &str) -> Vec<&DocEntry> {
         self.entries
             .values()
+            .flat_map(|inner| inner.values())
             .filter(|e| e.name == name)
             .collect()
     }
 
-    /// REQ-BLTN-05: attribute lookup by (parent, attr).
+    /// REQ-BLTN-05: attribute lookup by (parent, attr) — zero allocation.
     pub fn get_attr(&self, parent: &str, attr: &str) -> Option<&AttrDoc> {
-        self.attributes.get(&(parent.to_owned(), attr.to_owned()))
+        self.attributes.get(parent)?.get(attr)
     }
 
     pub fn entry_count(&self) -> usize {
-        self.entries.len()
+        self.entries.values().map(|m| m.len()).sum()
     }
 
     pub fn count_by_category(&self, category: Category) -> usize {
-        self.entries.values().filter(|e| e.category == category).count()
+        self.entries.get(&category).map(|m| m.len()).unwrap_or(0)
     }
 
     /// Iterate all entries of a given category (order unspecified).
     pub fn iter_by_category(&self, category: Category) -> Vec<&DocEntry> {
-        self.entries.values().filter(|e| e.category == category).collect()
+        self.entries
+            .get(&category)
+            .map(|m| m.values().collect())
+            .unwrap_or_default()
     }
 
     /// All attribute docs whose parent matches `parent`.
     pub fn attrs_for(&self, parent: &str) -> Vec<&AttrDoc> {
-        self.attributes.values().filter(|a| a.parent == parent).collect()
+        self.attributes
+            .get(parent)
+            .map(|m| m.values().collect())
+            .unwrap_or_default()
     }
 
     /// REQ-BLTN-06: load all 94 core embedded docs.
