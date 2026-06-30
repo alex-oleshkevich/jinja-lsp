@@ -61,7 +61,7 @@ fn variable_definition_has_name_scope_span_valid_range() {
 // REQ-DATA-04
 #[test]
 fn import_alias_has_alias_and_source() {
-    let ia = ImportAlias { alias: "macros".into(), source: "blog/macros.html".into(), span: span() };
+    let ia = ImportAlias { alias: "macros".into(), source: "blog/macros.html".into(), span: span(), alias_span: span() };
     assert_eq!(ia.alias, "macros");
     assert_eq!(ia.source, "blog/macros.html");
 }

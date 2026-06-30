@@ -239,6 +239,36 @@ fn ref01_import_alias_namespace_usages_collected() {
     assert!(!results.is_empty(), "import alias usage must yield references: {results:?}");
 }
 
+// ─── REQ-REF-03: alias includeDeclaration=false must not leak declaration ────
+
+#[test]
+fn ref_6s8p_alias_include_declaration_false_excludes_declaration_site() {
+    // REQ-REF-03: `{% import "m.html" as macros %}{{ macros.fn() }}`
+    // With include_declaration=false, the "macros" token in the import declaration
+    // must NOT appear in results — only the usage in `{{ macros.fn() }}`.
+    let src = r#"{% import "m.html" as macros %}{{ macros.post_url() }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    ws.index_inline("m.html", "{% macro post_url() %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    // Cursor on the usage site ("macros" in the `{{ }}` expression)
+    let col = src.rfind("macros").unwrap() as u32;
+    let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
+
+    // Find where "macros" appears in the import declaration
+    let decl_col = src.find("macros").unwrap() as u32; // first occurrence = "as macros"
+    let usage_col = src.rfind("macros").unwrap() as u32; // last  occurrence = "{{ macros"
+
+    // The declaration site must NOT appear when include_declaration=false.
+    let decl_in_results = results.iter().any(|r| r.start_col == decl_col && r.start_line == 0);
+    assert!(!decl_in_results, "declaration site must be excluded when include_declaration=false; results: {results:?}");
+
+    // The usage site MUST appear.
+    let usage_in_results = results.iter().any(|r| r.start_col == usage_col && r.start_line == 0);
+    assert!(usage_in_results, "usage site must be in results: {results:?}");
+}
+
 // ─── REQ-REF-03 / jinja-lsp-tb4c: from-import usage resolves correct def span ─
 
 #[test]

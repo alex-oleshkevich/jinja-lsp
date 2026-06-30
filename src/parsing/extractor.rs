@@ -789,18 +789,22 @@ fn do_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         let mut source = String::new();
         let mut alias = String::new();
         let mut span = Span::default();
+        let mut alias_span = Span::default();
         for cap in m.captures {
             match q.capture_names()[cap.index as usize] {
                 "source" => {
                     source = strip_quotes(txt(cap.node, bytes));
                     span = node_span(cap.node);
                 }
-                "alias" => alias = txt(cap.node, bytes).to_owned(),
+                "alias" => {
+                    alias = txt(cap.node, bytes).to_owned();
+                    alias_span = node_span(cap.node);
+                }
                 _ => {}
             }
         }
         if !source.is_empty() && !alias.is_empty() {
-            idx.import_aliases.push(ImportAlias { alias, source: source.clone(), span: span.clone() });
+            idx.import_aliases.push(ImportAlias { alias, source: source.clone(), span: span.clone(), alias_span: alias_span.clone() });
             idx.template_refs.push(TemplateReference {
                 kind: TemplateRefKind::Import,
                 path: source,

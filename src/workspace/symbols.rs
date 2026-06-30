@@ -66,7 +66,10 @@ pub struct VariableDefinition {
 pub struct ImportAlias {
     pub alias: String,
     pub source: String,
+    /// Span of the whole import statement (used for document symbols / goto-def).
     pub span: Span,
+    /// Span of the alias identifier itself (used for find-references declaration guard).
+    pub alias_span: Span,
 }
 
 /// REQ-DATA-04

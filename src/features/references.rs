@@ -90,8 +90,13 @@ pub fn find_references(
         // REQ-REF-01: import alias — collect all identifier references to the alias name
         // across the workspace (the alias is file-local, so only current file matters).
         Symbol::Alias { name } => {
+            // Locate the alias identifier's byte offset so the text scan can skip it
+            // when include_declaration=false (REQ-REF-03: the scan otherwise finds the
+            // alias token inside `{% import … as name %}` and leaks the declaration).
+            let alias_entry = index.import_aliases.iter().find(|a| a.alias == name);
+            let decl_byte = alias_entry.map(|a| a.alias_span.start_byte);
             if include_declaration {
-                if let Some(alias) = index.import_aliases.iter().find(|a| a.alias == name) {
+                if let Some(alias) = alias_entry {
                     results.insert(span_to_ref(current_path, &alias.span));
                 }
             }
@@ -111,7 +116,9 @@ pub fn find_references(
                     let before_ok = pos == 0 || !(src_bytes[pos - 1].is_ascii_alphanumeric() || src_bytes[pos - 1] == b'_');
                     let after = pos + name_bytes.len();
                     let after_ok = after >= src_bytes.len() || !(src_bytes[after].is_ascii_alphanumeric() || src_bytes[after] == b'_');
-                    if before_ok && after_ok && inside_jinja(source, pos) {
+                    // Skip the declaration site when include_declaration=false (REQ-REF-03).
+                    let is_decl = decl_byte == Some(pos);
+                    if before_ok && after_ok && inside_jinja(source, pos) && (include_declaration || !is_decl) {
                         let (sl, sc) = byte_to_line_col(source, pos);
                         let (el, ec) = byte_to_line_col(source, after);
                         results.insert(ReferenceLocation { path: current_path.to_owned(), start_line: sl, start_col: sc, end_line: el, end_col: ec });
