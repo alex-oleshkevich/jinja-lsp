@@ -1,42 +1,33 @@
-// REQ-ACT-11: rename + prepareRename LSP handler wiring.
+// REQ-ACT-11: rename via code-action, NOT via textDocument/rename LSP method.
+// Constitution §4.7 / F17 §2: rename is a Non-Goal as an LSP method;
+// it is delivered as a code-action command instead.
 
 use jinja_lsp::features::rename::{rename_at_cursor, compute_rename, RenameTarget};
-use jinja_lsp::parsing::extract;
-use jinja_lsp::workspace::index::WorkspaceIndex;
 use jinja_lsp::server::state::ServerState;
 
-// ─── Handler wiring contract ─────────────────────────────────────────────────
+// ─── Architecture conformance: LSP method must NOT be advertised ─────────────
 
 #[test]
-fn rename_handler_delegates_to_feature_function() {
-    let src = include_str!("../src/server/mod.rs");
-    assert!(src.contains("rename_at_cursor("), "rename handler must call rename_at_cursor");
-    assert!(src.contains("compute_rename("), "rename handler must call compute_rename");
-}
-
-#[test]
-fn prepare_rename_handler_delegates_to_feature_function() {
+fn rename_lsp_method_not_advertised_in_capabilities() {
+    // Constitution §4.7: textDocument/rename is a Non-Goal.
+    // The server must not declare rename_provider — clients must not call the method.
     let src = include_str!("../src/server/mod.rs");
     assert!(
-        src.contains("async fn prepare_rename"),
-        "server must declare prepare_rename handler"
+        !src.contains("rename_provider"),
+        "rename_provider must NOT appear in server capabilities (Non-Goal per constitution §4.7)"
     );
 }
 
 #[test]
-fn rename_provider_declared_in_capabilities() {
+fn prepare_rename_handler_not_present() {
     let src = include_str!("../src/server/mod.rs");
     assert!(
-        src.contains("rename_provider"),
-        "server capabilities must include rename_provider"
-    );
-    assert!(
-        src.contains("prepare_provider: Some(true)"),
-        "rename_provider must declare prepare_provider: Some(true)"
+        !src.contains("async fn prepare_rename"),
+        "prepare_rename handler must NOT be present (Non-Goal per constitution §4.7)"
     );
 }
 
-// ─── Integration: feature + state chain ──────────────────────────────────────
+// ─── Integration: feature functions still work (used by code-action path) ────
 
 #[test]
 fn rename_local_variable_via_state() {
@@ -45,7 +36,6 @@ fn rename_local_variable_via_state() {
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
 
-    // Cursor on "count" in `{{ count }}` (col 22)
     let result = rename_at_cursor(source, "t.html", 0, 22, index, &state.workspace);
     assert!(result.is_some(), "rename must be offered on local variable");
     let (target, name) = result.unwrap();
