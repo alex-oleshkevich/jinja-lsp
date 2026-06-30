@@ -280,10 +280,11 @@ fn resolve_undefined_function(
     let threshold = edit_distance_threshold(&undef_name);
     let candidates = near_matches(&undef_name, threshold, workspace, registry);
 
-    for candidate in &candidates {
+    for (candidate, macro_path) in &candidates {
         // For near-match workspace macros, also offer an import fix (not preferred).
-        if let Some(macro_path) = find_macro_in_workspace(workspace, candidate) {
-            let edit = import_text_edit(index, &macro_path, candidate);
+        // The path is returned directly from near_matches — no second workspace scan needed.
+        if let Some(macro_path) = macro_path {
+            let edit = import_text_edit(index, macro_path, candidate);
             actions.push(CodeAction {
                 title: format!("Import `{candidate}` from \"{macro_path}\""),
                 kind: ActionKind::QuickFix,
@@ -603,41 +604,43 @@ fn edit_distance_threshold(name: &str) -> usize {
 }
 
 /// Collect names within `threshold` edit distance from `name`, excluding exact match.
+/// Returns `(candidate_name, macro_path)`: `macro_path` is `Some` when the candidate
+/// comes from a workspace macro, `None` when it comes from the builtin registry.
 fn near_matches(
     name: &str,
     threshold: usize,
     workspace: &WorkspaceIndex,
     registry: &Registry,
-) -> Vec<String> {
-    let mut results: Vec<(usize, String)> = Vec::new();
+) -> Vec<(String, Option<String>)> {
+    let mut results: Vec<(usize, String, Option<String>)> = Vec::new();
 
-    // Workspace macros.
-    for idx in workspace.templates.values() {
+    // Workspace macros — capture path in the same pass.
+    for (path, idx) in &workspace.templates {
         for m in &idx.macros {
             if m.name != name {
                 let d = levenshtein(name, &m.name);
                 if d <= threshold {
-                    results.push((d, m.name.clone()));
+                    results.push((d, m.name.clone(), Some(path.clone())));
                 }
             }
         }
     }
 
-    // Registry functions/globals.
+    // Registry functions/globals — no path.
     for entry in registry.iter_by_category(Category::Function) {
         if entry.name != name {
             let d = levenshtein(name, &entry.name);
             if d <= threshold {
-                results.push((d, entry.name.clone()));
+                results.push((d, entry.name.clone(), None));
             }
         }
     }
 
-    results.sort_by_key(|(d, _)| *d);
-    // Deduplicate by name (a name can appear in both workspace and registry).
+    results.sort_by_key(|(d, _, _)| *d);
+    // Deduplicate by name (a name can appear in both workspace and registry; workspace wins).
     let mut seen = HashSet::new();
-    results.retain(|(_, n)| seen.insert(n.clone()));
-    results.into_iter().map(|(_, n)| n).collect()
+    results.retain(|(_, n, _)| seen.insert(n.clone()));
+    results.into_iter().map(|(_, n, p)| (n, p)).collect()
 }
 
 /// Standard Levenshtein edit distance.
