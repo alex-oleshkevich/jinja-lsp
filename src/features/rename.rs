@@ -158,7 +158,7 @@ fn rename_in_index(old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec
         }
     }
 
-    // Block definition names.
+    // Block definition names (opening tag + optional trailing endblock name).
     for b in &index.blocks {
         if b.name == old_name {
             edits.push(TextEdit {
@@ -168,6 +168,15 @@ fn rename_in_index(old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec
                 end_col: b.span.start_col + old_name.len() as u32,
                 new_text: new_name.to_owned(),
             });
+            if let Some(ref ens) = b.end_name_span {
+                edits.push(TextEdit {
+                    start_line: ens.start_line,
+                    start_col: ens.start_col,
+                    end_line: ens.start_line,
+                    end_col: ens.start_col + old_name.len() as u32,
+                    new_text: new_name.to_owned(),
+                });
+            }
         }
     }
 

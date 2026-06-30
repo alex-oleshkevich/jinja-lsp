@@ -301,19 +301,79 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
             if required { idx.blocks[i].required = true; }
         } else {
             seen.insert(key, (idx.blocks.len(), ctrl_end));
-            idx.blocks.push(BlockDefinition { name, scoped, required, body: Span::default(), span });
+            idx.blocks.push(BlockDefinition { name, scoped, required, body: Span::default(), span, end_name_span: None });
         }
     }
 
     // Populate BlockDefinition.body using scope regions (which track endblock positions).
+    // {% endblock %} (no trailing name) → normal control node, handled by scope regions.
+    // {% endblock name %} (trailing name)  → ERROR node in tree-sitter; handled below.
     let scope_regions = build_scope_regions(tree.root_node(), bytes);
     for (_, (i, ctrl_end)) in &seen {
         if let Some(region) = scope_regions.iter().find(|r| {
             r.scope == VariableScope::Block && r.body_start == *ctrl_end
         }) {
             idx.blocks[*i].body = byte_span(region.body_start, region.body_end);
+            // No trailing name in a proper endblock control node.
         }
     }
+
+    // Second pass: walk ERROR nodes to handle {% endblock name %} (trailing name).
+    // The tree-sitter grammar doesn't support the trailing identifier, so these tags
+    // parse as ERROR nodes. For each matching ERROR, set body + end_name_span.
+    let mut cur = tree.root_node().walk();
+    if cur.goto_first_child() {
+        loop {
+            let node = cur.node();
+            if node.is_error() {
+                let tag_start = node.start_byte();
+                if let Some(ns) = endblock_trailing_name_span(bytes, tag_start) {
+                    let trail_name = std::str::from_utf8(&bytes[ns.start_byte..ns.end_byte])
+                        .unwrap_or("");
+                    for (_, (bi, ctrl_end)) in &seen {
+                        if idx.blocks[*bi].name == trail_name
+                            && idx.blocks[*bi].body == Span::default()
+                        {
+                            idx.blocks[*bi].body = byte_span(*ctrl_end, tag_start);
+                            idx.blocks[*bi].end_name_span = Some(ns.clone());
+                        }
+                    }
+                }
+            }
+            if !cur.goto_next_sibling() { break; }
+        }
+    }
+}
+
+/// Scan `{% endblock name %}` starting at `tag_start` and return the span of
+/// the trailing identifier (`name`), if present.
+fn endblock_trailing_name_span(bytes: &[u8], tag_start: usize) -> Option<Span> {
+    let slice = bytes.get(tag_start..)?;
+    // Find "endblock" within the tag
+    let kw = b"endblock";
+    let kw_pos = slice.windows(kw.len()).position(|w| w == kw)?;
+    let after_kw = tag_start + kw_pos + kw.len();
+    let rest = bytes.get(after_kw..)?;
+    // Skip whitespace
+    let ws = rest.iter().take_while(|&&b| b == b' ' || b == b'\t' || b == b'\n' || b == b'\r').count();
+    let name_start = after_kw + ws;
+    let name_bytes = bytes.get(name_start..)?;
+    // Read identifier chars (alphanumeric or _)
+    let name_len = name_bytes.iter().take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_').count();
+    if name_len == 0 {
+        return None;
+    }
+    let name_end = name_start + name_len;
+    let (sl, sc) = bytes_to_line_col(bytes, name_start);
+    let (el, ec) = bytes_to_line_col(bytes, name_end);
+    Some(Span { start_byte: name_start, end_byte: name_end, start_line: sl, start_col: sc, end_line: el, end_col: ec })
+}
+
+fn bytes_to_line_col(bytes: &[u8], offset: usize) -> (u32, u32) {
+    let before = &bytes[..offset.min(bytes.len())];
+    let line = before.iter().filter(|&&b| b == b'\n').count() as u32;
+    let col = before.iter().rposition(|&b| b == b'\n').map(|p| offset - p - 1).unwrap_or(offset) as u32;
+    (line, col)
 }
 
 // ── variables ────────────────────────────────────────────────────────────────
@@ -591,8 +651,9 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                 if let Some(scope) = open_scope {
                     stack.push((scope, node.end_byte(), stack.len()));
                 } else {
-                    let kw = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
+                    let kw_full = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
                         .unwrap_or("").trim();
+                    let kw = kw_full.split_whitespace().next().unwrap_or("");
                     if matches!(kw, "endmacro" | "endblock" | "endfilter" | "endautoescape" | "endfor" | "endwith") {
                         if let Some((scope, body_start, depth)) = stack.pop() {
                             regions.push(ScopeRegion {

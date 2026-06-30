@@ -141,6 +141,50 @@ fn act11_t06_from_import_with_alias_renames_name_not_alias() {
     assert!(!alias_rewritten, "alias 'g' must not be renamed; edits: {file_edits:?}");
 }
 
+// ─── T-08: endblock trailing name is rewritten on block rename (jinja-lsp-24aj) ─
+
+#[test]
+fn act11_t08_endblock_trailing_name_is_renamed() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    let source = r#"{% block content %}hello{% endblock content %}"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
+    assert!(edit.is_some(), "expected a WorkspaceEdit for block rename with trailing endblock name");
+    let we = edit.unwrap();
+    let file_edits = we.changes.get("/tpl.html").expect("expected edits for /tpl.html");
+    // Should have at least 2 edits: the opening block name and the trailing endblock name.
+    let body_edits: Vec<_> = file_edits.iter().filter(|e| e.new_text == "body").collect();
+    assert!(
+        body_edits.len() >= 2,
+        "expected at least 2 edits (opening + endblock trailing name), got {}: {file_edits:?}",
+        body_edits.len()
+    );
+    // Verify the endblock trailing name edit targets the right column.
+    let endblock_col = source.rfind("content").unwrap() as u32;
+    let has_endblock_edit = body_edits.iter().any(|e| e.start_col == endblock_col);
+    assert!(has_endblock_edit, "expected edit at endblock trailing name col {endblock_col}; edits: {file_edits:?}");
+}
+
+#[test]
+fn act11_t08b_endblock_without_trailing_name_still_renames() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    let source = r#"{% block content %}hello{% endblock %}"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
+    assert!(edit.is_some(), "expected a WorkspaceEdit for block rename without trailing endblock name");
+    let we = edit.unwrap();
+    let file_edits = we.changes.get("/tpl.html").expect("expected edits for /tpl.html");
+    let body_edits: Vec<_> = file_edits.iter().filter(|e| e.new_text == "body").collect();
+    // Only 1 edit: the opening block name
+    assert_eq!(body_edits.len(), 1, "expected exactly 1 edit (no endblock trailing name), got: {file_edits:?}");
+}
+
 #[test]
 #[ignore]
 fn debug_spans() {

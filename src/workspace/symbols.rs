@@ -48,6 +48,8 @@ pub struct BlockDefinition {
     pub required: bool,
     pub body: Span,
     pub span: Span,
+    /// Span of the trailing name in `{% endblock name %}`, if present.
+    pub end_name_span: Option<Span>,
 }
 
 /// REQ-DATA-03

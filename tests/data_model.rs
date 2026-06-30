@@ -38,6 +38,7 @@ fn block_definition_has_scoped_and_required_flags() {
         required: true,
         body: span(),
         span: span(),
+        end_name_span: None,
     };
     assert_eq!(b.name, "content");
     assert!(!b.scoped);
@@ -145,7 +146,7 @@ fn template_index_holds_one_files_symbols_and_errors() {
     let idx = TemplateIndex {
         path: "blog/post.html".into(),
         macros: vec![],
-        blocks: vec![BlockDefinition { name: "content".into(), scoped: false, required: false, body: span(), span: span() }],
+        blocks: vec![BlockDefinition { name: "content".into(), scoped: false, required: false, body: span(), span: span(), end_name_span: None }],
         variables: vec![],
         import_aliases: vec![],
         from_imports: vec![],
@@ -305,6 +306,7 @@ fn make_block(name: &str, body_start: usize, body_end: usize) -> BlockDefinition
         required: false,
         body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
         span: Span::default(),
+        end_name_span: None,
     }
 }
 
