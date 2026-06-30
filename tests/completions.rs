@@ -13,7 +13,7 @@ fn cmp02_filter_context_offers_filters() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     assert!(!items.is_empty(), "filter context must offer items");
     // Must include built-in filters
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
@@ -28,7 +28,7 @@ fn cmp02_filter_context_does_not_offer_variables() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     // Should not offer non-filter items; all items should be filters
     for item in &items {
         assert!(
@@ -46,7 +46,7 @@ fn cmp02_expression_context_offers_variables_and_functions() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     assert!(!items.is_empty(), "expression context must offer items");
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     // my_var should be in scope
@@ -61,7 +61,7 @@ fn cmp02_statement_context_offers_keywords() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     assert!(!items.is_empty(), "statement context must offer items");
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"for"), "keyword 'for' must be offered: {labels:?}");
@@ -76,7 +76,7 @@ fn cmp02_attribute_context_offers_attrs_for_known_receiver() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     assert!(!items.is_empty(), "attribute context for 'loop' must offer items");
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"index"), "loop.index must be offered: {labels:?}");
@@ -91,7 +91,7 @@ fn cmp03_unknown_receiver_returns_empty() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     assert!(items.is_empty(), "unknown receiver must yield no completions: {items:?}");
 }
 
@@ -123,7 +123,7 @@ fn cmp06_outside_delimiter_returns_empty() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     // Cursor in the middle of plain HTML
-    let items = complete(src, 0, 5, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, 5, &idx, &reg, &ws);
     assert!(items.is_empty(), "plain HTML must return empty completions");
 }
 
@@ -133,7 +133,7 @@ fn cmp06_inside_comment_returns_empty() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, 10, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, 10, &idx, &reg, &ws);
     assert!(items.is_empty(), "comment interior must return empty completions");
 }
 
@@ -145,7 +145,7 @@ fn cmp07_filter_item_has_required_fields() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let truncate = items.iter().find(|i| i.label == "truncate").unwrap();
     assert!(!truncate.label.is_empty(), "label must be set");
     // detail should contain filter information
@@ -163,7 +163,7 @@ fn cmp07_item_has_no_documentation_initially() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let any_with_doc = items.iter().any(|i| i.documentation.is_some());
     assert!(!any_with_doc, "items must not have documentation until resolved");
 }
@@ -177,7 +177,7 @@ fn cmp11_for_loop_var_offered_in_expression() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"item"), "for loop variable must be offered: {labels:?}");
 }
@@ -188,7 +188,7 @@ fn cmp11_set_var_offered_in_expression() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"title"), "set variable must be offered: {labels:?}");
 }
@@ -203,7 +203,7 @@ fn cmp12_path_context_offers_workspace_templates() {
     // Workspace with one template
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("base.html", "{% block content %}{% endblock %}");
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"base.html"), "workspace template must be offered: {labels:?}");
 }
@@ -216,7 +216,7 @@ fn cmp12_single_quoted_path_also_triggers_template_completion() {
     let reg = Registry::load_core();
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("base.html", "{% block content %}{% endblock %}");
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"base.html"), "single-quoted extends must offer workspace templates: {labels:?}");
 }
@@ -228,7 +228,7 @@ fn cmp12_include_single_quoted_path_triggers_completion() {
     let reg = Registry::load_core();
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("nav.html", "");
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"nav.html"), "single-quoted include must offer workspace templates: {labels:?}");
 }
@@ -242,7 +242,7 @@ fn cmp08_local_macro_params_offered_in_call() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.iter().any(|l| l.starts_with("title")), "title param must be offered: {labels:?}");
     assert!(labels.iter().any(|l| l.starts_with("body")), "body param must be offered: {labels:?}");
@@ -255,7 +255,7 @@ fn cmp08_params_offered_after_comma() {
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
-    let items = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg, &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.iter().any(|l| l.starts_with("msg")), "msg param must be offered after comma: {labels:?}");
 }
@@ -268,7 +268,7 @@ fn cmp08_from_import_macro_params_offered() {
     // Simulate workspace providing macro definition.
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("macros.html", "{% macro card(title, variant='default') %}{% endmacro %}");
-    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.iter().any(|l| l.starts_with("title")), "title param must be offered for from-import: {labels:?}");
 }
@@ -282,7 +282,7 @@ fn bovp_detect_context_mid_multibyte_char_does_not_panic() {
     let src = "{{ é }}";
     let idx = extract(src);
     let ws = WorkspaceIndex::default();
-    let _items = complete(src, 0, 4, &idx, &reg(), &ws); // byte 4 is mid-char (é = bytes 3-4)
+    let (_items, _) = complete(src, 0, 4, &idx, &reg(), &ws); // byte 4 is mid-char (é = bytes 3-4)
 }
 
 // ─── REQ-CMP-04: import-name completion after `from "x" import` ──────────────
@@ -295,7 +295,7 @@ fn cmp04_from_import_offers_macro_names() {
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("macros.html", "{% macro post_url(post) %}{% endmacro %}{% macro card() %}{% endmacro %}");
     let idx = extract(src);
-    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"post_url"), "post_url must be offered; got: {labels:?}");
     assert!(labels.contains(&"card"), "card must be offered; got: {labels:?}");
@@ -308,7 +308,7 @@ fn cmp04_from_import_after_comma_offers_remaining_macros() {
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("macros.html", "{% macro post_url(post) %}{% endmacro %}{% macro card() %}{% endmacro %}");
     let idx = extract(src);
-    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(labels.contains(&"card"), "card must be offered after comma; got: {labels:?}");
 }
@@ -318,8 +318,93 @@ fn cmp04_from_import_unknown_source_returns_empty() {
     let src = r#"{% from "nonexistent.html" import "#;
     let ws = WorkspaceIndex::default(); // no templates
     let idx = extract(src);
-    let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
     assert!(items.is_empty(), "unknown source must return no completions; got: {items:?}");
+}
+
+// ─── REQ-CMP-09: block-aware end-tag completion ──────────────────────────────
+
+#[test]
+fn cmp09_end_inside_for_offers_only_endfor() {
+    let src = "{% for item in items %}{% end";
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &WorkspaceIndex::default());
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert_eq!(labels, ["endfor"], "only endfor must be offered inside a for loop: {labels:?}");
+}
+
+#[test]
+fn cmp09_end_inside_block_offers_only_endblock() {
+    let src = "{% block content %}{% end";
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &WorkspaceIndex::default());
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert_eq!(labels, ["endblock"], "only endblock must be offered inside a block: {labels:?}");
+}
+
+#[test]
+fn cmp09_end_with_no_open_block_returns_empty() {
+    let src = "{% end";
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &WorkspaceIndex::default());
+    assert!(items.is_empty(), "no open block → no end-tag completions: {items:?}");
+}
+
+// ─── REQ-CMP-10: scope-gated special objects ─────────────────────────────────
+
+#[test]
+fn cmp10_loop_offered_inside_for() {
+    let src = "{% for x in xs %}{{ ";
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &WorkspaceIndex::default());
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"loop"), "loop must be offered inside for: {labels:?}");
+}
+
+#[test]
+fn cmp10_loop_not_offered_outside_for() {
+    let src = "{{ ";
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &WorkspaceIndex::default());
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(!labels.contains(&"loop"), "loop must not be offered outside for: {labels:?}");
+}
+
+// ─── REQ-CMP-12: directory-level path completion ─────────────────────────────
+
+#[test]
+fn cmp12_folder_items_have_folder_kind() {
+    let src = r#"{% extends ""#;
+    let idx = extract(src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("blog/post.html", "");
+    ws.index_inline("blog/index.html", "");
+    ws.index_inline("base.html", "");
+    let (items, is_incomplete) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    use jinja_lsp::features::completions::CompletionKind;
+    let folder_labels: Vec<&str> = items.iter()
+        .filter(|i| i.kind == CompletionKind::Folder)
+        .map(|i| i.label.as_str()).collect();
+    let file_labels: Vec<&str> = items.iter()
+        .filter(|i| i.kind == CompletionKind::File)
+        .map(|i| i.label.as_str()).collect();
+    assert!(folder_labels.contains(&"blog/"), "blog/ must be offered as a folder: {folder_labels:?}");
+    assert!(file_labels.contains(&"base.html"), "base.html must be offered as a file: {file_labels:?}");
+    assert!(is_incomplete, "is_incomplete must be true when folders are present");
+}
+
+#[test]
+fn cmp12_prefix_filters_to_correct_level() {
+    let src = r#"{% extends "blog/"#;
+    let idx = extract(src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("blog/post.html", "");
+    ws.index_inline("blog/index.html", "");
+    ws.index_inline("base.html", "");
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"blog/post.html"), "post.html must appear after typing blog/: {labels:?}");
+    assert!(!labels.contains(&"base.html"), "base.html must not appear after prefix blog/");
 }
 
 // ─── jinja-lsp-n6su: attr completion data must resolve to docs ───────────────
@@ -341,7 +426,7 @@ fn n6su_attr_item_data_key_is_resolvable() {
     let idx = extract(src);
     // position after "loop." — the dot triggers attribute completion
     let col = src.find("loop.").unwrap() as u32 + "loop.".len() as u32;
-    let items = complete(src, 0, col, &idx, &reg, &ws);
+    let (items, _) = complete(src, 0, col, &idx, &reg, &ws);
     for item in &items {
         if let Some(data) = &item.data {
             let doc = resolve_doc(data, &reg);

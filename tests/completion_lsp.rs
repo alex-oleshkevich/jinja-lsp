@@ -48,7 +48,7 @@ fn complete_returns_filters_in_filter_context() {
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
     // Cursor after "| " — filter context
-    let items = complete(source, 0, source.len() as u32, index, &state.registry, &state.workspace);
+    let (items, _) = complete(source, 0, source.len() as u32, index, &state.registry, &state.workspace);
     assert!(!items.is_empty(), "filter context must produce completions");
     assert!(items.iter().all(|i| i.kind == CompletionKind::Filter), "all items must be Filter kind");
 }
@@ -60,7 +60,7 @@ fn complete_returns_keywords_in_statement_context() {
 
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
-    let items = complete(source, 0, 3, index, &state.registry, &state.workspace);
+    let (items, _) = complete(source, 0, 3, index, &state.registry, &state.workspace);
     assert!(!items.is_empty(), "statement context must produce keyword completions");
     let has_for = items.iter().any(|i| i.label == "for");
     let has_if = items.iter().any(|i| i.label == "if");

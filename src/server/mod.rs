@@ -456,13 +456,20 @@ impl LanguageServer for Backend {
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, state.position_encoding_utf8);
-        let items = complete(source, pos.line, byte_col, index, &state.registry, &state.workspace);
+        let (items, is_incomplete) = complete(source, pos.line, byte_col, index, &state.registry, &state.workspace);
         if items.is_empty() {
             return Ok(None);
         }
-        Ok(Some(CompletionResponse::Array(
-            items.into_iter().map(to_lsp_completion_item).collect(),
-        )))
+        let lsp_items: Vec<CompletionItem> = items.into_iter().map(to_lsp_completion_item).collect();
+        if is_incomplete {
+            Ok(Some(CompletionResponse::List(CompletionList {
+                is_incomplete: true,
+                items: lsp_items,
+                ..Default::default()
+            })))
+        } else {
+            Ok(Some(CompletionResponse::Array(lsp_items)))
+        }
     }
 
     async fn completion_resolve(&self, mut item: CompletionItem) -> Result<CompletionItem> {
@@ -1137,7 +1144,8 @@ fn to_lsp_completion_item(item: crate::features::completions::CompletionItem) ->
         CompletionKind::Test => CompletionItemKind::FUNCTION,
         CompletionKind::Variable => CompletionItemKind::VARIABLE,
         CompletionKind::Keyword => CompletionItemKind::KEYWORD,
-        CompletionKind::TemplatePath => CompletionItemKind::FILE,
+        CompletionKind::File | CompletionKind::TemplatePath => CompletionItemKind::FILE,
+        CompletionKind::Folder => CompletionItemKind::FOLDER,
         CompletionKind::Attribute => CompletionItemKind::FIELD,
         CompletionKind::KeywordArg => CompletionItemKind::PROPERTY,
     });

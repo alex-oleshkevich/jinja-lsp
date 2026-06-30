@@ -2,7 +2,7 @@
 
 use crate::{
     builtins::registry::{Category, Registry},
-    workspace::index::{TemplateIndex, WorkspaceIndex},
+    workspace::{index::{TemplateIndex, WorkspaceIndex}, symbols::VariableScope},
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -14,6 +14,11 @@ pub enum CompletionKind {
     Test,
     Variable,
     Keyword,
+    /// REQ-CMP-12: leaf template file (no further descent).
+    File,
+    /// REQ-CMP-12: directory that the user can descend into (triggers re-query).
+    Folder,
+    /// Kept for back-compat; server maps to File.
     TemplatePath,
     Attribute,
     /// REQ-CMP-08: `name=` keyword argument for a macro/function call.
@@ -56,7 +61,8 @@ enum CursorContext {
     /// Inside `{{ callee(` — offer keyword-argument names (REQ-CMP-08).
     CallArgs { callee: String },
     /// Inside a string that follows `extends`, `include`, `import`, or `from`.
-    TemplatePath,
+    /// `typed` is the text already typed between the opening quote and the cursor.
+    TemplatePath { typed: String },
     /// After `from "path" import ` (or after a comma) — offer macro names from `source_path`.
     ImportName { source_path: String },
     /// Inside `{# #}` — offer nothing (REQ-CMP-06).
@@ -148,8 +154,10 @@ fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
 
     // Template path context: starts with path-yielding keyword and has an unclosed quote.
     let first_word = inner.split_whitespace().next().unwrap_or("");
-    if matches!(first_word, "extends" | "include" | "import" | "from") && has_unclosed_string(inner) {
-        return CursorContext::TemplatePath;
+    if matches!(first_word, "extends" | "include" | "import" | "from") {
+        if let Some(typed) = extract_typed_path_prefix(inner) {
+            return CursorContext::TemplatePath { typed };
+        }
     }
 
     // REQ-CMP-04: import-name context: `from "path" import` with closed string.
@@ -160,6 +168,98 @@ fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
     }
 
     CursorContext::Statement
+}
+
+/// If `inner` (stmt text after `{%`) contains an unclosed string after a path keyword,
+/// return the text already typed between the opening quote and the end of `inner`.
+fn extract_typed_path_prefix(inner: &str) -> Option<String> {
+    let mut in_string = false;
+    let mut quote_char = '"';
+    let mut string_start = 0usize;
+    for (byte_pos, c) in inner.char_indices() {
+        if in_string {
+            if c == quote_char {
+                in_string = false; // closed — keep scanning for another open
+            }
+        } else if c == '"' || c == '\'' {
+            in_string = true;
+            quote_char = c;
+            string_start = byte_pos + c.len_utf8();
+        }
+    }
+    if in_string {
+        Some(inner[string_start..].to_owned())
+    } else {
+        None
+    }
+}
+
+/// Scan `source_before` (source up to cursor) and return the keyword of the
+/// innermost unclosed block statement (e.g. `"for"`, `"block"`, `"if"`).
+fn find_innermost_open_block(source_before: &str) -> Option<&'static str> {
+    const PAIRS: &[(&str, &str)] = &[
+        ("for", "endfor"), ("if", "endif"), ("block", "endblock"),
+        ("macro", "endmacro"), ("call", "endcall"), ("filter", "endfilter"),
+        ("set", "endset"), ("with", "endwith"), ("raw", "endraw"),
+        ("autoescape", "endautoescape"), ("trans", "endtrans"),
+    ];
+    let bytes = source_before.as_bytes();
+    let mut stack: Vec<&'static str> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'%' {
+            let rest = &bytes[i + 2..];
+            if let Some(close_rel) = find_close_in_bytes(rest) {
+                let inner = source_before[i + 2..i + 2 + close_rel]
+                    .trim_matches(|c| c == '-' || c == '+' || c == ' ' || c == '\t');
+                let first = inner.split_whitespace().next().unwrap_or("");
+                let tag_end = i + 2 + close_rel + 2;
+                let mut found_close = false;
+                for &(open, close) in PAIRS {
+                    if first == close {
+                        if stack.last() == Some(&open) { stack.pop(); }
+                        found_close = true;
+                        break;
+                    }
+                }
+                if !found_close {
+                    for &(open, _) in PAIRS {
+                        if first == open {
+                            stack.push(open);
+                            break;
+                        }
+                    }
+                }
+                i = tag_end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    stack.last().copied()
+}
+
+/// Find the closing `%}` in `bytes`, skipping string literals. Returns the
+/// relative byte offset of `%` within `bytes`, or `None`.
+fn find_close_in_bytes(bytes: &[u8]) -> Option<usize> {
+    let mut i = 0;
+    let mut in_str = false;
+    let mut str_char = b'"';
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped { escaped = false; }
+            else if b == b'\\' { escaped = true; }
+            else if b == str_char { in_str = false; }
+        } else if b == b'"' || b == b'\'' {
+            in_str = true; str_char = b;
+        } else if b == b'%' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
 fn extract_from_import_source(inner: &str) -> Option<String> {
@@ -309,8 +409,18 @@ fn attr_item(attr: &str, parent: &str) -> CompletionItem {
 fn template_path_item(path: &str) -> CompletionItem {
     CompletionItem {
         label: path.to_owned(),
-        kind: CompletionKind::TemplatePath,
+        kind: CompletionKind::File,
         detail: Some("template".to_owned()),
+        documentation: None,
+        data: None,
+    }
+}
+
+fn folder_item(name: &str) -> CompletionItem {
+    CompletionItem {
+        label: format!("{name}/"),
+        kind: CompletionKind::Folder,
+        detail: Some("directory".to_owned()),
         documentation: None,
         data: None,
     }
@@ -343,6 +453,8 @@ static STATEMENT_KEYWORDS: &[&str] = &[
 
 /// Return completion candidates at (`line`, `col`) in `source` (REQ-CMP-02).
 ///
+/// Returns `(items, is_incomplete)` where `is_incomplete = true` means the editor
+/// should re-query as the user types (used for directory descent, REQ-CMP-12).
 /// Items ship without documentation (REQ-CMP-05).  Nothing is returned outside
 /// Jinja delimiters or inside comments (REQ-CMP-06).
 pub fn complete(
@@ -352,9 +464,9 @@ pub fn complete(
     index: &TemplateIndex,
     registry: &Registry,
     workspace: &WorkspaceIndex,
-) -> Vec<CompletionItem> {
+) -> (Vec<CompletionItem>, bool) {
     let byte = line_col_to_byte(source, line, col);
-    match detect_context(source, byte) {
+    let items = match detect_context(source, byte) {
         CursorContext::Outside | CursorContext::Comment => vec![],
 
         // REQ-CMP-02: filter context → all registry filters.
@@ -367,13 +479,32 @@ pub fn complete(
         // REQ-CMP-02: expression context → functions + variables + scope-locals.
         CursorContext::Expression => {
             let mut items: Vec<CompletionItem> = vec![];
+            // Determine which scope-gated specials are in scope (REQ-CMP-10).
+            let in_for = index.variables.iter().any(|v| {
+                v.scope == VariableScope::ForLoop
+                && v.valid_range.start_byte <= byte && byte <= v.valid_range.end_byte
+            });
+            let in_block = index.blocks.iter().any(|b| {
+                b.body.start_byte <= byte && byte <= b.body.end_byte
+            });
+            let in_macro = index.macros.iter().any(|m| {
+                m.body.start_byte <= byte && byte <= m.body.end_byte
+            });
             // Global functions (range, dict, …)
             for e in registry.iter_by_category(Category::Function) {
                 items.push(function_item(&e.name));
             }
-            // Built-in variables (loop, self, …)
+            // Built-in variables — scope-gate loop/self/super/caller/varargs/kwargs (REQ-CMP-10).
             for e in registry.iter_by_category(Category::Variable) {
-                items.push(variable_item(&e.name));
+                let out_of_scope = match e.name.as_str() {
+                    "loop" => !in_for,
+                    "self" | "super" => !in_block,
+                    "caller" | "varargs" | "kwargs" => !in_macro,
+                    _ => false,
+                };
+                if !out_of_scope {
+                    items.push(variable_item(&e.name));
+                }
             }
             // Context-hinted variables (REQ-HINT-01)
             for e in registry.iter_by_category(Category::ContextVariable) {
@@ -396,27 +527,45 @@ pub fn complete(
             params.iter().map(|p| kwarg_item(p)).collect()
         }
 
-        // REQ-CMP-02: statement context → keyword list.
-        CursorContext::Statement => STATEMENT_KEYWORDS
-            .iter()
-            .map(|kw| keyword_item(kw))
-            .collect(),
+        // REQ-CMP-09: statement context — if typing `end`, offer only the matching end-tag.
+        CursorContext::Statement => {
+            let before = &source[..byte];
+            let stmt_start = before.rfind("{%").unwrap_or(0);
+            let inner_raw = before.get(stmt_start + 2..).unwrap_or("")
+                .trim_start_matches(|c| c == '-' || c == '+' || c == ' ' || c == '\t');
+            if inner_raw.starts_with("end") {
+                // Block-aware: offer only the innermost unclosed block's end-tag.
+                if let Some(open_kw) = find_innermost_open_block(before) {
+                    let end_tag = match open_kw {
+                        "for" => "endfor", "if" => "endif", "block" => "endblock",
+                        "macro" => "endmacro", "call" => "endcall", "filter" => "endfilter",
+                        "set" => "endset", "with" => "endwith", "raw" => "endraw",
+                        "autoescape" => "endautoescape", "trans" => "endtrans",
+                        other => other, // fallback — should not happen
+                    };
+                    vec![keyword_item(end_tag)]
+                } else {
+                    vec![] // no open block — nothing to close
+                }
+            } else {
+                // Normal statement context: offer all statement keywords.
+                STATEMENT_KEYWORDS.iter().map(|kw| keyword_item(kw)).collect()
+            }
+        }
 
         // REQ-CMP-03: attribute context → attrs for the receiver, or empty.
         CursorContext::Attribute { parent } => {
             let attrs = registry.attrs_for(&parent);
             if attrs.is_empty() {
-                return vec![]; // REQ-CMP-03: unknown receiver → no completions
+                return (vec![], false); // REQ-CMP-03: unknown receiver → no completions
             }
             attrs.iter().map(|a| attr_item(&a.attr, &a.parent)).collect()
         }
 
-        // REQ-CMP-12: template path context → workspace template list.
-        CursorContext::TemplatePath => workspace
-            .templates
-            .keys()
-            .map(|p| template_path_item(p))
-            .collect(),
+        // REQ-CMP-12: template path context → one directory level at a time.
+        CursorContext::TemplatePath { typed } => {
+            return complete_template_path(&typed, workspace);
+        }
 
         // REQ-CMP-04: import-name context → macro names from the source template.
         CursorContext::ImportName { source_path } => workspace
@@ -426,7 +575,8 @@ pub fn complete(
                 src_idx.macros.iter().map(|m| macro_name_item(&m.name)).collect()
             })
             .unwrap_or_default(),
-    }
+    };
+    (items, false)
 }
 
 /// Fill documentation for a completion item from its `data` field (REQ-CMP-05).
@@ -485,6 +635,37 @@ fn resolve_callee_params(callee: &str, index: &TemplateIndex, workspace: &Worksp
     }
 
     vec![]
+}
+
+/// REQ-CMP-12: return one directory level of template-path completions.
+///
+/// `typed` is the text already typed between the opening quote and the cursor.
+/// Returns `(items, is_incomplete)` where `is_incomplete = true` when directory
+/// items are included (signals the editor to re-query after the user types `/`).
+fn complete_template_path(typed: &str, workspace: &WorkspaceIndex) -> (Vec<CompletionItem>, bool) {
+    let prefix = typed;
+    let mut dirs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut files: Vec<CompletionItem> = Vec::new();
+
+    for path in workspace.templates.keys() {
+        let candidate = path.as_str();
+        if !candidate.starts_with(prefix) {
+            continue;
+        }
+        let rest = &candidate[prefix.len()..];
+        // If `rest` contains a `/`, the next component is a directory.
+        if let Some(slash_pos) = rest.find('/') {
+            dirs.insert(rest[..slash_pos].to_owned());
+        } else {
+            // Leaf file at this directory level.
+            files.push(template_path_item(candidate));
+        }
+    }
+
+    let has_dirs = !dirs.is_empty();
+    let mut items: Vec<CompletionItem> = dirs.into_iter().map(|d| folder_item(&d)).collect();
+    items.extend(files);
+    (items, has_dirs)
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
