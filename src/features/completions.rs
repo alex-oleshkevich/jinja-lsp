@@ -74,6 +74,11 @@ enum CursorContext {
 // ── Context detection ─────────────────────────────────────────────────────────
 
 fn detect_context(source: &str, byte: usize) -> CursorContext {
+    // Raw block bodies are literal text — no Jinja completions (REQ-CMP-06/§5.4).
+    if inside_raw_block(source, byte) {
+        return CursorContext::Outside;
+    }
+
     let before = &source[..super::clamp_to_char_boundary(source, byte)];
 
     // Find the last position of each delimiter opener and closer.
@@ -113,6 +118,59 @@ fn detect_context(source: &str, byte: usize) -> CursorContext {
     }
 }
 
+/// True if `byte` falls inside the body of a `{% raw %}...{% endraw %}` block.
+/// Reuses `find_innermost_open_block` which already does correct stack-based tag scanning.
+fn inside_raw_block(source: &str, byte: usize) -> bool {
+    let clamped = super::clamp_to_char_boundary(source, byte);
+    find_innermost_open_block(&source[..clamped]) == Some("raw")
+}
+
+/// True if the cursor sits inside an unclosed string literal in `inner`
+/// (i.e., there is an odd number of unescaped quote delimiters).
+fn cursor_in_string(inner: &str) -> bool {
+    let mut in_string = false;
+    let mut string_char = '"';
+    let mut escaped = false;
+    for c in inner.chars() {
+        if in_string {
+            if escaped { escaped = false; continue; }
+            if c == '\\' { escaped = true; continue; }
+            if c == string_char { in_string = false; }
+        } else {
+            if c == '"' || c == '\'' { in_string = true; string_char = c; }
+        }
+    }
+    in_string
+}
+
+/// True if `inner` (text after `{{`) contains a `|` outside of string literals.
+fn contains_pipe_outside_string(inner: &str) -> bool {
+    let mut in_string = false;
+    let mut string_char = '"';
+    let mut escaped = false;
+    for c in inner.chars() {
+        if in_string {
+            if escaped { escaped = false; continue; }
+            if c == '\\' { escaped = true; continue; }
+            if c == string_char { in_string = false; }
+        } else {
+            match c {
+                '"' | '\'' => { in_string = true; string_char = c; }
+                '|' => return true,
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// True if the cursor is in an alias-naming slot: `import "..." as ` or
+/// `from "..." import name as `.  The cursor is writing an identifier, not
+/// selecting from a completion list.
+fn is_in_alias_slot(inner: &str) -> bool {
+    inner.trim_end().ends_with(" as")
+}
+
 fn is_active(open: Option<usize>, close: Option<usize>) -> bool {
     match (open, close) {
         (Some(o), Some(c)) => o > c,
@@ -125,6 +183,11 @@ fn is_active(open: Option<usize>, close: Option<usize>) -> bool {
 fn classify_render(before: &str, open_pos: usize) -> CursorContext {
     // Inner text starts two bytes after `{{`.
     let inner = before.get(open_pos + 2..).unwrap_or("");
+
+    // Cursor inside a string literal — no completions (§5.4).
+    if cursor_in_string(inner) {
+        return CursorContext::Outside;
+    }
 
     // Attribute context: last non-alphanumeric-underscore char is `.`
     if let Some(dot_pos) = last_dot_before_cursor(inner) {
@@ -142,8 +205,8 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
         return CursorContext::CallArgs { callee };
     }
 
-    // Filter context: there is a `|` in the inner text.
-    if inner.contains('|') {
+    // Filter context: there is a `|` OUTSIDE string literals.
+    if contains_pipe_outside_string(inner) {
         return CursorContext::Filter;
     }
 
@@ -153,6 +216,12 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
 /// Classify the cursor inside `{% … %}`.
 fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
     let inner = before.get(open_pos + 2..).unwrap_or("").trim_start_matches(['-', '+', ' ', '\t']);
+
+    // Alias slot: `{% import "..." as ` or `{% from "..." import name as `.
+    // Cursor is in an identifier-naming position — no list to offer (§5.4).
+    if is_in_alias_slot(inner) {
+        return CursorContext::Outside;
+    }
 
     // Template path context: starts with path-yielding keyword and has an unclosed quote.
     let first_word = inner.split_whitespace().next().unwrap_or("");

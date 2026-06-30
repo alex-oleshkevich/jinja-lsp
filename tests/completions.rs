@@ -447,6 +447,53 @@ fn cmp12_prefix_filters_to_correct_level() {
     assert!(!labels.contains(&"base.html"), "base.html must not appear after prefix blog/");
 }
 
+// ─── jinja-lsp-fq3s: negative contract — string literals, raw blocks, alias slots ───
+
+#[test]
+fn fq3s_pipe_inside_string_literal_returns_empty() {
+    // `{{ "foo|bar" }}` — the `|` is inside a string literal, not a filter operator.
+    // Must not classify as Filter context.
+    let src = r#"{{ "foo|bar" }}"#;
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let col = src.find('|').unwrap() as u32 + 1;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "pipe inside string must not offer filters: {items:?}");
+}
+
+#[test]
+fn fq3s_cursor_in_raw_block_body_returns_empty() {
+    // Inside `{% raw %}...{% endraw %}` content is literal text — nothing to complete.
+    let src = "{% raw %}{{ x| }}{% endraw %}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let col = src.find('|').unwrap() as u32 + 1;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "cursor inside raw block must return empty: {items:?}");
+}
+
+#[test]
+fn fq3s_import_alias_slot_returns_empty() {
+    // `{% import "x" as ` — cursor in the alias identifier slot, not an expression.
+    let src = r#"{% import "macros.html" as "#;
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "import alias slot must return empty: {items:?}");
+}
+
+#[test]
+fn fq3s_from_import_alias_slot_returns_empty() {
+    // `{% from "x" import card as ` — cursor after `as`, in the alias slot.
+    // Must return empty even when the source template has macros.
+    let src = r#"{% from "macros.html" import card as "#;
+    let idx = extract(src);
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", "{% macro card(title) %}{% endmacro %}{% macro header() %}{% endmacro %}");
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "from-import alias slot must return empty: {items:?}");
+}
+
 // ─── jinja-lsp-n6su: attr completion data must resolve to docs ───────────────
 
 #[test]
