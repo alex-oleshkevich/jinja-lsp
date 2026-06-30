@@ -239,6 +239,31 @@ fn ref01_import_alias_namespace_usages_collected() {
     assert!(!results.is_empty(), "import alias usage must yield references: {results:?}");
 }
 
+// ─── REQ-REF-03: block includeDeclaration=false must exclude current-file block ─
+
+#[test]
+fn ref_u4yx_block_include_declaration_false_excludes_current_file() {
+    // REQ-REF-03: cursor on the base block, include_declaration=false.
+    // base.html defines {% block content %}, child.html overrides it.
+    // Result must NOT include base.html's block, but MUST include child.html's.
+    let base_src = "{% block content %}body{% endblock %}";
+    let child_src = "{% extends 'base.html' %}{% block content %}override{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("base.html", base_src);
+    ws.index_inline("child.html", child_src);
+    let base_idx = extract(base_src);
+    let reg = Registry::load_core();
+    // Cursor on "content" in base.html
+    let col = base_src.find("content").unwrap() as u32;
+    let results = find_references(base_src, 0, col, "base.html", false, &base_idx, &reg, &ws);
+
+    let base_in_results = results.iter().any(|r| r.path == "base.html");
+    assert!(!base_in_results, "base.html block must be excluded when include_declaration=false: {results:?}");
+
+    let child_in_results = results.iter().any(|r| r.path == "child.html");
+    assert!(child_in_results, "child.html override must be included: {results:?}");
+}
+
 // ─── REQ-REF-03: alias includeDeclaration=false must not leak declaration ────
 
 #[test]

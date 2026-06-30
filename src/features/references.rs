@@ -77,10 +77,13 @@ pub fn find_references(
         }
 
         // REQ-REF-01: blocks — collect all templates that declare a block with this name.
+        // REQ-REF-03: when include_declaration=false, exclude the current-file block
+        // (the definition the cursor sits on). Overrides in other files are still usages.
         Symbol::Block { name } => {
             for (path, tmpl_idx) in &workspace.templates {
+                let is_current = path.as_str() == current_path;
                 for b in &tmpl_idx.blocks {
-                    if b.name == name {
+                    if b.name == name && (include_declaration || !is_current) {
                         results.insert(span_to_ref(path, &b.span));
                     }
                 }
