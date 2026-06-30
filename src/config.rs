@@ -53,6 +53,13 @@ impl JinjaConfig {
         Ok(Self::discover_with_path(root)?.0)
     }
 
+    /// Load config from an explicit file path (must be a jinja.toml file).
+    pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
+        let raw = fs::read_to_string(path)
+            .map_err(|e| ConfigError::Io(e.to_string()))?;
+        Self::from_jinja_toml(&raw)
+    }
+
     /// Like `discover`, but also returns the path of the config file that was found.
     /// Returns `(config, Some(path))` when a file was found, or `(defaults, None)`.
     pub fn discover_with_path(root: &Path) -> Result<(Self, Option<std::path::PathBuf>), ConfigError> {

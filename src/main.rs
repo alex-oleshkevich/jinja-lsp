@@ -55,11 +55,11 @@ async fn main() {
             jinja_lsp::server::run_lsp_server().await;
             0
         }
-        Commands::Check { paths, format, verbose: _, config: _, select, ignore } => {
-            run_check(paths, &format, &select, &ignore)
+        Commands::Check { paths, format, verbose: _, config, select, ignore } => {
+            run_check(paths, &format, config.as_deref(), &select, &ignore)
         }
-        Commands::Format { paths, config: _, check, diff } => {
-            run_format(paths, check, diff)
+        Commands::Format { paths, config, check, diff } => {
+            run_format(paths, config.as_deref(), check, diff)
         }
     };
     std::process::exit(code);
@@ -67,18 +67,29 @@ async fn main() {
 
 /// REQ-LINT-01..11: check command implementation.
 /// Returns exit code: 0 = no findings, 1 = findings found, 2 = config/usage error.
-fn run_check(paths: Vec<String>, format: &str, select: &[String], ignore: &[String]) -> i32 {
+fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select: &[String], ignore: &[String]) -> i32 {
     use std::path::Path;
+    use jinja_lsp::config::JinjaConfig;
     use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
     use jinja_lsp::diagnostics::filter_by_config;
     use jinja_lsp::workspace::build_workspace;
 
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let cfg = match config_path {
+        Some(p) => match JinjaConfig::from_file(Path::new(p)) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+        },
+        None => match JinjaConfig::discover(&cwd) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+        },
+    };
+    let ext_strs: Vec<&str> = cfg.extensions.iter().map(|s| s.as_str()).collect();
+
     // REQ-LINT-01: collect template dirs/files from paths
     let dirs: Vec<std::path::PathBuf> = if paths.is_empty() {
-        // default: look for templates/ in CWD
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let templates = cwd.join("templates");
-        if templates.is_dir() { vec![templates] } else { vec![cwd] }
+        cfg.resolved_template_dirs(&cwd)
     } else {
         paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
     };
@@ -86,14 +97,18 @@ fn run_check(paths: Vec<String>, format: &str, select: &[String], ignore: &[Stri
     let dir_refs: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
 
     // REQ-LINT-09: build_workspace is the shared engine (same as LSP server)
-    let _workspace = build_workspace(&dir_refs, &["html", "jinja", "jinja2", "j2"]);
+    let _workspace = build_workspace(&dir_refs, &ext_strs);
 
     // Collect diagnostics — F01 checks not yet implemented; emit empty list
     let all_diags: Vec<Diagnostic> = vec![];
 
-    // REQ-LINT-03: apply select/ignore filters
-    let sel: Vec<&str> = select.iter().map(|s| s.as_str()).collect();
-    let ign: Vec<&str> = ignore.iter().map(|s| s.as_str()).collect();
+    // REQ-LINT-03: apply select/ignore filters (CLI overrides config; merge both)
+    let mut effective_select: Vec<String> = cfg.lint.select.clone();
+    effective_select.extend_from_slice(select);
+    let mut effective_ignore: Vec<String> = cfg.lint.ignore.clone();
+    effective_ignore.extend_from_slice(ignore);
+    let sel: Vec<&str> = effective_select.iter().map(|s| s.as_str()).collect();
+    let ign: Vec<&str> = effective_ignore.iter().map(|s| s.as_str()).collect();
     let filtered = filter_by_config(&all_diags, &sel, &ign);
 
     // REQ-LINT-10: normalize paths (forward slashes)
@@ -144,14 +159,26 @@ fn run_check(paths: Vec<String>, format: &str, select: &[String], ignore: &[Stri
 
 /// REQ-FMT-08 / REQ-FMT-09: format command.
 /// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
-fn run_format(paths: Vec<String>, check: bool, diff: bool) -> i32 {
+fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: bool) -> i32 {
     use std::path::Path;
-    const TEMPLATE_EXTS: &[&str] = &["html", "jinja", "jinja2", "j2"];
+    use jinja_lsp::config::JinjaConfig;
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let cfg = match config_path {
+        Some(p) => match JinjaConfig::from_file(Path::new(p)) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+        },
+        None => match JinjaConfig::discover(&cwd) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+        },
+    };
+    let ext_strs: Vec<&str> = cfg.extensions.iter().map(|s| s.as_str()).collect();
+    let template_exts: &[&str] = &ext_strs;
 
     let roots: Vec<std::path::PathBuf> = if paths.is_empty() {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let templates = cwd.join("templates");
-        if templates.is_dir() { vec![templates] } else { vec![cwd] }
+        cfg.resolved_template_dirs(&cwd)
     } else {
         paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
     };
@@ -161,7 +188,7 @@ fn run_format(paths: Vec<String>, check: bool, diff: bool) -> i32 {
     for root in &roots {
         if root.is_file() {
             if let Some(ext) = root.extension().and_then(|e| e.to_str()) {
-                if TEMPLATE_EXTS.contains(&ext) {
+                if template_exts.contains(&ext) {
                     files.push(root.clone());
                 } else {
                     // Single file with non-template ext is a no-op.
@@ -170,7 +197,7 @@ fn run_format(paths: Vec<String>, check: bool, diff: bool) -> i32 {
                 files.push(root.clone());
             }
         } else if root.is_dir() {
-            collect_template_files(root, TEMPLATE_EXTS, &mut files);
+            collect_template_files(root, template_exts, &mut files);
         }
     }
 

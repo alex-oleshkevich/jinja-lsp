@@ -284,3 +284,22 @@ fn th0l_jinja_full_code_accepted() {
     let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
     assert!(cfg.validate().is_ok(), "JINJA-W203 must be valid");
 }
+
+// ─── ci5n: from_file loads config from an explicit path ──────────────────────
+
+#[test]
+fn ci5n_from_file_loads_explicit_config() {
+    let root = tmpdir("ci5n_from_file");
+    let cfg_path = root.join("jinja.toml");
+    fs::write(&cfg_path, "extensions = [\"jinja\"]\n").unwrap();
+    let result = jinja_lsp::config::JinjaConfig::from_file(&cfg_path);
+    assert!(result.is_ok(), "from_file must succeed for a valid jinja.toml");
+    assert_eq!(result.unwrap().extensions, vec!["jinja"]);
+}
+
+#[test]
+fn ci5n_from_file_returns_error_for_missing_file() {
+    let root = tmpdir("ci5n_missing");
+    let result = jinja_lsp::config::JinjaConfig::from_file(&root.join("nonexistent.toml"));
+    assert!(result.is_err(), "from_file must return error for a missing file");
+}
