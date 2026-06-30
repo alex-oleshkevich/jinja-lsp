@@ -29,7 +29,7 @@ pub fn run_checks(
     check_e103(path, index, registry, workspace, &mut out);
     check_e102_e104(path, index, registry, &mut out);
     check_w201(path, index, &mut out);
-    check_w202(path, index, &mut out);
+    check_w202(path, index, workspace, &mut out);
     check_w203(source, path, index, &mut out);
     check_w301(path, index, &mut out);
     check_w302(path, index, &mut out);
@@ -330,13 +330,40 @@ fn check_w201(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
 
 // ── W202: unused-macro ────────────────────────────────────────────────────────
 
-fn check_w202(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
-    let used_names: std::collections::HashSet<&str> = index.references.iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier))
-        .map(|r| r.name.as_str())
-        .collect();
+fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+    // Pass 2 (cross-file): collect every macro name referenced anywhere in the workspace.
+    // A macro is "used" if called locally OR imported/called from any other template.
+    let mut used: HashSet<String> = HashSet::new();
+
+    // Own references (local calls inside the macro library itself).
+    for r in &index.references {
+        if matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier) {
+            used.insert(r.name.clone());
+        }
+    }
+
+    // Workspace-wide scan: other templates that call or import from `path`.
+    for tmpl in workspace.templates.values() {
+        // Direct function calls and references in any template.
+        for r in &tmpl.references {
+            if r.kind == ReferenceKind::Function {
+                used.insert(r.name.clone());
+            }
+        }
+        // from-imports that source from the current template count as "exporting" the macro.
+        for fi in &tmpl.from_imports {
+            if workspace.resolve_key(&fi.source).map_or(false, |k| k == path)
+                || fi.source == path
+            {
+                for n in &fi.names {
+                    used.insert(n.name.clone());
+                }
+            }
+        }
+    }
+
     for m in &index.macros {
-        if !used_names.contains(m.name.as_str()) {
+        if !used.contains(m.name.as_str()) {
             out.push(Diagnostic {
                 file: path.to_owned(),
                 line: m.span.start_line,

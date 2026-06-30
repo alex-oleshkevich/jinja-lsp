@@ -171,6 +171,36 @@ fn no_w202_when_macro_is_called() {
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0, "called macro must not trigger W202");
 }
 
+// ─── jinja-lsp-vpd6: W202 is cross-file (Pass 2) ────────────────────────────
+
+#[test]
+fn no_w202_when_macro_called_from_another_template() {
+    let macro_src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
+    let caller_src = r#"{% from "macros.html" import greet %}{{ greet("World") }}"#;
+    let ws = ws_with(&[("macros.html", macro_src), ("caller.html", caller_src)]);
+    let idx = extract(macro_src);
+    let diags = run_checks(macro_src, "macros.html", &idx, &registry(), &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0,
+        "macro used via from-import in another template must not trigger W202: {diags:?}"
+    );
+}
+
+#[test]
+fn no_w202_when_macro_imported_but_not_called() {
+    // If another template imports the macro but doesn't call it, W202 should still suppress
+    // (the import itself constitutes "exporting" the macro).
+    let macro_src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
+    let importer_src = r#"{% from "macros.html" import greet %}"#;
+    let ws = ws_with(&[("macros.html", macro_src), ("importer.html", importer_src)]);
+    let idx = extract(macro_src);
+    let diags = run_checks(macro_src, "macros.html", &idx, &registry(), &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0,
+        "imported macro must not trigger W202 even if not called in the importer: {diags:?}"
+    );
+}
+
 // ─── W203: unused-import ──────────────────────────────────────────────────────
 
 #[test]
