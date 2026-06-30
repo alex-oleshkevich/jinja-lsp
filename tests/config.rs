@@ -246,3 +246,41 @@ fn discover_with_path_returns_pyproject_path() {
     assert!(path.is_some());
     assert!(path.unwrap().ends_with("pyproject.toml"));
 }
+
+// ─── th0l: is_valid_lint_filter must enforce documented grammar ───────────────
+
+#[test]
+fn th0l_jinja_bare_prefix_alone_is_invalid() {
+    use jinja_lsp::config::ConfigError;
+    let root = tmpdir("th0l_bare");
+    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-\"]\n").unwrap();
+    let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
+    let result = cfg.validate();
+    assert!(matches!(result, Err(ConfigError::InvalidLintFilter(_))), "JINJA- alone must be invalid");
+}
+
+#[test]
+fn th0l_jinja_lowercase_suffix_is_invalid() {
+    use jinja_lsp::config::ConfigError;
+    let root = tmpdir("th0l_lowercase");
+    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-zzz\"]\n").unwrap();
+    let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
+    let result = cfg.validate();
+    assert!(matches!(result, Err(ConfigError::InvalidLintFilter(_))), "JINJA-zzz must be invalid");
+}
+
+#[test]
+fn th0l_jinja_valid_class_prefix_accepted() {
+    let root = tmpdir("th0l_class");
+    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-E\"]\n").unwrap();
+    let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
+    assert!(cfg.validate().is_ok(), "JINJA-E must be valid");
+}
+
+#[test]
+fn th0l_jinja_full_code_accepted() {
+    let root = tmpdir("th0l_full");
+    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-W203\"]\n").unwrap();
+    let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
+    assert!(cfg.validate().is_ok(), "JINJA-W203 must be valid");
+}

@@ -196,9 +196,17 @@ impl JinjaConfig {
 }
 
 fn is_valid_lint_filter(code: &str) -> bool {
-    // Valid: "JINJA-E101", "JINJA-W203", "JINJA-E", "JINJA-W", "JINJA-E1", etc.
-    // Invalid: slugs like "unused-variable"
-    code.starts_with("JINJA-")
+    // Valid: "JINJA-E", "JINJA-W", "JINJA-E1", "JINJA-W203", etc.
+    // Invalid: "JINJA-" alone, "JINJA-zzz", or slugs like "unused-variable".
+    let rest = match code.strip_prefix("JINJA-") {
+        Some(r) => r,
+        None => return false,
+    };
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some('E') | Some('W') => chars.all(|c| c.is_ascii_digit()),
+        _ => false,
+    }
 }
 
 fn code_matches(filter: &str, code: &str) -> bool {
@@ -299,5 +307,4 @@ impl std::fmt::Display for ConfigError {
 #[derive(Debug, PartialEq)]
 pub enum ConfigWarning {
     OverlappingFilter(String),
-    NonExistentTemplateDir(String),
 }
