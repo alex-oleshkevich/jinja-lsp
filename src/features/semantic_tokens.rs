@@ -266,7 +266,10 @@ fn find_word_in_source(source: &str, start_byte: usize, name: &str) -> Option<(u
 
 /// Find parameter `param_name` within the parentheses of `{% macro mac_name(…) %}`.
 ///
-/// Searches only inside `(…)` to avoid matching the macro name itself or text outside the tag.
+/// Uses paren-depth tracking to find the matching close paren (avoids truncation
+/// on defaults that contain function calls such as `a=foo()`), then searches only
+/// the name portion of each comma-separated slot (the text before `=`, if any)
+/// to avoid matching `param_name` inside a default value expression.
 fn find_param_in_macro_tag(
     source: &str,
     macro_start: usize,
@@ -275,25 +278,67 @@ fn find_param_in_macro_tag(
 ) -> Option<(u32, u32)> {
     let tag_slice = source.get(macro_start..)?;
     let paren_open = tag_slice.find('(')?;
-    let paren_close = tag_slice.find(')')?;
-    if paren_close <= paren_open {
-        return None;
-    }
-    let content = &tag_slice[paren_open + 1..paren_close];
-    let offset = paren_open + 1;
-    let name_bytes = param_name.as_bytes();
-    let content_bytes = content.as_bytes();
-    let mut i = 0usize;
-    while i + param_name.len() <= content.len() {
-        if &content_bytes[i..i + param_name.len()] == name_bytes {
-            let before_ok = i == 0 || !is_ident(content_bytes[i - 1]);
-            let after_ok =
-                i + param_name.len() >= content.len() || !is_ident(content_bytes[i + param_name.len()]);
-            if before_ok && after_ok {
-                return Some(byte_to_line_col(source, macro_start + offset + i));
+    let after_open = &tag_slice[paren_open + 1..];
+
+    // Find the matching close paren via depth tracking.
+    let mut depth = 1usize;
+    let mut paren_close_rel = None;
+    for (j, c) in after_open.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    paren_close_rel = Some(j);
+                    break;
+                }
             }
+            _ => {}
         }
-        i += 1;
+    }
+    let content = &after_open[..paren_close_rel?];
+    let content_abs = macro_start + paren_open + 1;
+
+    // Split content on top-level commas to get individual parameter slots.
+    let mut slots: Vec<(usize, usize)> = Vec::new();
+    let mut slot_start = 0usize;
+    let mut depth2 = 0usize;
+    for (j, c) in content.char_indices() {
+        match c {
+            '(' | '[' => depth2 += 1,
+            ')' | ']' => { if depth2 > 0 { depth2 -= 1; } }
+            ',' if depth2 == 0 => {
+                slots.push((slot_start, j));
+                slot_start = j + 1;
+            }
+            _ => {}
+        }
+    }
+    slots.push((slot_start, content.len()));
+
+    // For each slot, search param_name only in the name part (before '=').
+    let name_bytes = param_name.as_bytes();
+    for (slot_s, slot_e) in slots {
+        let slot_raw = &content[slot_s..slot_e];
+        // Leading whitespace offset within the slot.
+        let ws_len = slot_raw.len() - slot_raw.trim_start_matches(|c: char| c.is_ascii_whitespace()).len();
+        let name_end = slot_raw.find('=').unwrap_or(slot_raw.len());
+        let name_part = slot_raw[..name_end].trim();
+        let np_bytes = name_part.as_bytes();
+
+        let mut i = 0usize;
+        while i + param_name.len() <= name_part.len() {
+            if &np_bytes[i..i + param_name.len()] == name_bytes {
+                let before_ok = i == 0 || !is_ident(np_bytes[i - 1]);
+                let after_ok =
+                    i + param_name.len() >= name_part.len() || !is_ident(np_bytes[i + param_name.len()]);
+                if before_ok && after_ok {
+                    let abs = content_abs + slot_s + ws_len + i;
+                    return Some(byte_to_line_col(source, abs));
+                }
+            }
+            i += 1;
+        }
     }
     None
 }

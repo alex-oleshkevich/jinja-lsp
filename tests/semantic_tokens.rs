@@ -372,3 +372,38 @@ fn sem_macro_named_macro_does_not_match_keyword() {
     let tok = macro_toks.iter().find(|t| t.start_char == 9).expect("name token must be at col 9");
     assert_eq!(tok.start_char, 9);
 }
+
+// ─── jinja-lsp-3s51: param matching with defaults and nested parens ──────────
+
+#[test]
+fn sem_3s51_param_b_not_matched_in_default_of_a() {
+    // {% macro f(a=b, b) %} — 'b' appears as the default of 'a', then as a real param.
+    // The parameter token for 'b' must be at its DECLARATION position (after the comma),
+    // not at the default-value position (col 13 in `a=b`).
+    let src = "{% macro f(a=b, b) %}{% endmacro %}";
+    let tokens = full(src);
+    let param_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_PARAMETER).collect();
+    // No parameter token must appear at the default-value position of 'b' in `a=b`.
+    // Note: the extractor may record duplicate 'b' parameter entries (a separate grammar issue),
+    // but the POSITION must always be the declaration site, never the default-value site.
+    let b_default_col = src.find("=b").map(|i| i as u32 + 1).expect("'=b' must be present");
+    assert!(
+        param_toks.iter().all(|t| t.start_char != b_default_col),
+        "no parameter token must appear at the default-value position (col {b_default_col})"
+    );
+    // At least one parameter token must be at the real 'b' declaration (after the comma).
+    let b_param_col = src.find(", b").map(|i| i as u32 + 2).expect("', b' must be present");
+    assert!(
+        param_toks.iter().any(|t| t.start_char == b_param_col),
+        "at least one parameter token must be at the declaration position (col {b_param_col})"
+    );
+}
+
+#[test]
+fn sem_3s51_default_with_paren_does_not_truncate() {
+    // {% macro f(a=foo(), b) %} — the first ')' is in foo(); b must still be found.
+    let src = "{% macro f(a=foo(), b) %}{% endmacro %}";
+    let tokens = full(src);
+    let param_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_PARAMETER).collect();
+    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens even with default foo()");
+}
