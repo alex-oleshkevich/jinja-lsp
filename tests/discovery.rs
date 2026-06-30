@@ -111,3 +111,16 @@ fn build_workspace_abs_populates_template_index() {
     assert!(!idx.macros.is_empty(), "macro must be extracted into template index");
     assert_eq!(idx.macros[0].name, "greet");
 }
+
+// ─── jwfs: uppercase extensions must be discovered ───────────────────────────
+
+#[test]
+fn jwfs_uppercase_extension_is_discovered() {
+    use std::fs;
+    use tempfile::TempDir;
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("index.HTML"), "content").unwrap();
+    // extensions list uses lowercase "html"
+    let found = discover_templates(&[tmp.path()], &["html"]);
+    assert_eq!(found.len(), 1, "file with uppercase .HTML extension must be discovered when 'html' is in the list");
+}

@@ -26,7 +26,8 @@ fn walk(dir: &Path, extensions: &[&str], out: &mut Vec<PathBuf>) {
         } else if ft.is_file() {
             let path = entry.path();
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if extensions.contains(&ext) {
+                let ext_lower = ext.to_ascii_lowercase();
+                if extensions.iter().any(|e| *e == ext_lower) {
                     out.push(path);
                 }
             }
