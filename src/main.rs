@@ -170,8 +170,9 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     for idx in workspace.templates.values() {
         let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
         let raw = run_checks(&source, &idx.path, idx, &registry, &workspace);
-        let (kept, _suppressed) = suppress_by_noqa(&raw, &source);
+        let (kept, w107s) = suppress_by_noqa(&raw, &source);
         all_diags.extend(kept);
+        all_diags.extend(w107s);
     }
 
     // REQ-LINT-03: apply select/ignore filters (CLI overrides config; merge both)

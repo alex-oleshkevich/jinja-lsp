@@ -223,3 +223,22 @@ fn t04c_json_file_field_is_workspace_relative() {
         assert_eq!(file, "t.html", "relative path must equal the filename: got {file:?}");
     }
 }
+
+// ---------- REQ-LINT-09 / DIAG-06 / jinja-lsp-6zo5: W107 invalid-noqa parity ------
+
+#[test]
+fn t6zo5_invalid_noqa_w107_appears_in_check_output() {
+    // REQ-LINT-09: check must surface W107 (invalid-noqa) just like the LSP server does.
+    // suppress_by_noqa returns (kept, w107s) — w107s must NOT be discarded.
+    let tmp = tmpdir("w107");
+    // noqa comment with a bogus code that doesn't start with JINJA- → W107
+    fs::write(tmp.join("t.html"), "{{ x }} {# noqa: bad-code #}").unwrap();
+    let (stdout, _, code) = check(&["--format", "json", tmp.to_str().unwrap()]);
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let codes: Vec<&str> = arr.iter()
+        .filter_map(|v| v["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"JINJA-W107"),
+        "W107 invalid-noqa must appear in check output, got codes: {codes:?}");
+    assert_eq!(code, 1, "W107 is a finding → exit 1");
+}
