@@ -198,6 +198,23 @@ fn fold06_unclosed_does_not_suppress_well_formed_pair() {
     assert!(for_fold.is_none(), "unclosed for must not fold");
 }
 
+// ─── REQ-FOLD2-06 / gg03: interleaved tags must not produce a fold ───────────
+
+#[test]
+fn fold06_interleaved_for_if_endfor_produces_no_pair_fold() {
+    // {% for %}{% if %}{% endfor %} — for/endfor are interleaved with if.
+    // REQ-FOLD2-06: no pair fold must be emitted for the for block.
+    // Lines: 0=for, 1=if, 2=endfor
+    let src = "{% for x in xs %}\n{% if x %}\n{% endfor %}";
+    let ranges = fold_ranges(src);
+    // There must be no Region fold starting at line 0 (the "for" opener)
+    // whose end line is 2 (the "endfor") — that would be the wrongly-emitted fold.
+    let for_fold = ranges.iter().any(|r| {
+        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
+    });
+    assert!(!for_fold, "interleaved for/if/endfor must not produce a for fold: {ranges:?}");
+}
+
 // ─── REQ-FOLD2-01 / v08w: {% raw %} body tags must not produce folds ─────────
 
 #[test]

@@ -200,9 +200,11 @@ fn build_ranges(events: &[Event]) -> Vec<FoldRange> {
                         kind: FoldKind::Region,
                     });
                 }
-                // Find the innermost matching opener.
-                if let Some(pos) = stack.iter().rposition(|(n, _)| n == name) {
-                    let (_, open_line) = stack.remove(pos);
+                // Match ONLY the top-of-stack opener (REQ-FOLD2-06): if an intervening
+                // opener sits above this closer on the stack, the tags are interleaved and
+                // neither produces a valid fold. rposition would wrongly skip past them.
+                if stack.last().map(|(n, _)| n == name).unwrap_or(false) {
+                    let (_, open_line) = stack.pop().unwrap();
                     if open_line != event.end_line {
                         result.push(FoldRange {
                             start_line: open_line,
@@ -211,7 +213,7 @@ fn build_ranges(events: &[Event]) -> Vec<FoldRange> {
                         });
                     }
                 }
-                // Stray closers (no matching opener) are silently ignored (REQ-FOLD2-06).
+                // Stray/interleaved closers are silently ignored (REQ-FOLD2-06).
             }
 
             EventKind::Comment => {
