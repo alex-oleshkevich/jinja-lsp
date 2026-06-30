@@ -45,6 +45,10 @@ pub struct ServerState {
     /// REQ-EXTR-08: additional workspace folders (folder 1..N).
     /// Each gets its own isolated WorkspaceIndex and config.
     pub extra_folders: Vec<FolderState>,
+    /// Persisted overlay from initializationOptions / didChangeConfiguration.
+    /// Re-applied on top of every file-based config reload so the editor's
+    /// settings always take precedence over jinja.toml (E15 §5.7).
+    pub init_overlay: Option<ConfigOverlay>,
 }
 
 impl ServerState {
@@ -63,6 +67,7 @@ impl ServerState {
             config_file_path: None,
             workspace_root: None,
             extra_folders: Vec::new(),
+            init_overlay: None,
         }
     }
 
@@ -80,15 +85,18 @@ impl ServerState {
             config_file_path: None,
             workspace_root: None,
             extra_folders: Vec::new(),
+            init_overlay: None,
         }
     }
 
     /// REQ-EDIT-10 / REQ-CFG-07: Apply an InitializationOptions overlay and validate.
+    /// Persists the overlay so it can be re-applied after config file reloads.
     /// Returns validation warnings on success, or an error for invalid config.
     pub fn apply_init_options(
         &mut self,
         overlay: ConfigOverlay,
     ) -> Result<Vec<ConfigWarning>, ConfigError> {
+        self.init_overlay = Some(overlay.clone());
         self.config.apply_overlay(overlay);
         self.registry = Self::build_registry(&self.config);
         self.config.validate()
@@ -99,6 +107,17 @@ impl ServerState {
     pub fn reset_config(&mut self, config: JinjaConfig) {
         self.registry = Self::build_registry(&config);
         self.config = config;
+    }
+
+    /// Replace the base config from a file reload, then re-apply the persisted overlay.
+    /// Use this instead of `reset_config` when reloading jinja.toml at runtime so that
+    /// the editor's initializationOptions always win (E15 §5.7).
+    pub fn reload_base_config(&mut self, base: JinjaConfig) {
+        self.config = base;
+        if let Some(overlay) = self.init_overlay.clone() {
+            self.config.apply_overlay(overlay);
+        }
+        self.registry = Self::build_registry(&self.config);
     }
 
     /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +

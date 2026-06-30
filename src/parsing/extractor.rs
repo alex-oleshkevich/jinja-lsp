@@ -879,13 +879,18 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
         }
     }
 
-    // Assemble FromImport entries
-    for (key, (source, span)) in source_map {
+    // Assemble FromImport entries in document order (sort by start_byte so
+    // W304 and similar checks always see imports in the order they appear in source).
+    let mut keys: Vec<usize> = source_map.keys().cloned().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let (source, span) = source_map.remove(&key).unwrap();
         let name_alias = names_map.remove(&key).unwrap_or_default();
-        let names: Vec<ImportedName> = name_alias
+        let mut names: Vec<ImportedName> = name_alias
             .into_iter()
             .map(|(name, (alias, name_span))| ImportedName { name, alias, name_span })
             .collect();
+        names.sort_unstable_by(|a, b| a.name_span.start_byte.cmp(&b.name_span.start_byte));
         idx.from_imports.push(FromImport { source: source.clone(), names, span: span.clone() });
         idx.template_refs.push(TemplateReference {
             kind: TemplateRefKind::From,

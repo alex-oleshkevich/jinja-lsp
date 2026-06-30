@@ -273,7 +273,7 @@ impl TomlConfig {
 
 /// REQ-CFG-11: mirrors the key set exactly; each field is optional so partial
 /// overlays only override the keys they mention.
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct ConfigOverlay {
     pub templates: Option<Vec<String>>,
     pub extensions: Option<Vec<String>>,
@@ -284,7 +284,7 @@ pub struct ConfigOverlay {
     pub lint: Option<LintOverlay>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct LintOverlay {
     pub select: Option<Vec<String>>,
     pub ignore: Option<Vec<String>>,

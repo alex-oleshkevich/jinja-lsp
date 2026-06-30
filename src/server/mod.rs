@@ -223,7 +223,7 @@ impl Backend {
             state.config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
             dirs = new_config.resolved_template_dirs(root_path);
             exts = new_config.extensions.clone();
-            state.reset_config(new_config);
+            state.reload_base_config(new_config);
         }
         let new_workspace = tokio::task::spawn_blocking(move || {
             let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();

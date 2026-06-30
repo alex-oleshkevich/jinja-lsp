@@ -408,7 +408,12 @@ fn is_descendant_of(descendant: &str, ancestor: &str, workspace: &WorkspaceIndex
             Some(e) => e.path.clone(),
             None => return false,
         };
-        // Resolve the relative extends ref to the workspace key for consistent comparison.
+        // Direct string match: handles the case where ancestor is not in the workspace
+        // (e.g., base template passed as index only, not indexed in workspace).
+        if extends_path == ancestor {
+            return true;
+        }
+        // Resolve to canonical workspace key for abs-key workspaces.
         let parent_key = match workspace.resolve_key(&extends_path) {
             Some(k) => k.to_owned(),
             None => return false,

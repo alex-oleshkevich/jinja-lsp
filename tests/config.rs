@@ -285,6 +285,52 @@ fn th0l_jinja_full_code_accepted() {
     assert!(cfg.validate().is_ok(), "JINJA-W203 must be valid");
 }
 
+// ─── jinja-lsp-o787: overlay survives config file reload ─────────────────────
+
+#[test]
+fn overlay_survives_reload_base_config() {
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Apply an overlay (simulating initializationOptions).
+    let overlay = ConfigOverlay {
+        extensions: Some(vec!["jinja2".to_owned()]),
+        ..Default::default()
+    };
+    state.apply_init_options(overlay).unwrap();
+    assert_eq!(state.config.extensions, vec!["jinja2"]);
+
+    // Now reload with a fresh file-based config (extensions = ["html"]).
+    let file_config = JinjaConfig { extensions: vec!["html".to_owned()], ..Default::default() };
+    state.reload_base_config(file_config);
+
+    // The overlay must win over the file config.
+    assert_eq!(state.config.extensions, vec!["jinja2"],
+        "overlay must survive reload_base_config");
+}
+
+#[test]
+fn absent_overlay_key_stays_file_value_after_reload() {
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Overlay that only overrides extras (not extensions).
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["starlette".to_owned()]),
+        ..Default::default()
+    };
+    state.apply_init_options(overlay).unwrap();
+
+    // Reload with a file that changes extensions but NOT extras.
+    let file_config = JinjaConfig { extensions: vec!["html".to_owned()], ..Default::default() };
+    state.reload_base_config(file_config);
+
+    assert_eq!(state.config.extensions, vec!["html"],
+        "file value must win for keys absent in overlay");
+    assert_eq!(state.config.extras, vec!["starlette"],
+        "overlay value must win for keys present in overlay");
+}
+
 // ─── ci5n: from_file loads config from an explicit path ──────────────────────
 
 #[test]
