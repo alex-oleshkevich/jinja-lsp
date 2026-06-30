@@ -234,6 +234,54 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
     if any_changed { 1 } else { 0 }
 }
 
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn vn6f_insertion_shows_correct_hunk() {
+        // A real unified diff should show the inserted line with + prefix and
+        // proper @@ hunk coordinates — NOT cascade every subsequent line as changed.
+        let original = "line1\nline2\nline3\n";
+        let formatted = "line1\nnew_line\nline2\nline3\n";
+        let out = capture_unified_diff(Path::new("t.html"), original, formatted);
+        assert!(out.contains("@@ -1,"), "must have hunk header");
+        assert!(out.contains("+new_line"), "inserted line must appear with +");
+        assert!(out.contains(" line2"), "unchanged line2 must appear as context");
+        assert!(out.contains(" line3"), "unchanged line3 must appear as context");
+        // The naive impl would have shown -line2, +new_line, -line3, +line2 — check that doesn't happen.
+        assert!(!out.contains("-line2\n+new_line"), "must not misalign existing lines as deletions");
+    }
+
+    #[test]
+    fn vn6f_deletion_shows_correct_hunk() {
+        let original = "line1\nline2\nline3\n";
+        let formatted = "line1\nline3\n";
+        let out = capture_unified_diff(Path::new("t.html"), original, formatted);
+        assert!(out.contains("-line2"), "deleted line must appear with -");
+        assert!(out.contains(" line3"), "unchanged line3 must appear as context, not as changed");
+    }
+
+    #[test]
+    fn vn6f_identical_files_produce_no_hunks() {
+        let src = "a\nb\nc\n";
+        let out = capture_unified_diff(Path::new("t.html"), src, src);
+        assert!(!out.contains("@@"), "identical files must produce no hunks");
+    }
+
+    #[test]
+    fn vn6f_diff_header_matches_spec() {
+        let out = capture_unified_diff(
+            Path::new("templates/blog/post.html"),
+            "{%if%}\n",
+            "{% if %}\n",
+        );
+        assert!(out.starts_with("--- templates/blog/post.html\n"), "--- header must match spec");
+        assert!(out.contains("+++ templates/blog/post.html (formatted)\n"), "+++ header must match spec");
+    }
+}
+
 fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
@@ -248,18 +296,65 @@ fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<st
     }
 }
 
+#[cfg(test)]
+fn capture_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -> String {
+    use similar::{ChangeTag, TextDiff};
+    let diff = TextDiff::from_lines(original, formatted);
+    let display = path.display();
+    let mut out = format!("--- {display}\n+++ {display} (formatted)\n");
+    for group in diff.grouped_ops(3) {
+        let first = group.first().unwrap();
+        let last = group.last().unwrap();
+        let old_range = first.old_range().start..last.old_range().end;
+        let new_range = first.new_range().start..last.new_range().end;
+        out.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            old_range.start + 1, old_range.len(),
+            new_range.start + 1, new_range.len(),
+        ));
+        for op in &group {
+            for change in diff.iter_changes(op) {
+                let prefix = match change.tag() {
+                    ChangeTag::Delete => '-',
+                    ChangeTag::Insert => '+',
+                    ChangeTag::Equal  => ' ',
+                };
+                out.push(prefix);
+                out.push_str(&change.to_string());
+                if change.missing_newline() { out.push('\n'); }
+            }
+        }
+    }
+    out
+}
+
 fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
-    println!("--- {}", path.display());
-    println!("+++ {}", path.display());
-    let orig_lines: Vec<&str> = original.split('\n').collect();
-    let fmt_lines: Vec<&str> = formatted.split('\n').collect();
-    let max = orig_lines.len().max(fmt_lines.len());
-    for i in 0..max {
-        let o = orig_lines.get(i).copied().unwrap_or("");
-        let f = fmt_lines.get(i).copied().unwrap_or("");
-        if o != f {
-            println!("-{o}");
-            println!("+{f}");
+    use similar::{ChangeTag, TextDiff};
+
+    let diff = TextDiff::from_lines(original, formatted);
+    let display = path.display();
+    println!("--- {display}");
+    println!("+++ {display} (formatted)");
+    for group in diff.grouped_ops(3) {
+        let first = group.first().unwrap();
+        let last = group.last().unwrap();
+        let old_range = first.old_range().start..last.old_range().end;
+        let new_range = first.new_range().start..last.new_range().end;
+        println!(
+            "@@ -{},{} +{},{} @@",
+            old_range.start + 1, old_range.len(),
+            new_range.start + 1, new_range.len(),
+        );
+        for op in &group {
+            for change in diff.iter_changes(op) {
+                let prefix = match change.tag() {
+                    ChangeTag::Delete => '-',
+                    ChangeTag::Insert => '+',
+                    ChangeTag::Equal  => ' ',
+                };
+                print!("{prefix}{change}");
+                if !change.missing_newline() { } else { println!(); }
+            }
         }
     }
 }

@@ -18,6 +18,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 tree-sitter-jinja = { git = "https://github.com/alex-oleshkevich/tree-sitter-jinja", rev = "e589222a1ad44361bc376d5abdccd08e1fecfee5" }
 tree-sitter-jinja-inline = { git = "https://github.com/alex-oleshkevich/tree-sitter-jinja", rev = "e589222a1ad44361bc376d5abdccd08e1fecfee5", package = "tree-sitter-jinja-inline" }
+similar = "2"
 
 [dev-dependencies]
 insta = "1"
