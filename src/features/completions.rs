@@ -450,6 +450,16 @@ fn keyword_item(name: &str) -> CompletionItem {
     }
 }
 
+fn self_block_item(block_name: &str) -> CompletionItem {
+    CompletionItem {
+        label: block_name.to_owned(),
+        kind: CompletionKind::Function,
+        detail: Some("block".to_owned()),
+        documentation: None,
+        data: None,
+    }
+}
+
 fn attr_item(attr: &str, parent: &str) -> CompletionItem {
     CompletionItem {
         label: attr.to_owned(),
@@ -609,6 +619,13 @@ pub fn complete(
 
         // REQ-CMP-03: attribute context → attrs for the receiver, or empty.
         CursorContext::Attribute { parent } => {
+            // REQ-CMP-10: `self.<block>()` — offer all block names defined in this template.
+            if parent == "self" {
+                let items: Vec<CompletionItem> = index.blocks.iter()
+                    .map(|b| self_block_item(&b.name))
+                    .collect();
+                return (items, false);
+            }
             let attrs = registry.attrs_for(&parent);
             if attrs.is_empty() {
                 return (vec![], false); // REQ-CMP-03: unknown receiver → no completions

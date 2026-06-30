@@ -504,6 +504,21 @@ fn n6su_resolve_doc_handles_attr_prefix() {
     assert!(doc.is_some(), "resolve_doc must handle 'attr:parent.attr' data keys");
 }
 
+// ─── jinja-lsp-7gxo: self. completes block names ─────────────────────────────
+
+#[test]
+fn cmp10_self_dot_offers_block_names_inside_block() {
+    // When inside a block, `{{ self. }}` should offer all block names in this template.
+    let src = "{% block content %}{{ self. }}{% endblock %}{% block sidebar %}{% endblock %}";
+    let idx = extract(src);
+    // position after "self." inside the block
+    let col = src.find("self.").unwrap() as u32 + "self.".len() as u32;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &WorkspaceIndex::default());
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"content"), "self. must offer 'content' block: {labels:?}");
+    assert!(labels.contains(&"sidebar"), "self. must offer 'sidebar' block: {labels:?}");
+}
+
 #[test]
 fn n6su_attr_item_data_key_is_resolvable() {
     // Attribute completions for "loop" must carry a data key that resolve_doc can handle.
