@@ -156,11 +156,70 @@ fn json_file_field_is_forward_slash() {
 #[test]
 fn compact_format_one_line_per_finding() {
     let tmp = tmpdir("compact");
-    // Create a template with a syntax error to generate a finding
-    fs::write(tmp.join("bad.html"), "{% block %}{% endblock %}").unwrap();
+    fs::write(tmp.join("bad.html"), "{{ undefined_var }}").unwrap();
     let (stdout, _, _) = check(&["--format", "compact", tmp.to_str().unwrap()]);
-    // Each finding is one line: "file:line:col: CODE slug message"
+    // Must produce at least one finding
+    assert!(!stdout.trim().is_empty(), "compact output must not be empty");
+    // Each line: "path:line:col: CODE slug: message" — no blank lines
     for line in stdout.lines() {
-        assert!(!line.is_empty(), "compact lines must not be empty");
+        assert!(!line.is_empty(), "compact must not emit blank lines");
+        // Verify structure: starts with a path and 1-based line:col
+        let parts: Vec<&str> = line.splitn(2, ": ").collect();
+        assert_eq!(parts.len(), 2, "each compact line must have ': ' separator: {line:?}");
+        let loc = parts[0]; // "path:line:col"
+        let loc_parts: Vec<&str> = loc.rsplitn(3, ':').collect();
+        assert_eq!(loc_parts.len(), 3, "location must be path:line:col: {line:?}");
+        let col: u32 = loc_parts[0].parse().expect("col must be numeric");
+        let linenum: u32 = loc_parts[1].parse().expect("line must be numeric");
+        assert!(linenum >= 1, "line must be 1-based: {line:?}");
+        assert!(col >= 1, "col must be 1-based: {line:?}");
+    }
+}
+
+// ---------- REQ-LINT-03 / T-30: slug in --select/--ignore → exit 2 ----------
+
+#[test]
+fn t30_slug_in_ignore_exits_2() {
+    // REQ-LINT-03: slugs must be rejected; only codes/prefixes are valid
+    let dir = starlette_templates();
+    let (stdout, stderr, code) = check(&["--ignore", "undefined-variable", dir.to_str().unwrap()]);
+    assert_eq!(code, 2, "slug in --ignore must exit 2, stdout={stdout:?} stderr={stderr:?}");
+    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+}
+
+#[test]
+fn t30_slug_in_select_exits_2() {
+    let dir = starlette_templates();
+    let (stdout, stderr, code) = check(&["--select", "unused-import", dir.to_str().unwrap()]);
+    assert_eq!(code, 2, "slug in --select must exit 2, stdout={stdout:?} stderr={stderr:?}");
+    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+}
+
+// ---------- REQ-LINT-08 / T-29: nonexistent PATH → exit 2 -------------------
+
+#[test]
+fn t29_nonexistent_path_exits_2() {
+    // REQ-LINT-08: bad PATH → exit 2, not 0
+    let (stdout, stderr, code) = check(&["./does-not-exist-jinjachecktest"]);
+    assert_eq!(code, 2, "missing path must exit 2, stdout={stdout:?} stderr={stderr:?}");
+    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+}
+
+// ---------- REQ-LINT-10 / T-04c: json file path is workspace-relative -------
+
+#[test]
+fn t04c_json_file_field_is_workspace_relative() {
+    // REQ-LINT-10: the 'file' field must be relative to the workspace root, not absolute
+    let tmp = tmpdir("relpath");
+    fs::write(tmp.join("t.html"), "{{ undefined_var }}").unwrap();
+    let (stdout, _, _) = check(&["--format", "json", tmp.to_str().unwrap()]);
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    assert!(!arr.is_empty(), "fixture must produce at least one finding");
+    for item in &arr {
+        let file = item["file"].as_str().unwrap();
+        assert!(!std::path::Path::new(file).is_absolute(),
+            "file field must be workspace-relative, not absolute: {file:?}");
+        // The only file in the fixture is t.html
+        assert_eq!(file, "t.html", "relative path must equal the filename: got {file:?}");
     }
 }

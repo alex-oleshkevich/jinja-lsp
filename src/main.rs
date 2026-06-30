@@ -74,6 +74,22 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     use jinja_lsp::diagnostics::filter_by_config;
     use jinja_lsp::workspace::build_workspace;
 
+    // REQ-LINT-03: reject slugs in --select/--ignore (must be codes or class prefixes)
+    for f in select.iter().chain(ignore.iter()) {
+        if !f.starts_with("JINJA-") {
+            eprintln!("error: invalid filter {f:?}: expected a diagnostic code or prefix (e.g. JINJA-E101, JINJA-W), not a slug");
+            return 2;
+        }
+    }
+
+    // REQ-LINT-08: validate all explicit paths exist before doing any work
+    for path_str in &paths {
+        if !Path::new(path_str).exists() {
+            eprintln!("error: path not found: {path_str}");
+            return 2;
+        }
+    }
+
     let cwd = std::env::current_dir().unwrap_or_default();
     // cfg_root is the directory that relative config paths (hints, templates) are resolved from.
     let (cfg, cfg_root) = match config_path {
@@ -124,6 +140,11 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
         paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
     };
 
+    // REQ-LINT-10: pre-canonicalize roots for path normalization
+    let roots_canon: Vec<std::path::PathBuf> = dirs.iter()
+        .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
+        .collect();
+
     let dir_refs: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
 
     // REQ-LINT-09: build_workspace is the shared engine (same as LSP server)
@@ -162,34 +183,55 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     let ign: Vec<&str> = effective_ignore.iter().map(|s| s.as_str()).collect();
     let filtered = filter_by_config(&all_diags, &sel, &ign);
 
-    // REQ-LINT-10: normalize paths (forward slashes)
-    let findings: Vec<Diagnostic> = filtered.into_iter().cloned().collect();
-
-    // REQ-LINT-07: order by file, line, col
-    let mut sorted = findings;
+    // REQ-LINT-07: order by file, line, col (sort on absolute paths for stable order)
+    let mut sorted: Vec<Diagnostic> = filtered.into_iter().cloned().collect();
     sorted.sort_by(|a, b| {
         a.file.cmp(&b.file)
             .then(a.line.cmp(&b.line))
             .then(a.col.cmp(&b.col))
     });
 
+    // REQ-LINT-10: normalize absolute file path to workspace-relative with forward slashes.
+    // For files outside all roots the absolute path is kept (as-is).
+    let normalize_path = |abs: &str| -> String {
+        let p = Path::new(abs);
+        for root in &roots_canon {
+            if let Ok(rel) = p.strip_prefix(root) {
+                return rel.to_string_lossy().replace('\\', "/");
+            }
+        }
+        abs.replace('\\', "/")
+    };
+
     // REQ-LINT-04/05/06: output format
     match format {
         "json" => {
-            // REQ-LINT-06/07: JSON array with 7-key shape
-            let json = serde_json::to_string_pretty(&sorted).expect("serialization must not fail");
+            // REQ-LINT-06/07: JSON array with 7-key shape, workspace-relative paths
+            let display: Vec<Diagnostic> = sorted.iter()
+                .map(|d| Diagnostic { file: normalize_path(&d.file), ..d.clone() })
+                .collect();
+            let json = serde_json::to_string_pretty(&display).expect("serialization must not fail");
             println!("{json}");
         }
         "compact" => {
-            // REQ-LINT-05: one line per finding
+            // REQ-LINT-05: one line per finding, 1-based line:col
             for d in &sorted {
-                println!("{}:{}:{}: {} {} {}", d.file, d.line, d.col, d.code, d.slug, d.message);
+                println!("{}:{}:{}: {} {}: {}",
+                    normalize_path(&d.file), d.line + 1, d.col + 1,
+                    d.code, d.slug, d.message);
             }
         }
         _ => {
             // REQ-LINT-04: rich rustc-style report
+            use std::io::IsTerminal;
+            let use_color = std::io::stdout().is_terminal()
+                && std::env::var_os("NO_COLOR").is_none();
             for d in &sorted {
-                print_rich_diagnostic(d);
+                let display_path = normalize_path(&d.file);
+                let source = std::fs::read_to_string(&d.file).unwrap_or_default();
+                let src_line = source.lines().nth(d.line as usize).unwrap_or("");
+                let display_d = Diagnostic { file: display_path, ..d.clone() };
+                print!("{}", format_rich_diagnostic_colored(&display_d, src_line, use_color));
             }
             if sorted.is_empty() {
                 println!("No problems found.");
@@ -485,16 +527,6 @@ fn format_rich_diagnostic_colored(
         out.push('\n');
     }
     out
-}
-
-/// REQ-LINT-04: print a rustc-style diagnostic block to stdout, with color when stdout is a TTY.
-fn print_rich_diagnostic(d: &jinja_lsp::diagnostic::Diagnostic) {
-    use std::io::IsTerminal;
-    let use_color = std::io::stdout().is_terminal()
-        && std::env::var_os("NO_COLOR").is_none();
-    let source = std::fs::read_to_string(&d.file).unwrap_or_default();
-    let src_line = source.lines().nth(d.line as usize).unwrap_or("");
-    print!("{}", format_rich_diagnostic_colored(d, src_line, use_color));
 }
 
 /// Testable no-color version for existing structural tests.
