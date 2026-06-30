@@ -70,7 +70,7 @@ async fn main() {
 fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select: &[String], ignore: &[String]) -> i32 {
     use std::path::Path;
     use jinja_lsp::config::JinjaConfig;
-    use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
+    use jinja_lsp::diagnostic::Diagnostic;
     use jinja_lsp::diagnostics::filter_by_config;
     use jinja_lsp::workspace::build_workspace;
 
@@ -138,14 +138,7 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
         _ => {
             // REQ-LINT-04: rich rustc-style report
             for d in &sorted {
-                let sev = match d.severity {
-                    DiagnosticSeverity::Error => "error",
-                    DiagnosticSeverity::Warning => "warning",
-                    DiagnosticSeverity::Info => "info",
-                    DiagnosticSeverity::Hint => "hint",
-                };
-                println!("{sev}[{}]: {}", d.code, d.message);
-                println!("  --> {}:{}:{}", d.file, d.line, d.col);
+                print_rich_diagnostic(d);
             }
             if sorted.is_empty() {
                 println!("No problems found.");
@@ -270,6 +263,49 @@ mod cli_tests {
         assert!(!out.contains("@@"), "identical files must produce no hunks");
     }
 
+    // REQ-LINT-04: rich format tests
+    fn make_diag(file: &str, line: u32, col: u32, code: &str, slug: &str, msg: &str) -> jinja_lsp::diagnostic::Diagnostic {
+        use jinja_lsp::diagnostic::DiagnosticSeverity;
+        jinja_lsp::diagnostic::Diagnostic {
+            file: file.to_owned(), line, col,
+            code: code.to_owned(), slug: slug.to_owned(),
+            severity: DiagnosticSeverity::Error,
+            message: msg.to_owned(),
+        }
+    }
+
+    #[test]
+    fn jl43_rich_header_matches_spec_format() {
+        let d = make_diag("blog/post.html", 3, 8, "JINJA-E101", "undefined-variable", "'post.titel' is not defined");
+        let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
+        assert!(out.starts_with("JINJA-E101 undefined-variable: 'post.titel' is not defined\n"), "header format must match spec");
+    }
+
+    #[test]
+    fn jl43_rich_location_line_is_1_based() {
+        let d = make_diag("blog/post.html", 3, 8, "JINJA-E101", "undefined-variable", "msg");
+        let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
+        // line 3 (0-based) → display line 4; col 8 (0-based) → display col 9
+        assert!(out.contains(" --> blog/post.html:4:9"), "line and col must be 1-based: {out}");
+    }
+
+    #[test]
+    fn jl43_rich_caret_underlines_word_at_col() {
+        // Source: "{{ post.titel }}", col=8 points at 'post.titel' (10 chars)
+        let d = make_diag("t.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
+        let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
+        // col=3 → after = "post.titel }}" → word = "post.titel" → 10 carets
+        assert!(out.contains("^^^^^^^^^^"), "caret must underline 'post.titel' (10 chars): {out}");
+    }
+
+    #[test]
+    fn jl43_rich_caret_minimum_one_when_at_non_word() {
+        let d = make_diag("t.html", 0, 2, "JINJA-E101", "undefined-variable", "msg");
+        // col=2 → char ' ' → word_len=0, clamped to 1
+        let out = format_rich_diagnostic_for_source(&d, "{{ x }}");
+        assert!(out.contains('^'), "must have at least one caret: {out}");
+    }
+
     #[test]
     fn vn6f_diff_header_matches_spec() {
         let out = capture_unified_diff(
@@ -279,6 +315,78 @@ mod cli_tests {
         );
         assert!(out.starts_with("--- templates/blog/post.html\n"), "--- header must match spec");
         assert!(out.contains("+++ templates/blog/post.html (formatted)\n"), "+++ header must match spec");
+    }
+}
+
+/// Testable version: returns the block as a String instead of printing.
+#[cfg(test)]
+fn format_rich_diagnostic_for_source(
+    d: &jinja_lsp::diagnostic::Diagnostic,
+    src_line: &str,
+) -> String {
+    let mut out = String::new();
+    let display_line = d.line + 1;
+    let display_col = d.col + 1;
+    out.push_str(&format!("{} {}: {}\n", d.code, d.slug, d.message));
+    out.push_str(&format!(" --> {}:{}:{}\n", d.file, display_line, display_col));
+    if !src_line.is_empty() {
+        let line_num = display_line.to_string();
+        let pad = " ".repeat(line_num.len());
+        out.push_str(&format!("{pad} |\n"));
+        out.push_str(&format!("{line_num} | {src_line}\n"));
+        let col = d.col as usize;
+        let after = src_line.get(col..).unwrap_or("");
+        let word_len = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+            .count()
+            .max(1);
+        let caret = "^".repeat(word_len);
+        let spaces = " ".repeat(col);
+        out.push_str(&format!("{pad} | {spaces}{caret}\n"));
+        out.push('\n');
+    }
+    out
+}
+
+/// REQ-LINT-04: rustc-style multi-line diagnostic block.
+///
+/// ```text
+/// JINJA-E101 undefined-variable: 'post.titel' is not defined
+///  --> blog/post.html:4:9
+///   |
+/// 4 | {{ post.titel }}
+///   |         ^^^^^
+/// ```
+fn print_rich_diagnostic(d: &jinja_lsp::diagnostic::Diagnostic) {
+    // Header: "CODE slug: message"
+    println!("{} {}: {}", d.code, d.slug, d.message);
+
+    // Location: 1-based for display
+    let display_line = d.line + 1;
+    let display_col = d.col + 1;
+    println!(" --> {}:{}:{}", d.file, display_line, display_col);
+
+    // Try to show source excerpt + caret underline.
+    let source = std::fs::read_to_string(&d.file).unwrap_or_default();
+    let src_line = source.lines().nth(d.line as usize).unwrap_or("");
+    if !src_line.is_empty() {
+        let line_num = display_line.to_string();
+        let pad = " ".repeat(line_num.len());
+        println!("{pad} |");
+        println!("{line_num} | {src_line}");
+        // Caret: scan forward from col to end of word (identifier chars + dot).
+        let col = d.col as usize;
+        let after = src_line.get(col..).unwrap_or("");
+        let word_len = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+            .count()
+            .max(1);
+        let caret = "^".repeat(word_len);
+        let spaces = " ".repeat(col);
+        println!("{pad} | {spaces}{caret}");
+        println!();
     }
 }
 
