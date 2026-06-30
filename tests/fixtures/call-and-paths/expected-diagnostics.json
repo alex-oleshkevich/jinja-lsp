@@ -1,0 +1,29 @@
+[
+  {
+    "file": "caller.html",
+    "line": 3,
+    "col": 3,
+    "code": "JINJA-E501",
+    "slug": "wrong-call-args",
+    "severity": "error",
+    "message": "'render_post': missing 1 required argument(s) (expected at least 1, got 0)"
+  },
+  {
+    "file": "caller.html",
+    "line": 6,
+    "col": 3,
+    "code": "JINJA-E501",
+    "slug": "wrong-call-args",
+    "severity": "error",
+    "message": "'render_tag': too many positional arguments (expected at most 1, got 2)"
+  },
+  {
+    "file": "caller.html",
+    "line": 9,
+    "col": 11,
+    "code": "JINJA-E601",
+    "slug": "template-does-not-exist",
+    "severity": "error",
+    "message": "template 'nonexistent.html' does not exist"
+  }
+]

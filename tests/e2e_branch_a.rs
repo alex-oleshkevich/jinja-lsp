@@ -49,8 +49,20 @@ fn run_check(fixture: &str) -> Vec<Diagnostic> {
         .unwrap_or_else(|e| panic!("failed to run {}: {e}", bin.display()));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("check output is not valid JSON: {e}\nraw: {stdout}"))
+    let raw: Vec<Diagnostic> = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("check output is not valid JSON: {e}\nraw: {stdout}"));
+
+    // Normalize absolute file paths to paths relative to the templates dir so
+    // golden files are portable across machines.
+    let dir_prefix = dir.to_string_lossy().into_owned() + "/";
+    raw.into_iter()
+        .map(|mut d| {
+            if d.file.starts_with(&dir_prefix) {
+                d.file = d.file[dir_prefix.len()..].to_owned();
+            }
+            d
+        })
+        .collect()
 }
 
 fn golden_file(fixture: &str) -> std::path::PathBuf {
@@ -164,3 +176,14 @@ fn starlette_blog_matches_golden() {
 #[test] fn corpus_e404() { check_or_update_corpus("e404"); }
 #[test] fn corpus_e501() { check_or_update_corpus("e501"); }
 #[test] fn corpus_e601() { check_or_update_corpus("e601"); }
+
+// ---------- REQ-TEST-01/02: named fixture corpus (jinja-lsp-r5o7) ───────────
+
+/// Parse-recovery fixtures — triggers E001 on intentionally broken templates.
+#[test] fn fixture_syntax_errors() { check_or_update("syntax-errors"); }
+/// Template-chain fixture — valid inheritance chain; golden file is empty.
+#[test] fn fixture_inheritance() { check_or_update("inheritance"); }
+/// Macro-call and template-path fixture — triggers E501, E601.
+#[test] fn fixture_call_and_paths() { check_or_update("call-and-paths"); }
+/// Config-reload fixture — valid templates with starlette extras; golden file is empty.
+#[test] fn fixture_config_reload() { check_or_update("config-reload"); }

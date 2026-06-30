@@ -1,0 +1,13 @@
+{% from "macros.html" import render_post, render_tag %}
+
+{# E501: wrong-call-args — render_post requires 'post', called with no args #}
+{{ render_post() }}
+
+{# E501: wrong-call-args — render_tag requires 'tag', called with too many positional args #}
+{{ render_tag("python", "extra") }}
+
+{# E601: template-does-not-exist — nonexistent.html does not exist #}
+{% include "nonexistent.html" %}
+
+{# include with ignore missing must NOT trigger E601 #}
+{% include "also_missing.html" ignore missing %}

@@ -1,0 +1,29 @@
+[
+  {
+    "file": "dangling_expr.html",
+    "line": 1,
+    "col": 0,
+    "code": "JINJA-E001",
+    "slug": "syntax-error",
+    "severity": "error",
+    "message": "syntax error"
+  },
+  {
+    "file": "unclosed_tag.html",
+    "line": 1,
+    "col": 0,
+    "code": "JINJA-E001",
+    "slug": "syntax-error",
+    "severity": "error",
+    "message": "syntax error"
+  },
+  {
+    "file": "unclosed_tag.html",
+    "line": 1,
+    "col": 7,
+    "code": "JINJA-W201",
+    "slug": "unused-variable",
+    "severity": "warning",
+    "message": "variable 'item' is assigned but never used"
+  }
+]
