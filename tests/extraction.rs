@@ -43,13 +43,27 @@ fn extraction_pipeline_indexes_all_constructs() {
 
 #[test]
 fn extraction_detects_syntax_errors() {
-    // Deliberately broken template — unclosed tag
+    // Deliberately malformed template — truncated tag delimiter produces an ERROR node.
+    // Tree-sitter's Jinja grammar marks "{%" without a closing "%}" as a syntax error.
+    let source = "{%";
+    let index = extract(source);
+    assert!(
+        !index.syntax_errors.is_empty(),
+        "extraction must record a syntax error for truncated '{{%%' delimiter"
+    );
+}
+
+#[test]
+fn extraction_does_not_panic_on_unclosed_tag() {
+    // Unclosed {% if %} may or may not produce a syntax_error node (grammar-dependent)
+    // but must not panic or lose data.
     let source = "{% if x %}{{ y }}";
     let index = extract(source);
-    // Parser produces an error node for the unclosed tag
+    // Must not panic and must at least extract the variable reference.
+    let ref_names: Vec<&str> = index.references.iter().map(|r| r.name.as_str()).collect();
     assert!(
-        !index.syntax_errors.is_empty() || !index.macros.is_empty() || index.syntax_errors.is_empty(),
-        "extraction must not panic on invalid input"
+        ref_names.contains(&"x") || ref_names.contains(&"y"),
+        "extractor must still index references even with unclosed tags: {ref_names:?}"
     );
 }
 
