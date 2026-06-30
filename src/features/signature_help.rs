@@ -124,9 +124,18 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
     let mut brace_depth: i32 = 0;
     let mut in_string = false;
     let mut string_char = '"';
+    let mut escaped = false;
 
     for (byte_pos, c) in inner.char_indices() {
         if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
             if c == string_char {
                 in_string = false;
             }

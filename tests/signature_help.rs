@@ -257,6 +257,25 @@ fn sig_gmy7_nested_call_shows_innermost_callee() {
 }
 
 #[test]
+fn sig_pgem_escaped_quote_does_not_miscount_commas() {
+    // {{ range("a\",b", }} — the \" inside the string must not close the string early.
+    // If it does, `b` becomes a bare token and `,` is miscounted as a top-level comma,
+    // producing comma_count=1 instead of 0 and showing param[1] instead of param[0].
+    let src = r#"{{ range("a\",b", }}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Cursor after the second comma (outside the string, after the string arg)
+    let col = src.rfind(',').unwrap() as u32 + 2;
+    let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert_eq!(
+        sh.active_parameter, Some(1),
+        "escaped quote in string must not miscount commas; expected Some(1) (after 1 real comma): {:?}",
+        sh.active_parameter
+    );
+}
+
+#[test]
 fn sig_gmy7_nested_call_active_param_is_local_to_inner() {
     // After `inner(2, `, comma_count inside inner is 1 → active_parameter = Some(1).
     let src = "{% macro inner(a, b) %}{% endmacro %}{{ range(1, inner(2, }}";
