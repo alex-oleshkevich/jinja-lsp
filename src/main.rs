@@ -385,24 +385,93 @@ mod cli_tests {
         assert!(out.starts_with("--- templates/blog/post.html\n"), "--- header must match spec");
         assert!(out.contains("+++ templates/blog/post.html (formatted)\n"), "+++ header must match spec");
     }
+
+    fn make_diag_with_sev(file: &str, line: u32, col: u32, code: &str, slug: &str, msg: &str, sev: jinja_lsp::diagnostic::DiagnosticSeverity) -> jinja_lsp::diagnostic::Diagnostic {
+        jinja_lsp::diagnostic::Diagnostic {
+            file: file.to_owned(), line, col,
+            code: code.to_owned(), slug: slug.to_owned(),
+            severity: sev,
+            message: msg.to_owned(),
+        }
+    }
+
+    // T-18/T-19: color=false must produce no ANSI escape codes
+    #[test]
+    fn t18_rich_no_color_produces_no_ansi_escapes() {
+        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
+        let out = format_rich_diagnostic_colored(&d, "{{ post.titel }}", false);
+        assert!(!out.contains(''), "color=false must produce no ANSI escapes: {:?}", out);
+    }
+
+    // T-17: color=true must produce ANSI escape codes for error (red)
+    #[test]
+    fn t17_rich_color_produces_ansi_escapes_for_error() {
+        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
+        let out = format_rich_diagnostic_colored(&d, "{{ post.titel }}", true);
+        assert!(out.contains(''), "color=true must produce ANSI escapes: {:?}", out);
+    }
+
+    // T-17: warning severity must use yellow ANSI color
+    #[test]
+    fn t17_rich_color_warning_uses_ansi() {
+        use jinja_lsp::diagnostic::DiagnosticSeverity;
+        let d = make_diag_with_sev("t.html", 0, 0, "JINJA-W203", "unused-import", "msg", DiagnosticSeverity::Warning);
+        let out = format_rich_diagnostic_colored(&d, "some line", true);
+        assert!(out.contains(''), "warning with color=true must have ANSI escapes: {:?}", out);
+    }
+
+    // T-18: no-color output must still contain code, slug, message
+    #[test]
+    fn t18_no_color_output_has_code_and_message() {
+        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "my message");
+        let out = format_rich_diagnostic_colored(&d, "line content", false);
+        assert!(out.contains("JINJA-E101"), "code must be present: {out}");
+        assert!(out.contains("undefined-variable"), "slug must be present: {out}");
+        assert!(out.contains("my message"), "message must be present: {out}");
+        assert!(!out.contains(''), "must not have ANSI escapes: {:?}", out);
+    }
 }
 
-/// Testable version: returns the block as a String instead of printing.
-#[cfg(test)]
-fn format_rich_diagnostic_for_source(
+/// REQ-LINT-04: rustc-style multi-line diagnostic block, with optional ANSI color.
+/// color=true: severity-colored code/caret, blue pipe/line-number; color=false: plain text.
+fn format_rich_diagnostic_colored(
     d: &jinja_lsp::diagnostic::Diagnostic,
     src_line: &str,
+    color: bool,
 ) -> String {
-    let mut out = String::new();
+    use jinja_lsp::diagnostic::DiagnosticSeverity;
+    use owo_colors::OwoColorize;
+
     let display_line = d.line + 1;
     let display_col = d.col + 1;
-    out.push_str(&format!("{} {}: {}\n", d.code, d.slug, d.message));
+
+    // Apply severity color to a string slice when color is enabled.
+    let sev_color = |s: &str| -> String {
+        if !color {
+            return s.to_owned();
+        }
+        match d.severity {
+            DiagnosticSeverity::Error   => s.red().bold().to_string(),
+            DiagnosticSeverity::Warning => s.yellow().bold().to_string(),
+            DiagnosticSeverity::Info    => s.cyan().bold().to_string(),
+            DiagnosticSeverity::Hint    => s.dimmed().to_string(),
+        }
+    };
+    let blue = |s: &str| -> String {
+        if color { s.blue().to_string() } else { s.to_owned() }
+    };
+    let msg_styled = if color { d.message.bold().to_string() } else { d.message.clone() };
+
+    let mut out = String::new();
+    out.push_str(&format!("{}: {}\n", sev_color(&format!("{} {}", d.code, d.slug)), msg_styled));
     out.push_str(&format!(" --> {}:{}:{}\n", d.file, display_line, display_col));
+
     if !src_line.is_empty() {
         let line_num = display_line.to_string();
         let pad = " ".repeat(line_num.len());
-        out.push_str(&format!("{pad} |\n"));
-        out.push_str(&format!("{line_num} | {src_line}\n"));
+        let pipe = blue("|");
+        out.push_str(&format!("{pad} {pipe}\n"));
+        out.push_str(&format!("{} {pipe} {src_line}\n", blue(&line_num)));
         let col = d.col as usize;
         let after = src_line.get(col..).unwrap_or("");
         let word_len = after
@@ -412,51 +481,29 @@ fn format_rich_diagnostic_for_source(
             .max(1);
         let caret = "^".repeat(word_len);
         let spaces = " ".repeat(col);
-        out.push_str(&format!("{pad} | {spaces}{caret}\n"));
+        out.push_str(&format!("{pad} {pipe} {spaces}{}\n", sev_color(&caret)));
         out.push('\n');
     }
     out
 }
 
-/// REQ-LINT-04: rustc-style multi-line diagnostic block.
-///
-/// ```text
-/// JINJA-E101 undefined-variable: 'post.titel' is not defined
-///  --> blog/post.html:4:9
-///   |
-/// 4 | {{ post.titel }}
-///   |         ^^^^^
-/// ```
+/// REQ-LINT-04: print a rustc-style diagnostic block to stdout, with color when stdout is a TTY.
 fn print_rich_diagnostic(d: &jinja_lsp::diagnostic::Diagnostic) {
-    // Header: "CODE slug: message"
-    println!("{} {}: {}", d.code, d.slug, d.message);
-
-    // Location: 1-based for display
-    let display_line = d.line + 1;
-    let display_col = d.col + 1;
-    println!(" --> {}:{}:{}", d.file, display_line, display_col);
-
-    // Try to show source excerpt + caret underline.
+    use std::io::IsTerminal;
+    let use_color = std::io::stdout().is_terminal()
+        && std::env::var_os("NO_COLOR").is_none();
     let source = std::fs::read_to_string(&d.file).unwrap_or_default();
     let src_line = source.lines().nth(d.line as usize).unwrap_or("");
-    if !src_line.is_empty() {
-        let line_num = display_line.to_string();
-        let pad = " ".repeat(line_num.len());
-        println!("{pad} |");
-        println!("{line_num} | {src_line}");
-        // Caret: scan forward from col to end of word (identifier chars + dot).
-        let col = d.col as usize;
-        let after = src_line.get(col..).unwrap_or("");
-        let word_len = after
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
-            .count()
-            .max(1);
-        let caret = "^".repeat(word_len);
-        let spaces = " ".repeat(col);
-        println!("{pad} | {spaces}{caret}");
-        println!();
-    }
+    print!("{}", format_rich_diagnostic_colored(d, src_line, use_color));
+}
+
+/// Testable no-color version for existing structural tests.
+#[cfg(test)]
+fn format_rich_diagnostic_for_source(
+    d: &jinja_lsp::diagnostic::Diagnostic,
+    src_line: &str,
+) -> String {
+    format_rich_diagnostic_colored(d, src_line, false)
 }
 
 fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
