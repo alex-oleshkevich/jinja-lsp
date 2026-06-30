@@ -694,7 +694,11 @@ fn delete_whole_line(line: u32) -> TextEdit {
 /// Example: `{% from "x.html" import a, b as bb %}` removing `bb`
 ///       →  `{% from "x.html" import a %}`
 fn remove_name_from_import_line(line: &str, name: &str) -> Option<String> {
-    let import_kw = line.find("import ")?;
+    // Skip past the quoted path to avoid matching "import " inside the path string.
+    let quote_char = line.chars().find(|&c| c == '"' || c == '\'')?;
+    let quote_start = line.find(quote_char)?;
+    let path_close = line[quote_start + 1..].find(quote_char)? + quote_start + 1;
+    let import_kw = line[path_close + 1..].find("import ")? + path_close + 1;
     let after_import = import_kw + "import ".len();
     let close = line.rfind("%}")?;
     let names_section = line[after_import..close].trim_end();

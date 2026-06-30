@@ -734,3 +734,38 @@ fn act07_t02_extract_macro_edit_replaces_selection_and_appends_definition() {
     assert!(edits[1].new_text.contains("macro"), "appended edit must contain macro definition");
     assert!(edits[1].new_text.contains("endmacro"), "appended edit must close macro");
 }
+
+// ─── jinja-lsp-gspz: remove_name_from_import_line must skip the quoted path ──
+
+#[test]
+fn gspz_import_keyword_inside_path_not_mistaken_for_import_keyword() {
+    // Path contains "import " substring — must not corrupt the rebuilt line.
+    let src = "{% from \"import helpers.html\" import a, b %}\n{{ a }}";
+    let idx = extract(src);
+    let diags = vec![w203(0, "b")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(
+        result,
+        "{% from \"import helpers.html\" import a %}\n{{ a }}",
+        "path containing 'import ' must be skipped when locating the import keyword"
+    );
+}
+
+#[test]
+fn gspz_remove_first_name_from_import_with_path_containing_import() {
+    // Removing "a" (not the last name) from a path that contains "import " —
+    // this exposes the bug where import_kw lands inside the quoted path.
+    let src = "{% from \"import helpers.html\" import a, b %}\n{{ b }}";
+    let idx = extract(src);
+    let diags = vec![w203(0, "a")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(
+        result,
+        "{% from \"import helpers.html\" import b %}\n{{ b }}",
+        "first name must be removed cleanly even with 'import ' in the path"
+    );
+}
