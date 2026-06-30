@@ -178,7 +178,8 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         let raw = run_checks(&source, &idx.path, idx, &registry, &workspace);
         let (kept, w107s) = suppress_by_noqa(&raw, &source);
         all_diags.extend(kept);
-        all_diags.extend(w107s);
+        // suppress_by_noqa produces W107s with file: "" — backfill the path here.
+        all_diags.extend(w107s.into_iter().map(|mut d| { d.file = idx.path.clone(); d }));
     }
     if verbose {
         eprintln!("info: checked {} template(s) in {:.2}s, {} raw finding(s)",

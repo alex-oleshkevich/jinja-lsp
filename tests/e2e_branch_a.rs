@@ -162,6 +162,7 @@ fn starlette_blog_matches_golden() {
 #[test] fn corpus_e103() { check_or_update_corpus("e103"); }
 #[test] fn corpus_e104() { check_or_update_corpus("e104"); }
 #[test] fn corpus_w106() { check_or_update_corpus("w106"); }
+#[test] fn corpus_w107() { check_or_update_corpus("w107"); }
 #[test] fn corpus_w201() { check_or_update_corpus("w201"); }
 #[test] fn corpus_w202() { check_or_update_corpus("w202"); }
 #[test] fn corpus_w203() { check_or_update_corpus("w203"); }

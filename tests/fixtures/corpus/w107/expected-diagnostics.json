@@ -1,0 +1,20 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 0,
+    "col": 0,
+    "code": "JINJA-W107",
+    "slug": "invalid-noqa",
+    "severity": "warning",
+    "message": "invalid noqa ID: 'JINJA-BOGUS'"
+  },
+  {
+    "file": "trigger.html",
+    "line": 0,
+    "col": 3,
+    "code": "JINJA-E101",
+    "slug": "undefined-variable",
+    "severity": "error",
+    "message": "'x' is not defined"
+  }
+]
