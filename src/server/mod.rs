@@ -154,6 +154,15 @@ impl Backend {
         self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
 
+    /// Re-publish diagnostics for every file currently tracked in `state.sources`.
+    /// Called after a config change so open files reflect new lint rules / registry.
+    async fn republish_all_diagnostics(&self) {
+        let keys: Vec<String> = self.state.read().await.sources.keys().cloned().collect();
+        for key in keys {
+            self.publish_file_diagnostics(&key).await;
+        }
+    }
+
     /// REQ-CFG-10: re-parse the config file and reload affected state.
     /// REQ-EXTR-08: detects which folder the config belongs to and reloads only that folder.
     #[tracing::instrument(skip(self), name = "config_reload")]
@@ -176,7 +185,9 @@ impl Backend {
             let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
                 Ok(pair) => pair,
                 Err(e) => {
-                    tracing::warn!("jinja-lsp: extra folder config reload error (retaining previous): {e}");
+                    let msg = format!("jinja-lsp: extra folder config reload error (previous retained): {e}");
+                    tracing::warn!("{msg}");
+                    self.client.show_message(MessageType::WARNING, msg).await;
                     return;
                 }
             };
@@ -198,6 +209,7 @@ impl Backend {
             .unwrap_or_default();
             self.state.write().await.extra_folders[ei].workspace = new_workspace;
             tracing::info!("jinja-lsp: extra folder config reloaded from {file_path}");
+            self.republish_all_diagnostics().await;
             return;
         }
 
@@ -211,8 +223,10 @@ impl Backend {
         let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
             Ok(pair) => pair,
             Err(e) => {
-                // REQ-CFG-10: invalid config on reload retains the previous config.
-                tracing::warn!("jinja-lsp: config reload parse error (retaining previous): {e}");
+                // REQ-CFG-10 / E15 §12.2: invalid config retains previous; user is notified.
+                let msg = format!("jinja-lsp: config reload error (previous config retained): {e}");
+                tracing::warn!("{msg}");
+                self.client.show_message(MessageType::WARNING, msg).await;
                 return;
             }
         };
@@ -234,6 +248,7 @@ impl Backend {
         .unwrap_or_default();
         self.state.write().await.workspace = new_workspace;
         tracing::info!("jinja-lsp: config reloaded from {file_path}");
+        self.republish_all_diagnostics().await;
     }
 
     /// Return true when `lang` identifies a Jinja template file (REQ-EDIT-11).
@@ -466,7 +481,8 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
-    /// REQ-EDIT-02: editor settings changes re-apply the config overlay.
+    /// REQ-EDIT-02 / REQ-CFG-11: editor settings changes re-apply the config overlay
+    /// and republish diagnostics so open files immediately reflect the new lint config.
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
         if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings) {
             match self.state.write().await.apply_init_options(overlay) {
@@ -477,6 +493,8 @@ impl LanguageServer for Backend {
                 }
                 Err(e) => tracing::error!("jinja-lsp config error: {e}"),
             }
+            // REQ-CFG-11: republish diagnostics so that lint-rule changes are immediately visible.
+            self.republish_all_diagnostics().await;
         }
     }
 
