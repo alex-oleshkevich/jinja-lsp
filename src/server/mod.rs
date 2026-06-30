@@ -236,24 +236,16 @@ impl Backend {
         tracing::info!("jinja-lsp: config reloaded from {file_path}");
     }
 
-    /// Return true when `lang`/`uri` identifies a Jinja template this server should index.
-    async fn is_jinja_file(&self, lang: &str, uri: &tower_lsp::lsp_types::Url) -> bool {
-        if lang == "jinja" || lang == "jinja-html" {
-            return true;
-        }
-        let exts = self.state.read().await.config.extensions.clone();
-        if exts.iter().any(|e| e == lang) {
-            return true;
-        }
-        let uri_path = uri.path();
-        if let Some(ext) = std::path::Path::new(uri_path).extension().and_then(|e| e.to_str()) {
-            let lower = ext.to_ascii_lowercase();
-            if exts.iter().any(|e| *e == lower) {
-                return true;
-            }
-        }
-        false
+    /// Return true when `lang` identifies a Jinja template file (REQ-EDIT-11).
+    async fn is_jinja_file(&self, lang: &str, _uri: &tower_lsp::lsp_types::Url) -> bool {
+        is_jinja_language_id(lang)
     }
+}
+
+/// REQ-EDIT-11: the two canonical languageIds the server accepts.
+/// Any other ID (html, jinja2, j2, …) is not a Jinja file from the server's perspective.
+pub fn is_jinja_language_id(lang: &str) -> bool {
+    lang == "jinja" || lang == "jinja-html"
 }
 
 #[tower_lsp::async_trait]
@@ -488,10 +480,7 @@ impl LanguageServer for Backend {
         }
     }
 
-    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers Pass 1 for Jinja files.
-    /// Accepts "jinja"/"jinja-html" language IDs, plus any language_id or URI
-    /// extension that matches the configured extensions list (handles "html",
-    /// "jinja2", "j2" which many editors report for .html template files).
+    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers Pass 1 only for "jinja"/"jinja-html" files.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         if !self.is_jinja_file(&params.text_document.language_id, &params.text_document.uri).await {
             return;

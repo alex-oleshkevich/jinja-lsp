@@ -76,15 +76,14 @@ fn lsp_subcommand_is_stdio_not_tcp() {
 
 #[test]
 fn canonical_language_ids_are_jinja_and_jinja_html() {
-    // The canonical languageIds the server recognises per REQ-EDIT-11.
-    let accepted = &["jinja", "jinja-html"];
-    let rejected = &["html", "htmldjango", "jinja2", "plaintext", ""];
+    // Calls the real predicate — not a tautology (REQ-EDIT-11).
+    use jinja_lsp::server::is_jinja_language_id;
 
-    for &id in accepted {
-        assert!(id == "jinja" || id == "jinja-html", "{id} must be canonical");
+    for &id in &["jinja", "jinja-html"] {
+        assert!(is_jinja_language_id(id), "{id} must be accepted by is_jinja_language_id");
     }
-    for &id in rejected {
-        assert!(id != "jinja" && id != "jinja-html", "{id} must NOT be canonical");
+    for &id in &["html", "htmldjango", "jinja2", "j2", "plaintext", ""] {
+        assert!(!is_jinja_language_id(id), "{id} must be rejected by is_jinja_language_id");
     }
 }
 
