@@ -255,3 +255,30 @@ fn t6g3l_invalid_format_value_exits_2() {
     assert!(stderr.contains("bogus") || stderr.contains("format"),
         "stderr must mention the invalid value or 'format': {stderr}");
 }
+
+// ---------- jinja-lsp-k2gk: --verbose emits INFO to stderr ------------------
+
+#[test]
+fn k2gk_verbose_flag_emits_discovery_info_to_stderr() {
+    // REQ-LINT-02: -v/--verbose must emit discovery counts to stderr.
+    let tmp = tmpdir("verbose_info");
+    fs::write(tmp.join("a.html"), "{{ x }}").unwrap();
+    fs::write(tmp.join("b.html"), "{{ y }}").unwrap();
+    let (_, stderr, code) = check(&["--verbose", tmp.to_str().unwrap()]);
+    assert!(code == 0 || code == 1, "exit code must be 0 or 1: {code}");
+    assert!(!stderr.is_empty(), "--verbose must emit something to stderr");
+    // Must mention template count or the word "discovered"/"template"/"file".
+    assert!(
+        stderr.contains("template") || stderr.contains("discover") || stderr.contains("2"),
+        "--verbose stderr must include discovery count: {stderr}"
+    );
+}
+
+#[test]
+fn k2gk_non_verbose_run_emits_nothing_to_stderr() {
+    // Without --verbose on a clean input, stderr must be silent.
+    let tmp = tmpdir("no_verbose_clean");
+    fs::write(tmp.join("a.html"), "{{ x }}").unwrap();
+    let (_, stderr, _) = check(&[tmp.to_str().unwrap()]);
+    assert!(stderr.is_empty(), "non-verbose run must not emit to stderr: {stderr}");
+}

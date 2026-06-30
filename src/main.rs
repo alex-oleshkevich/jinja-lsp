@@ -55,8 +55,8 @@ async fn main() {
             jinja_lsp::server::run_lsp_server().await;
             0
         }
-        Commands::Check { paths, format, verbose: _, config, select, ignore } => {
-            run_check(paths, &format, config.as_deref(), &select, &ignore)
+        Commands::Check { paths, format, verbose, config, select, ignore } => {
+            run_check(paths, &format, verbose, config.as_deref(), &select, &ignore)
         }
         Commands::Format { paths, config, check, diff } => {
             run_format(paths, config.as_deref(), check, diff)
@@ -67,7 +67,7 @@ async fn main() {
 
 /// REQ-LINT-01..11: check command implementation.
 /// Returns exit code: 0 = no findings, 1 = findings found, 2 = config/usage error.
-fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select: &[String], ignore: &[String]) -> i32 {
+fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Option<&str>, select: &[String], ignore: &[String]) -> i32 {
     use std::path::Path;
     use jinja_lsp::config::JinjaConfig;
     use jinja_lsp::diagnostic::Diagnostic;
@@ -148,7 +148,12 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     let dir_refs: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
 
     // REQ-LINT-09: build_workspace is the shared engine (same as LSP server)
+    let t0 = std::time::Instant::now();
     let workspace = build_workspace(&dir_refs, &ext_strs);
+    if verbose {
+        eprintln!("info: discovered {} template(s) in {:.2}s",
+            workspace.templates.len(), t0.elapsed().as_secs_f64());
+    }
 
     // REQ-LINT-09: run all per-file checks across every indexed template.
     use jinja_lsp::builtins::registry::Registry;
@@ -166,6 +171,7 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
         registry.load_hints_from_dir(&cfg_root.join(dir_str));
     }
 
+    let t1 = std::time::Instant::now();
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     for idx in workspace.templates.values() {
         let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
@@ -173,6 +179,10 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
         let (kept, w107s) = suppress_by_noqa(&raw, &source);
         all_diags.extend(kept);
         all_diags.extend(w107s);
+    }
+    if verbose {
+        eprintln!("info: checked {} template(s) in {:.2}s, {} raw finding(s)",
+            workspace.templates.len(), t1.elapsed().as_secs_f64(), all_diags.len());
     }
 
     // REQ-LINT-03: apply select/ignore filters (CLI overrides config; merge both)
