@@ -1073,10 +1073,22 @@ fn to_lsp_action(
 
     let edit = action.edit.map(|we| internal_workspace_edit_to_lsp(we, sources, utf8));
 
+    let diagnostics = if action.diagnostics.is_empty() {
+        None
+    } else {
+        let lsp_diags: Vec<LspDiagnostic> = action.diagnostics.iter()
+            .map(|d| {
+                let source = sources.get(&d.file).map(|s| s.as_str()).unwrap_or("");
+                to_lsp_diagnostic(source, utf8, d)
+            })
+            .collect();
+        Some(lsp_diags)
+    };
+
     CodeAction {
         title: action.title,
         kind,
-        diagnostics: None,
+        diagnostics,
         edit,
         command: None,
         is_preferred: Some(action.is_preferred),
@@ -1470,6 +1482,64 @@ mod server_tests {
         let data_utf16 = tokens_to_lsp_data(&tokens, src, false);
         assert_eq!(data_utf8[0].length, 5, "UTF-8 mode: length=5 (bytes)");
         assert_eq!(data_utf16[0].length, 5, "UTF-16 mode: ASCII length same as byte length");
+    }
+
+    // REQ-ACT-10: to_lsp_action must propagate diagnostics from internal action.
+    #[test]
+    fn oeph_to_lsp_action_propagates_diagnostics() {
+        use crate::features::code_actions::{
+            ActionKind, CodeAction as InternalAction,
+        };
+        use crate::diagnostic::{Diagnostic as InternalDiag, DiagnosticSeverity};
+        use std::collections::HashMap;
+
+        let src = "{{ content }}".to_owned();
+        let mut sources = HashMap::new();
+        sources.insert("t.html".to_owned(), src);
+
+        let diag = InternalDiag {
+            file: "t.html".to_owned(),
+            line: 0, col: 3,
+            code: "JINJA-W203".to_owned(),
+            slug: "unused-import".to_owned(),
+            severity: DiagnosticSeverity::Warning,
+            message: "unused import".to_owned(),
+        };
+
+        let action = InternalAction {
+            title: "Remove import".to_owned(),
+            kind: ActionKind::QuickFix,
+            diagnostics: vec![diag],
+            is_preferred: true,
+            edit: None,
+        };
+
+        let lsp = to_lsp_action(action, "t.html", &sources, true);
+        let linked = lsp.diagnostics.expect("diagnostics must be Some for a QuickFix");
+        assert_eq!(linked.len(), 1, "must carry one linked diagnostic");
+        assert_eq!(
+            linked[0].code,
+            Some(tower_lsp::lsp_types::NumberOrString::String("JINJA-W203".to_owned())),
+            "linked diagnostic code must match"
+        );
+    }
+
+    // REQ-ACT-10: refactor actions with no diagnostics must have diagnostics=None.
+    #[test]
+    fn oeph_to_lsp_action_refactor_has_no_diagnostics() {
+        use crate::features::code_actions::{ActionKind, CodeAction as InternalAction};
+        use std::collections::HashMap;
+
+        let action = InternalAction {
+            title: "Wrap in if".to_owned(),
+            kind: ActionKind::RefactorRewrite,
+            diagnostics: vec![],
+            is_preferred: false,
+            edit: None,
+        };
+
+        let lsp = to_lsp_action(action, "t.html", &HashMap::new(), true);
+        assert!(lsp.diagnostics.is_none(), "refactor actions must not carry diagnostics");
     }
 }
 
