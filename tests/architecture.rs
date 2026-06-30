@@ -105,3 +105,62 @@ fn tracing_subscriber_does_not_write_to_stdout() {
     let _ = jinja_lsp::server::init_tracing();
     // If this compiles, tracing is wired to stderr only.
 }
+
+// ---------- REQ-INLN-02 / REQ-EXTR-05: inline template wiring ---------------
+
+#[test]
+fn host_file_inline_regions_are_indexed() {
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(Default::default());
+    // Python host file with two embedded Jinja templates.
+    let py_src = r#"
+        a = render_template_string("{{ user.name }}")
+        b = render_template_string("{% for x in items %}{{ x }}{% endfor %}")
+    "#;
+    state.update_file("views.py", py_src);
+
+    // The host file itself must be in the workspace.
+    assert!(
+        state.workspace.templates.contains_key("views.py"),
+        "host file must be indexed as itself"
+    );
+    // Each inline region must produce a separate index entry.
+    let inline_keys: Vec<_> = state.workspace.templates.keys()
+        .filter(|k| k.starts_with("views.py::"))
+        .collect();
+    assert_eq!(inline_keys.len(), 2, "expected 2 inline entries; got: {inline_keys:?}");
+}
+
+#[test]
+fn host_file_inline_entries_cleared_on_update() {
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
+    assert_eq!(
+        state.workspace.templates.keys().filter(|k| k.starts_with("views.py::")).count(),
+        1,
+        "initial: 1 inline entry"
+    );
+    // Update to a version with no inline templates.
+    state.update_file("views.py", "# no jinja here");
+    assert_eq!(
+        state.workspace.templates.keys().filter(|k| k.starts_with("views.py::")).count(),
+        0,
+        "after update with no inline templates: stale entries must be removed"
+    );
+}
+
+#[test]
+fn jinja_template_file_does_not_trigger_inline_detection() {
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file("template.html", r#"render_template_string("{{ user }}")"#);
+    // .html is a Jinja extension → should NOT produce inline entries.
+    let inline_keys: Vec<_> = state.workspace.templates.keys()
+        .filter(|k| k.starts_with("template.html::"))
+        .collect();
+    assert!(inline_keys.is_empty(), "Jinja template must not produce inline entries; got: {inline_keys:?}");
+}

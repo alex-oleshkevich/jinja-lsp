@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::Path};
 use crate::{
     builtins::registry::Registry,
     config::{ConfigError, ConfigOverlay, ConfigWarning, JinjaConfig},
-    parsing::extract,
+    parsing::{extract, inline::detect_inline_regions},
     workspace::{build_workspace, index::WorkspaceIndex},
 };
 
@@ -102,11 +102,37 @@ impl ServerState {
 
     /// Pass 1 (REQ-ARCH-03): re-extract one file and atomically replace its
     /// TemplateIndex without touching any other entry.
+    ///
+    /// REQ-INLN-02/REQ-EXTR-05: if `key` is a host file (non-Jinja extension),
+    /// detect embedded Jinja templates and index each one as `key::<offset>`.
     pub fn update_file(&mut self, key: &str, source: &str) {
         let mut idx = extract(source);
         idx.path = key.to_owned();
         self.workspace.templates.insert(key.to_owned(), idx);
         self.sources.insert(key.to_owned(), source.to_owned());
+
+        // Remove stale inline entries from a previous version of this file.
+        let inline_prefix = format!("{key}::");
+        self.workspace.templates.retain(|k, _| !k.starts_with(&inline_prefix));
+
+        // For host files, detect embedded Jinja templates and index each one.
+        if self.is_host_file(key) {
+            let patterns: Vec<&str> = self.config.inline_patterns.iter().map(|s| s.as_str()).collect();
+            for region in detect_inline_regions(source, &patterns) {
+                let inline_key = format!("{key}::{}", region.host_offset);
+                self.workspace.index_inline(&inline_key, &region.content);
+            }
+        }
+
         self.generation += 1;
+    }
+
+    /// True when `key` has a file extension that is NOT in the configured Jinja extensions.
+    fn is_host_file(&self, key: &str) -> bool {
+        let ext = Path::new(key)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        !ext.is_empty() && !self.config.extensions.iter().any(|e| e == ext)
     }
 }
