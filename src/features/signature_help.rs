@@ -225,8 +225,8 @@ fn resolve_signature(
                 documentation: registry_param_doc(p),
             })
             .collect();
-        // The receiver fills param[0], so the first explicit arg maps to param[1].
-        let raw_active = comma_count + 1;
+        // Registry params do NOT include the implicit receiver — first explicit arg is index 0.
+        let raw_active = comma_count;
         let active = if raw_active < params.len() { Some(raw_active) } else { None };
         let label = build_label(callee, &params);
         return Some(SignatureHelp { label, params, active_parameter: active });

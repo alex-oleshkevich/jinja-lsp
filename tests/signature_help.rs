@@ -73,42 +73,38 @@ fn sig02_function_signature_from_registry() {
     assert!(!sh.params.is_empty(), "range must have params");
 }
 
-// ─── REQ-SIG-03: filter call — receiver is implicit param[0] ─────────────────
+// ─── REQ-SIG-03: filter call — receiver is NOT included in params ─────────────
 
 #[test]
-fn sig03_filter_call_active_param_offset() {
-    // In "{{ x | truncate(", the receiver x fills s (param[0]).
-    // So cursor is on the first explicit arg, which maps to param[1] (length).
-    let src = "{{ x | truncate( }}";
-    let idx = extract(src);
-    let reg = Registry::load_core();
-    let ws = WorkspaceIndex::default();
-    let col = src.find('(').unwrap() as u32 + 1;
-    let result = signature_help(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "filter call must return signature");
-    let sh = result.unwrap();
-    assert!(sh.label.contains("truncate"), "label must contain 'truncate'");
-    // active_parameter must be 1 (not 0), because param[0] = s (piped value)
-    assert_eq!(
-        sh.active_parameter,
-        Some(1),
-        "filter first explicit arg maps to param[1], got {:?}",
-        sh.active_parameter
-    );
-}
-
-#[test]
-fn sig03_filter_call_shows_all_params() {
+fn sig03_filter_call_first_explicit_arg_is_index_0() {
+    // The registry omits the implicit receiver — params start at the first explicit arg.
+    // For "{{ x | truncate(", comma_count=0, so active must be 0 (= length).
     let src = "{{ x | truncate( }}";
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let col = src.find('(').unwrap() as u32 + 1;
     let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
-    // truncate has params: s, length, killwords, end, leeway
-    assert!(sh.params.len() >= 2, "truncate must have at least s and length params");
+    assert!(sh.label.contains("truncate"), "label must contain 'truncate'");
+    assert_eq!(
+        sh.active_parameter, Some(0),
+        "filter first explicit arg is param[0] (receiver not in registry params): {:?}",
+        sh.active_parameter
+    );
+}
+
+#[test]
+fn sig03_filter_call_shows_explicit_params() {
+    // Registry params for truncate: [length, killwords, end, leeway] — no receiver.
+    let src = "{{ x | truncate( }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.find('(').unwrap() as u32 + 1;
+    let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert!(sh.params.len() >= 2, "truncate must have at least 2 params");
     let labels: Vec<&str> = sh.params.iter().map(|p| p.label.as_str()).collect();
-    assert!(labels.iter().any(|l| l.contains('s')), "must include 's' param: {labels:?}");
+    assert!(labels.iter().any(|l| l.contains("length")), "must include 'length' param: {labels:?}");
 }
 
 // ─── REQ-SIG-04: active parameter re-resolves across commas ──────────────────
@@ -167,15 +163,16 @@ fn sig04_past_last_param_shows_no_active() {
 }
 
 #[test]
-fn sig04_filter_comma_advances_with_offset() {
-    // truncate(60, <here>) with filter receiver → active=2 (0=s,1=60,2=<here>)
+fn sig04_filter_comma_advances_active_param() {
+    // truncate(60, <here>): comma_count=1 → active=1 (= killwords, the second explicit arg).
+    // Receiver is NOT in params, so no +1 offset.
     let src = "{{ x | truncate(60, }}";
     let idx = extract(src);
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let col = src.rfind(',').unwrap() as u32 + 2;
     let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
-    assert_eq!(sh.active_parameter, Some(2), "second explicit arg in filter call = param[2]");
+    assert_eq!(sh.active_parameter, Some(1), "second explicit arg in filter call = param[1] (killwords)");
 }
 
 // ─── REQ-SIG-05: response shape — active parameter index ─────────────────────
