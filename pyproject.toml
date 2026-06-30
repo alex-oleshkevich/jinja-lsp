@@ -1,0 +1,30 @@
+# REQ-REL-10: root pyproject.toml so maturin can build platform wheels for PyPI.
+# Distributes the jinja-lsp binary via PyPI so users can install it with pip.
+
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "jinja-lsp"
+version = "0.1.0"
+description = "Jinja2 template language server"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["jinja2", "lsp", "language-server", "templates"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Editors :: Integrated Development Environments (IDE)",
+]
+
+[tool.maturin]
+# Build as a pure binary distribution — the Rust binary is the product, not a Python extension module.
+binaries = ["jinja-lsp"]
+# Strip debug symbols in release builds to keep wheels small.
+strip = true

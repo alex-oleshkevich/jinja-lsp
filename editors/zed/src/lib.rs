@@ -1,8 +1,8 @@
-// REQ-EDIT-07/08/12: Zed extension crate for jinja-lsp.
+// REQ-EDIT-07/08/10/12: Zed extension crate for jinja-lsp.
 // Registers the tree-sitter-jinja grammar and the jinja-lsp language server.
 // Language-server id: jinja2-lsp, language: Jinja2 (HTML) — ported from legacy .zed/settings.json.
 
-use zed_extension_api::{self as zed, settings::LspSettings, Architecture, LanguageServerId, Os, Result};
+use zed_extension_api::{self as zed, settings::LspSettings, serde_json, Architecture, LanguageServerId, Os, Result};
 
 struct JinjaLspExtension;
 
@@ -48,6 +48,19 @@ impl zed::Extension for JinjaLspExtension {
             env: Default::default(),
         })
     }
+
+    /// REQ-EDIT-08/10: forward lsp.jinja2-lsp.initialization_options from Zed settings as
+    /// the server's InitializationOptions, overlaid on the config file per REQ-CFG-11.
+    fn language_server_initialization_options(
+        &mut self,
+        language_server_id: &LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> Result<Option<serde_json::Value>> {
+        let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
+            .ok()
+            .and_then(|s| s.initialization_options);
+        Ok(settings)
+    }
 }
 
 /// File name (in the extension working dir) where we cache the last installed version string.
@@ -86,7 +99,8 @@ fn download_release(language_server_id: &LanguageServerId) -> Result<String> {
         },
     )?;
 
-    let archive_name = format!("jinja-lsp-{target}.{archive_ext}");
+    // REQ-REL-05: archives are named jinja-lsp-vX.Y.Z-<target>.<ext> (version-prefixed).
+    let archive_name = format!("jinja-lsp-{}-{target}.{archive_ext}", release.version);
 
     let asset = release
         .assets
