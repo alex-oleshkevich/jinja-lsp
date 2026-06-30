@@ -1,4 +1,5 @@
 // REQ-FMT-08 / REQ-FMT-09: `jinja-lsp format` CLI integration tests.
+// 8nyl: --check must print "would reformat: path" per file and a summary line.
 
 use std::{fs, process::Command};
 
@@ -135,4 +136,62 @@ fn fmt08_t06_directory_formats_all_templates() {
     assert_eq!(fs::read_to_string(dir.join("b.jinja")).unwrap(), "{{ b }}\n");
     // .txt file should NOT have been touched
     assert_eq!(fs::read_to_string(dir.join("readme.txt")).unwrap(), "{{c}}\n");
+}
+
+// ─── 8nyl: --check prints per-file message and summary ───────────────────────
+
+#[test]
+fn fmt08_check_prints_would_reformat_per_file() {
+    let dir = scratchpad().join("8nyl_check");
+    fs::create_dir_all(&dir).ok();
+    let path = dir.join("tpl.html");
+    fs::write(&path, "{{x}}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .arg("format")
+        .arg("--check")
+        .arg(&path)
+        .output()
+        .expect("run format --check");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("would reformat:"), "--check must print 'would reformat: path': {stdout}");
+    assert!(stdout.contains("1 file would be reformatted"), "--check must print summary: {stdout}");
+}
+
+#[test]
+fn fmt08_check_summary_counts_unchanged() {
+    let dir = scratchpad().join("8nyl_unchanged");
+    fs::create_dir_all(&dir).ok();
+    fs::write(dir.join("changed.html"), "{{x}}\n").unwrap();
+    fs::write(dir.join("ok.html"), "{{ y }}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .arg("format")
+        .arg("--check")
+        .arg(&dir)
+        .output()
+        .expect("run format --check dir");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("1 unchanged"), "--check summary must count unchanged: {stdout}");
+    assert!(stdout.contains("1 file would be reformatted"), "--check must show changed count: {stdout}");
+}
+
+#[test]
+fn fmt08_diff_prints_summary_line() {
+    let dir = scratchpad().join("8nyl_diff");
+    fs::create_dir_all(&dir).ok();
+    let path = dir.join("tpl.html");
+    fs::write(&path, "{{x}}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .arg("format")
+        .arg("--diff")
+        .arg(&path)
+        .output()
+        .expect("run format --diff");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("1 file would be reformatted."), "--diff must print summary: {stdout}");
 }

@@ -194,7 +194,8 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
         }
     }
 
-    let mut any_changed = false;
+    let mut changed_count: usize = 0;
+    let mut unchanged_count: usize = 0;
 
     for path in &files {
         let source = match std::fs::read_to_string(path) {
@@ -207,10 +208,16 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
 
         let formatted = jinja_lsp::format::format(&source);
         if formatted == source {
+            unchanged_count += 1;
             continue;
         }
 
-        any_changed = true;
+        changed_count += 1;
+
+        if check {
+            // REQ-FMT-08: per-file "would reformat" line in --check mode.
+            println!("would reformat: {}", path.display());
+        }
 
         if diff {
             print_unified_diff(path, &source, &formatted);
@@ -224,7 +231,18 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
         }
     }
 
-    if any_changed { 1 } else { 0 }
+    // REQ-FMT-08: summary line for --check and --diff modes.
+    if check || diff {
+        let f = if changed_count == 1 { "file" } else { "files" };
+        if check {
+            println!("{changed_count} {f} would be reformatted, {unchanged_count} unchanged.");
+        } else {
+            // diff mode only shows changed count.
+            println!("{changed_count} {f} would be reformatted.");
+        }
+    }
+
+    if changed_count > 0 { 1 } else { 0 }
 }
 
 #[cfg(test)]
