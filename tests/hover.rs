@@ -603,3 +603,18 @@ fn vn0z_hover_mid_multibyte_char_does_not_panic() {
     let ws = WorkspaceIndex::default();
     let _result = hover(src, 0, 4, &idx, &reg, &ws); // byte 4 is mid-char (é = bytes 3-4)
 }
+
+#[test]
+fn hov02_filter_with_args_hover_returns_doc() {
+    // Filters called with arguments are captured as Function by treesitter.
+    // The hover fallback chain must also check Category::Filter so they get docs.
+    let src = "{{ x | truncate(60) }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.find("truncate").unwrap() as u32;
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "hover on truncate(60) must return documentation");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
+}

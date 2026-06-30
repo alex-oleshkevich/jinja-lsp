@@ -3,13 +3,10 @@
 These shared journeys exercise the E01 lifecycle and protocol conduct:
 capability negotiation, empty publish on clean open, and coalesced relinks.
 """
-import asyncio
-
 import pytest
-import pytest_lsp
 from lsprotocol import types as lsp
 
-from conftest import FIXTURES, client  # noqa: F401
+from conftest import FIXTURES
 
 
 @pytest.mark.asyncio
@@ -49,7 +46,7 @@ async def test_did_open_then_did_change_no_crash(client):
                     uri=uri, version=version
                 ),
                 content_changes=[
-                    lsp.TextDocumentContentChangeEvent_Type1(
+                    lsp.TextDocumentContentChangeWholeDocument(
                         text=source + f"<!-- v{version} -->"
                     )
                 ],

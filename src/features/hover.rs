@@ -57,9 +57,12 @@ pub fn hover(
             }
             // REQ-HOV-12: special objects (caller, super) may be captured as Function
             // but are registered as Variable — fall back to Variable when no Function entry.
+            // Also fall back to Filter: `truncate(60)` is captured as Function by the
+            // treesitter grammar when arguments are present, but lives in Category::Filter.
             ReferenceKind::Function => {
                 let entry = registry
                     .get(Category::Function, &r.name)
+                    .or_else(|| registry.get(Category::Filter, &r.name))
                     .or_else(|| registry.get(Category::Variable, &r.name));
                 entry.map(|e| {
                     let mut result = format_registry_card_with_span(e, None, &r.span);
