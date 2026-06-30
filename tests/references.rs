@@ -238,3 +238,34 @@ fn ref01_import_alias_namespace_usages_collected() {
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
     assert!(!results.is_empty(), "import alias usage must yield references: {results:?}");
 }
+
+// ─── REQ-REF-03 / jinja-lsp-tb4c: from-import usage resolves correct def span ─
+
+#[test]
+fn ref03_from_imported_macro_declaration_has_correct_span() {
+    // When cursor is on a from-imported macro USAGE, includeDeclaration=true must
+    // include the definition at the actual macro name location, NOT at 0:0.
+    let macro_src = "{% macro greet(name) %}hello{{ name }}{% endmacro %}";
+    let caller_src = r#"{% from "macros.html" import greet %}{{ greet( }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", macro_src);
+    ws.index_inline("caller.html", caller_src);
+
+    let caller_idx = extract(caller_src);
+    let reg = Registry::load_core();
+    // Cursor on "greet" usage in caller.html
+    let col = caller_src.rfind("greet").unwrap() as u32;
+    let results = find_references(caller_src, 0, col, "caller.html", true, &caller_idx, &reg, &ws);
+
+    // The declaration in macros.html must appear
+    let decl: Vec<_> = results.iter().filter(|r| r.path == "macros.html").collect();
+    assert!(!decl.is_empty(), "declaration in macros.html must be included: {results:?}");
+
+    // The declaration must NOT be at 0:0 (the bogus default span)
+    for d in &decl {
+        assert!(
+            d.start_col > 0 || d.start_line > 0,
+            "declaration must not be at 0:0 (bogus default span): {d:?}"
+        );
+    }
+}

@@ -46,7 +46,7 @@ pub fn find_references(
     let byte = line_col_to_byte(source, line, col);
 
     // Identify the symbol under the cursor.
-    let Some(symbol) = symbol_at(source, byte, current_path, index, registry) else {
+    let Some(symbol) = symbol_at(source, byte, current_path, index, registry, workspace) else {
         return vec![];
     };
 
@@ -169,6 +169,7 @@ fn symbol_at(
     current_path: &str,
     index: &TemplateIndex,
     registry: &Registry,
+    workspace: &WorkspaceIndex,
 ) -> Option<Symbol> {
     // Check references at cursor (span-based), picking the highest-priority kind.
     let candidate = index
@@ -178,7 +179,7 @@ fn symbol_at(
         .max_by_key(|r| kind_priority(r.kind));
 
     if let Some(r) = candidate {
-        return classify_reference(&r.name, current_path, index, registry);
+        return classify_reference(&r.name, current_path, index, registry, workspace);
     }
 
     // Check macro definition spans (cursor ON the definition itself).
@@ -231,6 +232,7 @@ fn classify_reference(
     current_path: &str,
     index: &TemplateIndex,
     registry: &Registry,
+    workspace: &WorkspaceIndex,
 ) -> Option<Symbol> {
     // Macro in current template.
     if let Some(m) = index.macros.iter().find(|m| m.name == name) {
@@ -243,11 +245,19 @@ fn classify_reference(
 
     // From-imported macro (including `import foo as bar` aliases).
     for fi in &index.from_imports {
-        if fi.names.iter().any(|n| n.name == name || n.alias.as_deref() == Some(name)) {
+        if let Some(imported) = fi.names.iter().find(|n| n.name == name || n.alias.as_deref() == Some(name)) {
+            // Look up the real macro span in the target template.
+            let original_name = &imported.name;
+            let def_span = workspace
+                .templates
+                .get(fi.source.as_str())
+                .and_then(|tmpl| tmpl.macros.iter().find(|m| &m.name == original_name))
+                .map(|m| m.span.clone())
+                .unwrap_or_default();
             return Some(Symbol::Macro {
                 name: name.to_owned(),
                 def_path: fi.source.clone(),
-                def_span: Span::default(),
+                def_span,
             });
         }
     }
