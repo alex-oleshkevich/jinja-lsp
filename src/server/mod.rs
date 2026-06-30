@@ -27,6 +27,7 @@ use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintDat
 use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resolve as code_lens_resolve_feature, CodeLensConfig, LensData, LensKind, LensSymbolKind};
 use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
 use crate::features::hover::hover as hover_feature;
+use crate::features::rename::{rename_at_cursor, compute_rename};
 use crate::features::formatting::{format_document, format_range};
 use crate::features::semantic_tokens::{
     semantic_tokens_full as stok_full,
@@ -313,6 +314,10 @@ impl LanguageServer for Backend {
                     commands: vec!["jinja-lsp.extract-macro".to_owned()],
                     ..Default::default()
                 }),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 document_range_formatting_provider: Some(OneOf::Left(true)),
                 // REQ-ARCH-06: watched-files registration (config + templates)
@@ -865,6 +870,60 @@ impl LanguageServer for Backend {
     async fn code_action_resolve(&self, params: CodeAction) -> Result<CodeAction> {
         // Our code actions ship with full edits on creation, so no lazy resolve is needed.
         Ok(params)
+    }
+
+    // REQ-ACT-11: prepareRename — check if cursor is on a renameable symbol.
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let pos = params.position;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some((_target, name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, &state.workspace)
+        else {
+            return Ok(None);
+        };
+        let line_text = source_line(source, pos.line);
+        let byte = byte_col as usize;
+        let col_start_byte = line_text[..byte.min(line_text.len())]
+            .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+            .map(|i| i + 1)
+            .unwrap_or(0) as u32;
+        let col_start = byte_col_to_lsp_char(line_text, col_start_byte, utf8);
+        let col_end = col_start + name.encode_utf16().count() as u32;
+        Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+            range: Range {
+                start: Position { line: pos.line, character: col_start },
+                end:   Position { line: pos.line, character: col_end },
+            },
+            placeholder: name,
+        }))
+    }
+
+    // REQ-ACT-11: rename — compute workspace-wide or local edits.
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let key = Self::uri_to_key(&params.text_document_position.text_document.uri);
+        let pos = params.text_document_position.position;
+        let new_name = &params.new_name;
+        let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some((target, old_name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, &state.workspace)
+        else {
+            return Ok(None);
+        };
+        let Some(we) = compute_rename(source, &key, &old_name, new_name, target, index, &state.workspace)
+        else {
+            return Ok(None);
+        };
+        Ok(Some(internal_workspace_edit_to_lsp(we, &state.sources, utf8)))
     }
 
     async fn prepare_call_hierarchy(
