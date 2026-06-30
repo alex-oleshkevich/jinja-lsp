@@ -77,6 +77,13 @@ jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
 /// Parse `source` once, run all 17 queries, merge captures into a fresh
 /// `TemplateIndex` (REQ-EXTR-03). Syntax errors (JINJA-E001) are recorded.
 pub fn extract(source: &str) -> TemplateIndex {
+    // REQ-CONV-04: span large-file parsing for observability; pass-1 fast path is unspanned.
+    let _large_file_span = if source.len() > 50_000 {
+        Some(tracing::info_span!("extract_large_file", bytes = source.len()).entered())
+    } else {
+        None
+    };
+
     let mut parser = Parser::new();
     if parser.set_language(&tree_sitter_jinja::language()).is_err() {
         return TemplateIndex::empty();

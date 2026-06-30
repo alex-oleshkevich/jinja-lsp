@@ -72,13 +72,16 @@ impl Backend {
     /// Pass 2 (REQ-ARCH-04 / REQ-EXTR-06): relink the workspace — build the
     /// import graph and assemble template chains.  Generation-guarded: if Pass 1
     /// runs while the blocking relink is in progress the stale result is discarded.
+    #[tracing::instrument(skip(self), name = "pass2_relink")]
     async fn pass2(&self) {
         let (gen_snapshot, workspace_snapshot) = {
             let state = self.state.read().await;
             (state.generation, state.workspace.clone())
         };
 
+        let span = tracing::info_span!("pass2_blocking_relink");
         let relinked = tokio::task::spawn_blocking(move || {
+            let _guard = span.enter();
             let mut ws = workspace_snapshot;
             ws.relink();
             ws
@@ -121,6 +124,7 @@ impl Backend {
     }
 
     /// REQ-CFG-10: re-parse the config file and reload affected state.
+    #[tracing::instrument(skip(self), name = "config_reload")]
     async fn reload_config_file(&self, file_path: &str) {
         let root = {
             let state = self.state.read().await;
