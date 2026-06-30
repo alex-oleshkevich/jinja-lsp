@@ -69,6 +69,9 @@ fn scan_events(source: &str) -> Vec<Event> {
     let bytes = source.as_bytes();
     let mut i = 0;
     let mut current_line: u32 = 0;
+    // REQ-FOLD2-01/§5.6: track whether we are inside a {% raw %}…{% endraw %} body.
+    // While in_raw, only {% endraw %} is processed; all other delimiters are skipped.
+    let mut in_raw = false;
 
     while i < bytes.len() {
         if i + 1 >= bytes.len() {
@@ -79,7 +82,31 @@ fn scan_events(source: &str) -> Vec<Event> {
             continue;
         }
 
-        if bytes[i] == b'{' && bytes[i + 1] == b'#' {
+        if bytes[i] == b'{' && bytes[i + 1] == b'%' {
+            if let Some(close_rel) = source[i + 2..].find("%}") {
+                let inner = &source[i + 2..i + 2 + close_rel];
+                let tag_end = i + 2 + close_rel + 2;
+                let sl = current_line;
+                let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
+                let keyword = inner.trim_matches('-').trim().split_whitespace().next().unwrap_or("");
+                if in_raw {
+                    // Inside raw body: only endraw exits raw mode; other tags are literal text.
+                    if keyword == "endraw" {
+                        in_raw = false;
+                        events.push(Event { kind: EventKind::BlockClose("raw".to_owned()), start_line: sl, end_line: el });
+                    }
+                } else {
+                    if keyword == "raw" {
+                        in_raw = true;
+                    }
+                    let kind = classify_statement(inner);
+                    events.push(Event { kind, start_line: sl, end_line: el });
+                }
+                current_line += count_newlines(&source[i..tag_end]);
+                i = tag_end;
+                continue;
+            }
+        } else if !in_raw && bytes[i] == b'{' && bytes[i + 1] == b'#' {
             if let Some(close_rel) = source[i + 2..].find("#}") {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
@@ -89,24 +116,12 @@ fn scan_events(source: &str) -> Vec<Event> {
                 i = tag_end;
                 continue;
             }
-        } else if bytes[i] == b'{' && bytes[i + 1] == b'{' {
+        } else if !in_raw && bytes[i] == b'{' && bytes[i + 1] == b'{' {
             if let Some(close_rel) = source[i + 2..].find("}}") {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
                 let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
                 events.push(Event { kind: EventKind::Tag, start_line: sl, end_line: el });
-                current_line += count_newlines(&source[i..tag_end]);
-                i = tag_end;
-                continue;
-            }
-        } else if bytes[i] == b'{' && bytes[i + 1] == b'%' {
-            if let Some(close_rel) = source[i + 2..].find("%}") {
-                let inner = &source[i + 2..i + 2 + close_rel];
-                let tag_end = i + 2 + close_rel + 2;
-                let sl = current_line;
-                let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
-                let kind = classify_statement(inner);
-                events.push(Event { kind, start_line: sl, end_line: el });
                 current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;

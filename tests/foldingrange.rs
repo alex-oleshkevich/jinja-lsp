@@ -197,3 +197,30 @@ fn fold06_unclosed_does_not_suppress_well_formed_pair() {
     assert!(block_fold.is_some(), "well-formed block/endblock pair must fold");
     assert!(for_fold.is_none(), "unclosed for must not fold");
 }
+
+// ─── REQ-FOLD2-01 / v08w: {% raw %} body tags must not produce folds ─────────
+
+#[test]
+fn fold01_raw_inner_multiline_tags_produce_no_nested_fold() {
+    // {% raw %} body spans lines 1..3; inner {% for %}…{% endfor %} span lines 2..4.
+    // Only the raw pair (lines 1..5) must fold — NOT the inner for/endfor.
+    // Lines: 0=before, 1=raw, 2=for, 3=content, 4=endfor, 5=endraw, 6=after
+    let src = "before\n{% raw %}\n{% for x in xs %}\n{{ x }}\n{% endfor %}\n{% endraw %}\nafter";
+    let ranges = fold_ranges(src);
+    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    assert_eq!(regions.len(), 1,
+        "only raw pair must fold; inner for/endfor must not produce a nested fold: {regions:?}");
+    assert_eq!(regions[0].start_line, 1, "raw fold starts on raw line");
+    assert_eq!(regions[0].end_line, 5, "raw fold ends on endraw line");
+}
+
+#[test]
+fn fold01_raw_folds_as_single_region_multiline() {
+    // Multiline raw block folds from opener to closer.
+    let src = "{% raw %}\nsome content\n{% endraw %}";
+    let ranges = fold_ranges(src);
+    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    assert_eq!(regions.len(), 1, "raw block must fold: {regions:?}");
+    assert_eq!(regions[0].start_line, 0);
+    assert_eq!(regions[0].end_line, 2);
+}
