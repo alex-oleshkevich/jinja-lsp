@@ -865,7 +865,7 @@ impl LanguageServer for Backend {
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
         let items = prepare_call_hierarchy(source, pos.line, byte_col, &key, index, &state.workspace, &state.registry);
         if items.is_empty() { return Ok(None); }
-        let result = items.iter().map(|i| internal_item_to_lsp(i, utf8)).collect();
+        let result = items.iter().map(|i| internal_item_to_lsp(i, &state.sources, utf8)).collect();
         Ok(Some(result))
     }
 
@@ -879,7 +879,7 @@ impl LanguageServer for Backend {
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
         let result = calls.iter().map(|c| CallHierarchyIncomingCall {
-            from: internal_item_to_lsp(&c.from, utf8),
+            from: internal_item_to_lsp(&c.from, &state.sources, utf8),
             from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
         }).collect();
         Ok(Some(result))
@@ -895,7 +895,7 @@ impl LanguageServer for Backend {
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
         let result = calls.iter().map(|c| CallHierarchyOutgoingCall {
-            to: internal_item_to_lsp(&c.to, utf8),
+            to: internal_item_to_lsp(&c.to, &state.sources, utf8),
             from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
         }).collect();
         Ok(Some(result))
@@ -1265,7 +1265,11 @@ fn ws_to_lsp_symbol(sym: &InternalWorkspaceSymbol, sources: &std::collections::H
     }
 }
 
-fn internal_item_to_lsp(item: &InternalCallHierarchyItem, utf8: bool) -> CallHierarchyItem {
+fn internal_item_to_lsp(
+    item: &InternalCallHierarchyItem,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> CallHierarchyItem {
     let kind = match item.kind {
         ItemKind::Function => SymbolKind::FUNCTION,
         ItemKind::Module => SymbolKind::MODULE,
@@ -1278,7 +1282,8 @@ fn internal_item_to_lsp(item: &InternalCallHierarchyItem, utf8: bool) -> CallHie
         "range": { "sl": item.range.start_line, "sc": item.range.start_col, "el": item.range.end_line, "ec": item.range.end_col },
         "sr": { "sl": item.selection_range.start_line, "sc": item.selection_range.start_col, "el": item.selection_range.end_line, "ec": item.selection_range.end_col },
     });
-    let _ = utf8;
+    let empty = String::new();
+    let src = sources.get(&item.uri).unwrap_or(&empty);
     CallHierarchyItem {
         name: item.name.clone(),
         kind,
@@ -1286,12 +1291,24 @@ fn internal_item_to_lsp(item: &InternalCallHierarchyItem, utf8: bool) -> CallHie
         detail: Some(item.detail.clone()),
         uri: path_to_uri(&item.uri),
         range: Range {
-            start: Position { line: item.range.start_line, character: item.range.start_col },
-            end: Position { line: item.range.end_line, character: item.range.end_col },
+            start: Position {
+                line: item.range.start_line,
+                character: byte_col_to_lsp_char(source_line(src, item.range.start_line), item.range.start_col, utf8),
+            },
+            end: Position {
+                line: item.range.end_line,
+                character: byte_col_to_lsp_char(source_line(src, item.range.end_line), item.range.end_col, utf8),
+            },
         },
         selection_range: Range {
-            start: Position { line: item.selection_range.start_line, character: item.selection_range.start_col },
-            end: Position { line: item.selection_range.end_line, character: item.selection_range.end_col },
+            start: Position {
+                line: item.selection_range.start_line,
+                character: byte_col_to_lsp_char(source_line(src, item.selection_range.start_line), item.selection_range.start_col, utf8),
+            },
+            end: Position {
+                line: item.selection_range.end_line,
+                character: byte_col_to_lsp_char(source_line(src, item.selection_range.end_line), item.selection_range.end_col, utf8),
+            },
         },
         data: Some(data),
     }
