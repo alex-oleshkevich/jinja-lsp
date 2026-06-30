@@ -17,7 +17,7 @@ fn act11_t01_local_variable_rename_offered() {
     assert!(result.is_some(), "expected rename to be offered");
     let (target, name) = result.unwrap();
     assert_eq!(name, "count");
-    assert!(matches!(target, RenameTarget::Local));
+    assert!(matches!(target, RenameTarget::Local { .. }));
 }
 
 // ─── T-02: cursor on whitespace → no rename ───────────────────────────────────
@@ -31,7 +31,7 @@ fn act11_t02_no_rename_on_non_symbol() {
     // Cursor on `=` or whitespace
     let result = rename_at_cursor(source, "/tpl.html", 0, 10, &idx, &ws);
     // col 10 is the `=` or spaces — no symbol there
-    assert!(result.is_none() || result.map(|(t, _)| matches!(t, RenameTarget::Local)).unwrap_or(true));
+    assert!(result.is_none() || result.map(|(t, _)| matches!(t, RenameTarget::Local { .. })).unwrap_or(true));
 }
 
 // ─── T-03: compute_rename produces edits for all occurrences ──────────────────
@@ -44,11 +44,12 @@ fn act11_t03_compute_rename_replaces_all_occurrences() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "count", "total", RenameTarget::Local, &idx, &ws);
+    let edit = compute_rename(source, "/tpl.html", "count", "total", RenameTarget::Local { scope: None }, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
-    // There should be edits for `count` in set and both {{ count }} uses.
+    // Both {{ count }} usages must be renamed. The binding site in {% set %} is
+    // a VariableDefinition, not a reference, and is a known pre-existing gap.
     assert!(file_edits.len() >= 2, "expected at least 2 edits, got {}", file_edits.len());
     for e in file_edits {
         assert_eq!(e.new_text, "total");
@@ -183,6 +184,55 @@ fn act11_t08b_endblock_without_trailing_name_still_renames() {
     let body_edits: Vec<_> = file_edits.iter().filter(|e| e.new_text == "body").collect();
     // Only 1 edit: the opening block name
     assert_eq!(body_edits.len(), 1, "expected exactly 1 edit (no endblock trailing name), got: {file_edits:?}");
+}
+
+// ─── jinja-lsp-xe8r: local rename respects valid_range scope ─────────────────
+
+#[test]
+fn act11_local_rename_scope_bounded_by_valid_range() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // Two bindings named "item": for-loop variable (restricted scope) + set (whole file).
+    let source = "{% for item in xs %}{{ item }}{% endfor %}{% set item = 2 %}{{ item }}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    // Find the for-loop's "item" binding's valid_range.
+    let for_binding = idx.variables.iter()
+        .find(|v| v.name == "item" && v.valid_range.end_byte < source.len())
+        .expect("expected for-loop binding");
+    let scope = for_binding.valid_range.clone();
+
+    let edit = compute_rename(
+        source, "t.html", "item", "x",
+        RenameTarget::Local { scope: Some(scope) },
+        &idx, &ws,
+    );
+    let we = edit.expect("expected edit");
+    let edits = we.changes.get("t.html").expect("expected file edits");
+    // All edits must fall within the for-loop scope (before "{% set item %}").
+    let set_pos = source.find("{% set item").unwrap() as u32;
+    for e in edits {
+        let edit_byte = e.start_col; // col on line 0 = byte offset (single-line source)
+        assert!(edit_byte < set_pos,
+            "edit at col {edit_byte} is outside for-loop scope (set at col {set_pos}): {edits:?}");
+    }
+}
+
+#[test]
+fn act11_local_rename_whole_file_when_no_scope() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // No scope constraint: rename all occurrences across the whole template.
+    let source = "{% set count = 1 %}{{ count }} and {{ count }}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "t.html", "count", "total",
+        RenameTarget::Local { scope: None }, &idx, &ws);
+    let we = edit.expect("expected edit");
+    let edits = we.changes.get("t.html").expect("expected file edits");
+    assert!(edits.len() >= 2, "expected at least 2 edits without scope: {edits:?}");
 }
 
 #[test]

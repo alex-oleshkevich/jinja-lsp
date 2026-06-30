@@ -40,7 +40,7 @@ fn rename_local_variable_via_state() {
     assert!(result.is_some(), "rename must be offered on local variable");
     let (target, name) = result.unwrap();
     assert_eq!(name, "count");
-    assert_eq!(target, RenameTarget::Local);
+    assert!(matches!(target, RenameTarget::Local { .. }));
 
     let edit = compute_rename(source, "t.html", "count", "total", target, index, &state.workspace);
     assert!(edit.is_some(), "compute_rename must return edits");

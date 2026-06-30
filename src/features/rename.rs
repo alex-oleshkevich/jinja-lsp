@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::edit::{TextEdit, WorkspaceEdit};
 use crate::workspace::{
     index::{TemplateIndex, WorkspaceIndex},
-    symbols::ReferenceKind,
+    symbols::{ReferenceKind, Span},
 };
 
 pub fn layer_name() -> &'static str {
@@ -16,7 +16,9 @@ pub fn layer_name() -> &'static str {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenameTarget {
     /// A local variable, parameter, or binding — rename within this template only.
-    Local,
+    /// `scope`: `Some(valid_range)` constrains edits to references within that range;
+    /// `None` renames all occurrences in the file (backward-compatible).
+    Local { scope: Option<Span> },
     /// A macro or block definition — rename across the whole workspace.
     Workspace,
 }
@@ -65,7 +67,8 @@ pub fn rename_at_cursor(
 
     if let Some(r) = ref_ {
         if r.kind == ReferenceKind::Identifier {
-            return Some((RenameTarget::Local, r.name.clone()));
+            let scope = tightest_scope_for(&r.name, byte, index);
+            return Some((RenameTarget::Local { scope }, r.name.clone()));
         }
     }
 
@@ -73,11 +76,26 @@ pub fn rename_at_cursor(
     if in_jinja {
         let word = super::word_at_byte(source, byte);
         if index.variables.iter().any(|v| v.name == word) {
-            return Some((RenameTarget::Local, word.to_owned()));
+            let scope = tightest_scope_for(word, byte, index);
+            return Some((RenameTarget::Local { scope }, word.to_owned()));
         }
     }
 
     None
+}
+
+/// Find the narrowest (smallest valid_range) VariableDefinition binding
+/// whose name == `name` and whose valid_range contains `byte`.
+fn tightest_scope_for(name: &str, byte: usize, index: &TemplateIndex) -> Option<Span> {
+    index.variables.iter()
+        .filter(|v| {
+            v.name == name
+                && v.valid_range.start_byte < v.valid_range.end_byte
+                && v.valid_range.start_byte <= byte
+                && byte <= v.valid_range.end_byte
+        })
+        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+        .map(|v| v.valid_range.clone())
 }
 
 /// Compute the WorkspaceEdit for renaming `old_name` → `new_name`.
@@ -96,8 +114,8 @@ pub fn compute_rename(
     let mut changes: HashMap<String, Vec<TextEdit>> = HashMap::new();
 
     match target {
-        RenameTarget::Local => {
-            let edits = rename_in_index(old_name, new_name, index);
+        RenameTarget::Local { scope } => {
+            let edits = rename_in_index_scoped(old_name, new_name, index, scope.as_ref());
             if !edits.is_empty() {
                 changes.insert(file.to_owned(), edits);
             }
@@ -139,6 +157,37 @@ fn line_col_to_byte(source: &str, line: u32, col: u32) -> Option<usize> {
         .sum();
     let byte = line_start + col as usize;
     if byte <= source.len() { Some(byte) } else { None }
+}
+
+/// Scoped version: only renames identifier references whose start_byte falls within `scope`.
+/// Macro/block definitions and from-import names are always included (scope does not apply to them
+/// because local-rename callers only match local variables, which appear as identifier references).
+fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex, scope: Option<&Span>) -> Vec<TextEdit> {
+    let in_scope = |ref_span: &Span| -> bool {
+        match scope {
+            None => true,
+            Some(vr) => ref_span.start_byte >= vr.start_byte && ref_span.start_byte <= vr.end_byte,
+        }
+    };
+
+    let mut edits: Vec<TextEdit> = Vec::new();
+
+    // For identifier references, apply the scope filter.
+    for r in &index.references {
+        if r.name == old_name && r.kind == ReferenceKind::Identifier && in_scope(&r.span) {
+            edits.push(TextEdit {
+                start_line: r.span.start_line,
+                start_col: r.span.start_col,
+                end_line: r.span.start_line,
+                end_col: r.span.start_col + old_name.len() as u32,
+                new_text: new_name.to_owned(),
+            });
+        }
+    }
+
+    edits.sort_by_key(|e| (e.start_line, e.start_col));
+    edits.dedup_by_key(|e| (e.start_line, e.start_col));
+    edits
 }
 
 /// Collect TextEdits for all occurrences of `old_name` as an identifier in `index`.
