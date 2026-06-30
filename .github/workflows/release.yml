@@ -1,5 +1,6 @@
-# REQ-REL-05/06/09/11/13/14: Release workflow — cross-compile, sign, publish.
+# REQ-REL-05/06/08/09/11/13/14: Release workflow — cross-compile, sign, publish.
 # Triggered by a semver tag (e.g. v0.2.0). REQ-REL-09: fails if tag != Cargo.toml version.
+# REQ-REL-08: fails if CHANGELOG.md has no dated entry for the tag version.
 
 name: Release
 
@@ -34,10 +35,28 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
 
+  # REQ-REL-08: CHANGELOG release gate — abort if tag version has no dated section.
+  changelog-gate:
+    name: CHANGELOG has dated section for ${{ github.ref_name }}
+    needs: version-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify CHANGELOG entry
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          # Accept lines like: ## [0.2.0] - 2026-06-30  or  ## 0.2.0 - 2026-06-30
+          if ! grep -qE "^## \[?${TAG}\]? - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+            echo "CHANGELOG.md has no dated entry for version ${TAG}. Aborting release."
+            exit 1
+          fi
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
   # REQ-REL-05: four cross-compiled targets.
   build:
     name: Build (${{ matrix.target }})
-    needs: version-gate
+    needs: changelog-gate
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -76,11 +95,12 @@ jobs:
         if: "!matrix.use_cross"
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      # REQ-REL-05: version-prefixed archive name: jinja-lsp-vX.Y.Z-<target>.tar.gz
       - name: Package (Linux/macOS)
         if: matrix.archive_ext == 'tar.gz'
         run: |
           BINARY=target/${{ matrix.target }}/release/jinja-lsp
-          ARCHIVE=jinja-lsp-${{ matrix.target }}.tar.gz
+          ARCHIVE=jinja-lsp-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
           tar czf "$ARCHIVE" -C "$(dirname $BINARY)" "$(basename $BINARY)"
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
@@ -90,7 +110,7 @@ jobs:
         shell: pwsh
         run: |
           $BINARY = "target\${{ matrix.target }}\release\jinja-lsp.exe"
-          $ARCHIVE = "jinja-lsp-${{ matrix.target }}.zip"
+          $ARCHIVE = "jinja-lsp-${{ github.ref_name }}-${{ matrix.target }}.zip"
           Compress-Archive -Path $BINARY -DestinationPath $ARCHIVE
           $hash = (Get-FileHash $ARCHIVE -Algorithm SHA256).Hash.ToLower()
           "$hash  $ARCHIVE" | Out-File -Encoding ASCII "$ARCHIVE.sha256"
@@ -111,9 +131,10 @@ jobs:
             ${{ env.ARCHIVE }}.sha256
 
   # REQ-REL-10: platform wheels via maturin.
+  # REQ-REL-14: wheels must depend on build so a binary build failure aborts wheel builds early.
   wheels:
     name: PyPI wheels
-    needs: version-gate
+    needs: [changelog-gate, build]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -185,3 +206,15 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+      # REQ-REL-14: 4) VS Code Marketplace.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Publish to VS Code Marketplace
+        working-directory: editors/vscode
+        run: |
+          npm ci
+          npx vsce publish --no-dependencies
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
