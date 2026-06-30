@@ -111,6 +111,9 @@ Every interactive LSP feature is exactly one module under `src/features/`, named
 | `code_lens` | [F15](../features/F15-code-lens.md) |
 | `call_hierarchy` | [F16](../features/F16-call-hierarchy.md) |
 | `code_actions` | [F17](../features/F17-code-actions.md) |
+| `extract_macro` | [F17](../features/F17-code-actions.md) — extract-macro refactor action |
+| `rename` | [F17](../features/F17-code-actions.md) — workspace-wide rename refactor action |
+| `wrap` | [F17](../features/F17-code-actions.md) — wrap-in-block refactor action |
 | `formatting` | [F18](../features/F18-formatting.md) |
 
 ### 5.4 The edit and format layers
