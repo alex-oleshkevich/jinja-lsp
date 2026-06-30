@@ -1,0 +1,11 @@
+[
+  {
+    "file": "child.html",
+    "line": 2,
+    "col": 7,
+    "code": "JINJA-W402",
+    "slug": "unreachable-content",
+    "severity": "warning",
+    "message": "'outside' is outside any block and will not render in this extends template"
+  }
+]

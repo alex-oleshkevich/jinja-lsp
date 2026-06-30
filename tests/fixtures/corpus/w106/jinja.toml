@@ -1,0 +1,4 @@
+hints = ["hints"]
+
+[lint]
+select = ["JINJA-W106"]

@@ -88,6 +88,12 @@ fn check_e101(
         if r.kind != ReferenceKind::Identifier {
             continue;
         }
+        // Multi-level attribute chains (e.g. `request.user` from `{{ request.user.name }}`)
+        // are captured as @object with the intermediate path as the name.  They are not
+        // bare variable references and must not trigger E101.
+        if r.name.contains('.') {
+            continue;
+        }
         // Local variable in scope — resolve_reference handles valid_range containment.
         if !matches!(index.resolve_reference(r, workspace), ResolvedBinding::HostOwned) {
             continue;
@@ -99,6 +105,16 @@ fn check_e101(
         }
         // Jinja2 built-in global variable (loop, caller, varargs, …).
         if registry.get(Category::Variable, name).is_some() {
+            continue;
+        }
+        // Macro parameter in scope — parameters bind within the macro body.
+        let in_macro_param = index.macros.iter().any(|m| {
+            m.body.start_byte < m.body.end_byte
+                && m.body.start_byte <= r.span.start_byte
+                && r.span.end_byte <= m.body.end_byte
+                && m.parameters.iter().any(|p| p.name == name)
+        });
+        if in_macro_param {
             continue;
         }
         // REQ-HINT-04: hinted context_variable suppresses, respecting template scope.

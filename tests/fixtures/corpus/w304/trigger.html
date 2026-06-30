@@ -1,0 +1,4 @@
+{# JINJA-W304: duplicate from-import #}
+{% from "macros.html" import greet %}
+{% from "macros.html" import greet %}
+{{ greet() }}

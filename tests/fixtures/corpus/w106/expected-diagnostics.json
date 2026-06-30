@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 8,
+    "code": "JINJA-W106",
+    "slug": "unknown-attribute",
+    "severity": "warning",
+    "message": "'post' has no declared attribute 'nonexistent_attr'"
+  }
+]

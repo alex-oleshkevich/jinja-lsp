@@ -1,0 +1,20 @@
+[
+  {
+    "file": "child.html",
+    "line": 0,
+    "col": 15,
+    "code": "JINJA-E401",
+    "slug": "invalid-super",
+    "severity": "error",
+    "message": "super() called outside a block"
+  },
+  {
+    "file": "child.html",
+    "line": 2,
+    "col": 3,
+    "code": "JINJA-E401",
+    "slug": "invalid-super",
+    "severity": "error",
+    "message": "super() called outside a block"
+  }
+]

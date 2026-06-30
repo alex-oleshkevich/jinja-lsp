@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 2,
+    "col": 3,
+    "code": "JINJA-E501",
+    "slug": "wrong-call-args",
+    "severity": "error",
+    "message": "'greet': missing 1 required argument(s) (expected at least 2, got 1)"
+  }
+]

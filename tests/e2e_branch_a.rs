@@ -39,7 +39,9 @@ fn fixture_dir(name: &str) -> std::path::PathBuf {
 
 fn run_check(fixture: &str) -> Vec<Diagnostic> {
     let bin = binary_path();
-    let dir = fixture_dir(fixture);
+    // Pass the templates/ subdirectory so workspace keys are relative to the
+    // template root (e.g. "base.html") and match the paths used in extends/import.
+    let dir = fixture_dir(fixture).join("templates");
 
     let output = Command::new(&bin)
         .args(["check", "--format", "json", dir.to_str().unwrap()])
@@ -82,6 +84,55 @@ fn check_or_update(fixture: &str) {
     }
 }
 
+/// Like `check_or_update` but for corpus fixtures where templates live at the
+/// fixture root (not a `templates/` subdirectory).
+fn check_or_update_corpus(code: &str) {
+    let bin = binary_path();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/corpus")
+        .join(code);
+
+    let output = Command::new(&bin)
+        .args(["check", "--format", "json", dir.to_str().unwrap()])
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run {}: {e}", bin.display()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let raw_actual: Vec<Diagnostic> = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("check output is not valid JSON for corpus/{code}: {e}\nraw: {stdout}"));
+
+    // Normalize absolute file paths to paths relative to the fixture dir so
+    // golden files are portable across machines.
+    let dir_prefix = dir.to_string_lossy().into_owned() + "/";
+    let normalize = |mut d: Diagnostic| -> Diagnostic {
+        if d.file.starts_with(&dir_prefix) {
+            d.file = d.file[dir_prefix.len()..].to_owned();
+        }
+        d
+    };
+    let actual: Vec<Diagnostic> = raw_actual.into_iter().map(normalize).collect();
+
+    let golden_path = dir.join("expected-diagnostics.json");
+
+    if env::var("UPDATE_FIXTURES").is_ok() {
+        let json = serde_json::to_string_pretty(&actual).unwrap();
+        fs::write(&golden_path, format!("{json}\n")).unwrap();
+        return;
+    }
+
+    let expected_raw = fs::read_to_string(&golden_path)
+        .unwrap_or_else(|_| panic!("golden file missing: {}", golden_path.display()));
+    let expected: Vec<Diagnostic> = serde_json::from_str(&expected_raw)
+        .unwrap_or_else(|e| panic!("golden file invalid JSON for corpus/{code}: {e}"));
+
+    assert_eq!(
+        actual, expected,
+        "corpus/{code} mismatch. Re-run with UPDATE_FIXTURES=1 to accept.\nactual:\n{}\nexpected:\n{}",
+        serde_json::to_string_pretty(&actual).unwrap(),
+        serde_json::to_string_pretty(&expected).unwrap(),
+    );
+}
+
 // ---------- REQ-E2E-03 / REQ-E2E-04 ----------------------------------------
 
 #[test]
@@ -90,3 +141,26 @@ fn starlette_blog_matches_golden() {
     // REQ-E2E-04: UPDATE_FIXTURES=1 regenerates the golden file.
     check_or_update("starlette-blog");
 }
+
+// ---------- REQ-TEST-02: per-code corpus fixtures ────────────────────────────
+
+#[test] fn corpus_e001() { check_or_update_corpus("e001"); }
+#[test] fn corpus_e101() { check_or_update_corpus("e101"); }
+#[test] fn corpus_e102() { check_or_update_corpus("e102"); }
+#[test] fn corpus_e103() { check_or_update_corpus("e103"); }
+#[test] fn corpus_e104() { check_or_update_corpus("e104"); }
+#[test] fn corpus_w106() { check_or_update_corpus("w106"); }
+#[test] fn corpus_w201() { check_or_update_corpus("w201"); }
+#[test] fn corpus_w202() { check_or_update_corpus("w202"); }
+#[test] fn corpus_w203() { check_or_update_corpus("w203"); }
+#[test] fn corpus_w301() { check_or_update_corpus("w301"); }
+#[test] fn corpus_w302() { check_or_update_corpus("w302"); }
+#[test] fn corpus_w303() { check_or_update_corpus("w303"); }
+#[test] fn corpus_w304() { check_or_update_corpus("w304"); }
+#[test] fn corpus_w305() { check_or_update_corpus("w305"); }
+#[test] fn corpus_e401() { check_or_update_corpus("e401"); }
+#[test] fn corpus_w402() { check_or_update_corpus("w402"); }
+#[test] fn corpus_e403() { check_or_update_corpus("e403"); }
+#[test] fn corpus_e404() { check_or_update_corpus("e404"); }
+#[test] fn corpus_e501() { check_or_update_corpus("e501"); }
+#[test] fn corpus_e601() { check_or_update_corpus("e601"); }

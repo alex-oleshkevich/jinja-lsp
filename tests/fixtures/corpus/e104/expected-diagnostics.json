@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 13,
+    "code": "JINJA-E104",
+    "slug": "undefined-test",
+    "severity": "error",
+    "message": "undefined test 'nonexistent_test'"
+  }
+]

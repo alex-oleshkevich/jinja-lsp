@@ -1,0 +1,20 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 13,
+    "code": "JINJA-E101",
+    "slug": "undefined-variable",
+    "severity": "error",
+    "message": "'nonexistent_filter' is not defined"
+  },
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 13,
+    "code": "JINJA-E102",
+    "slug": "undefined-filter",
+    "severity": "error",
+    "message": "undefined filter 'nonexistent_filter'"
+  }
+]

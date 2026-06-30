@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 3,
+    "code": "JINJA-E101",
+    "slug": "undefined-variable",
+    "severity": "error",
+    "message": "'undefined_var' is not defined"
+  }
+]

@@ -75,15 +75,45 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     use jinja_lsp::workspace::build_workspace;
 
     let cwd = std::env::current_dir().unwrap_or_default();
-    let cfg = match config_path {
-        Some(p) => match JinjaConfig::from_file(Path::new(p)) {
-            Ok(c) => c,
-            Err(e) => { eprintln!("error: config: {e}"); return 2; }
-        },
-        None => match JinjaConfig::discover(&cwd) {
-            Ok(c) => c,
-            Err(e) => { eprintln!("error: config: {e}"); return 2; }
-        },
+    // cfg_root is the directory that relative config paths (hints, templates) are resolved from.
+    let (cfg, cfg_root) = match config_path {
+        Some(p) => {
+            let file = Path::new(p);
+            let root = file.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+            match JinjaConfig::from_file(file) {
+                Ok(c) => (c, root),
+                Err(e) => { eprintln!("error: config: {e}"); return 2; }
+            }
+        }
+        None => {
+            // Try CWD first; if no config found, also search the passed paths so
+            // per-fixture jinja.toml files are respected when running `check <dir>`.
+            let (cfg, found_at) = match JinjaConfig::discover_with_path(&cwd) {
+                Ok(pair) => pair,
+                Err(e) => { eprintln!("error: config: {e}"); return 2; }
+            };
+            if let Some(ref conf_path) = found_at {
+                let root = conf_path.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+                (cfg, root)
+            } else if paths.is_empty() {
+                (cfg, cwd.clone())
+            } else {
+                // CWD had no config; search each provided path.
+                let mut result = (cfg, cwd.clone());
+                for path_str in &paths {
+                    let search = Path::new(path_str);
+                    let search = if search.is_dir() { search.to_owned() } else {
+                        search.parent().map(|p| p.to_owned()).unwrap_or_else(|| cwd.clone())
+                    };
+                    if let Ok((c, Some(conf_path))) = JinjaConfig::discover_with_path(&search) {
+                        let root = conf_path.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+                        result = (c, root);
+                        break;
+                    }
+                }
+                result
+            }
+        }
     };
     let ext_strs: Vec<&str> = cfg.extensions.iter().map(|s| s.as_str()).collect();
 
@@ -97,10 +127,31 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
     let dir_refs: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
 
     // REQ-LINT-09: build_workspace is the shared engine (same as LSP server)
-    let _workspace = build_workspace(&dir_refs, &ext_strs);
+    let workspace = build_workspace(&dir_refs, &ext_strs);
 
-    // Collect diagnostics — F01 checks not yet implemented; emit empty list
-    let all_diags: Vec<Diagnostic> = vec![];
+    // REQ-LINT-09: run all per-file checks across every indexed template.
+    use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::diagnostics::checks::run_checks;
+    use jinja_lsp::diagnostics::suppress_by_noqa;
+    // Build registry the same way the LSP server does — core + extras + custom_builtins + hints.
+    // Relative paths are resolved against cfg_root (the directory containing jinja.toml).
+    let mut registry = Registry::load_core();
+    let extras: Vec<&str> = cfg.extras.iter().map(|s| s.as_str()).collect();
+    registry.load_packs(&extras);
+    for dir_str in &cfg.custom_builtins {
+        registry.load_custom_builtins(&cfg_root.join(dir_str));
+    }
+    for dir_str in &cfg.hints {
+        registry.load_hints_from_dir(&cfg_root.join(dir_str));
+    }
+
+    let mut all_diags: Vec<Diagnostic> = Vec::new();
+    for idx in workspace.templates.values() {
+        let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
+        let raw = run_checks(&source, &idx.path, idx, &registry, &workspace);
+        let (kept, _suppressed) = suppress_by_noqa(&raw, &source);
+        all_diags.extend(kept);
+    }
 
     // REQ-LINT-03: apply select/ignore filters (CLI overrides config; merge both)
     let mut effective_select: Vec<String> = cfg.lint.select.clone();

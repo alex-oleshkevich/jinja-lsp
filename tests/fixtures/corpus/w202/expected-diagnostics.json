@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 3,
+    "code": "JINJA-W202",
+    "slug": "unused-macro",
+    "severity": "warning",
+    "message": "macro 'unused_macro' is defined but never called in this template"
+  }
+]

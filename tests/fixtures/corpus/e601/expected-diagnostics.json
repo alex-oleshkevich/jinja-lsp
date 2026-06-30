@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 11,
+    "code": "JINJA-E601",
+    "slug": "template-does-not-exist",
+    "severity": "error",
+    "message": "template 'nonexistent_base.html' does not exist"
+  }
+]

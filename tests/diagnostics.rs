@@ -304,3 +304,45 @@ fn trim_marker_noqa_suppresses_via_suppress_by_noqa() {
     let (kept, _w107) = suppress_by_noqa(&diags, source);
     assert!(kept.is_empty(), "trim-marker noqa must suppress the diagnostic on the same line");
 }
+
+// ---------- E101 false-positive regression tests ─────────────────────────────
+
+#[test]
+fn e101_macro_parameter_not_undefined() {
+    use jinja_lsp::parsing::extract;
+    use jinja_lsp::diagnostics::checks::run_checks;
+    use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::workspace::index::WorkspaceIndex;
+
+    let source = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
+    let idx = extract(source);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let diags = run_checks(source, "t.html", &idx, &reg, &ws);
+    let e101: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-E101").collect();
+    assert!(e101.is_empty(), "macro parameter 'name' must not fire E101: {e101:?}");
+}
+
+#[test]
+fn e101_attribute_chain_intermediate_not_undefined() {
+    use jinja_lsp::parsing::extract;
+    use jinja_lsp::diagnostics::checks::run_checks;
+    use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::workspace::index::WorkspaceIndex;
+
+    // request.user captured as dotted Identifier by @object; must not fire E101.
+    let source = "{{ request.user.name }}";
+    let idx = extract(source);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let diags = run_checks(source, "t.html", &idx, &reg, &ws);
+    // Exactly one E101 for 'request' (the root) — NOT for 'request.user' (the intermediate).
+    let e101_names: Vec<_> = diags.iter()
+        .filter(|d| d.code == "JINJA-E101")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        e101_names.iter().all(|m| !m.contains("request.user")),
+        "intermediate attribute chain 'request.user' must not fire E101: {e101_names:?}"
+    );
+}

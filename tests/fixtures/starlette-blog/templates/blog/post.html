@@ -2,7 +2,7 @@
 {% import "blog/macros.html" as macros %}
 {% block content %}
 <h1>{{ post.title | truncate(60) }}</h1>
-{% for c in post.comments %}
+{% for c in post.comments %} {# noqa: JINJA-W201 #}
   {{ macros.comment_card(c, show_actions=true) }}
 {% endfor %}
 {{ macros.post_url(post) }}

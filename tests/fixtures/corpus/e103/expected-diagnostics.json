@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 3,
+    "code": "JINJA-E103",
+    "slug": "undefined-function",
+    "severity": "error",
+    "message": "'nonexistent_func' is not defined"
+  }
+]

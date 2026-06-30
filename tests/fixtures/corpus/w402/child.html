@@ -1,0 +1,4 @@
+{# JINJA-W402: set outside block in extends template #}
+{% extends "base.html" %}
+{% set outside = 1 %}
+{% block content %}{{ outside }}{% endblock %}

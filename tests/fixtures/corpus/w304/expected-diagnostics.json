@@ -1,0 +1,29 @@
+[
+  {
+    "file": "macros.html",
+    "line": 0,
+    "col": 3,
+    "code": "JINJA-W202",
+    "slug": "unused-macro",
+    "severity": "warning",
+    "message": "macro 'greet' is defined but never called in this template"
+  },
+  {
+    "file": "macros.html",
+    "line": 1,
+    "col": 3,
+    "code": "JINJA-W202",
+    "slug": "unused-macro",
+    "severity": "warning",
+    "message": "macro 'farewell' is defined but never called in this template"
+  },
+  {
+    "file": "trigger.html",
+    "line": 2,
+    "col": 8,
+    "code": "JINJA-W304",
+    "slug": "duplicate-from-import",
+    "severity": "warning",
+    "message": "'greet' imported more than once"
+  }
+]

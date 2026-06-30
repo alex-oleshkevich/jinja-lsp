@@ -1,0 +1,3 @@
+{# JINJA-E501: missing required argument to macro #}
+{% macro greet(name, greeting) %}{{ greeting }}, {{ name }}{% endmacro %}
+{{ greet("Alice") }}

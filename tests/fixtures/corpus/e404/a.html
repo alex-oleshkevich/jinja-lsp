@@ -1,0 +1,3 @@
+{# JINJA-E404: recursive import — a imports b which imports a #}
+{% import "b.html" as b %}
+{{ b.greet() }}

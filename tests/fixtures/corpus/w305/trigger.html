@@ -1,0 +1,3 @@
+{# JINJA-W305: name shadowing — inner for loop shadows outer set #}
+{% set x = 1 %}
+{% for x in items %}{{ x }}{% endfor %}

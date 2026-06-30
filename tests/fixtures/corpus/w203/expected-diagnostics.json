@@ -1,0 +1,20 @@
+[
+  {
+    "file": "macros.html",
+    "line": 0,
+    "col": 3,
+    "code": "JINJA-W202",
+    "slug": "unused-macro",
+    "severity": "warning",
+    "message": "macro 'greet' is defined but never called in this template"
+  },
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 10,
+    "code": "JINJA-W203",
+    "slug": "unused-import",
+    "severity": "warning",
+    "message": "import alias 'm' is never used"
+  }
+]

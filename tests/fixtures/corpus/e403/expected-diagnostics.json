@@ -1,0 +1,11 @@
+[
+  {
+    "file": "child.html",
+    "line": 0,
+    "col": 0,
+    "code": "JINJA-E403",
+    "slug": "missing-required-block",
+    "severity": "error",
+    "message": "required block 'header' is not overridden in this template"
+  }
+]

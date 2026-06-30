@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 1,
+    "col": 7,
+    "code": "JINJA-W201",
+    "slug": "unused-variable",
+    "severity": "warning",
+    "message": "variable 'unused_var' is assigned but never used"
+  }
+]

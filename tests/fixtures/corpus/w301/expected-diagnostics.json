@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 2,
+    "col": 3,
+    "code": "JINJA-W301",
+    "slug": "duplicate-block",
+    "severity": "warning",
+    "message": "duplicate block 'content'"
+  }
+]

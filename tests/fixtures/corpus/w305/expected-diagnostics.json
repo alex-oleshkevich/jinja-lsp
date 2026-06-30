@@ -1,0 +1,11 @@
+[
+  {
+    "file": "trigger.html",
+    "line": 2,
+    "col": 7,
+    "code": "JINJA-W305",
+    "slug": "name-shadowing",
+    "severity": "warning",
+    "message": "'x' shadows an outer-scope variable"
+  }
+]
