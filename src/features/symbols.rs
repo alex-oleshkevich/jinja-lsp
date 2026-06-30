@@ -52,8 +52,7 @@ pub fn document_symbols(source: &str, index: &TemplateIndex) -> Vec<DocumentSymb
 
 /// Fuzzy-search every macro and block in the workspace (REQ-SYM-03..04).
 pub fn workspace_symbols(query: &str, workspace: &WorkspaceIndex) -> Vec<WorkspaceSymbol> {
-    let mut results: Vec<(WorkspaceSymbol, u8, usize)> = Vec::new();
-    let mut stable_idx = 0usize;
+    let mut results: Vec<(WorkspaceSymbol, u8)> = Vec::new();
 
     for (path, tmpl_idx) in &workspace.templates {
         for m in &tmpl_idx.macros {
@@ -66,10 +65,8 @@ pub fn workspace_symbols(query: &str, workspace: &WorkspaceIndex) -> Vec<Workspa
                         location: m.span.clone(),
                     },
                     tier,
-                    stable_idx,
                 ));
             }
-            stable_idx += 1;
         }
         for b in &tmpl_idx.blocks {
             if let Some(tier) = fuzzy_tier(query, &b.name) {
@@ -81,21 +78,21 @@ pub fn workspace_symbols(query: &str, workspace: &WorkspaceIndex) -> Vec<Workspa
                         location: b.span.clone(),
                     },
                     tier,
-                    stable_idx,
                 ));
             }
-            stable_idx += 1;
         }
     }
 
-    // Sort: tier ASC, name.len() ASC, stable_idx ASC (REQ-SYM-04).
+    // Sort: tier ASC, name.len() ASC, name ASC, container_name ASC (REQ-SYM-04).
+    // All tiebreaks are content-derived so the output is byte-for-byte deterministic.
     results.sort_by(|a, b| {
         a.1.cmp(&b.1)
             .then(a.0.name.len().cmp(&b.0.name.len()))
-            .then(a.2.cmp(&b.2))
+            .then(a.0.name.cmp(&b.0.name))
+            .then(a.0.container_name.cmp(&b.0.container_name))
     });
 
-    results.into_iter().map(|(sym, _, _)| sym).collect()
+    results.into_iter().map(|(sym, _)| sym).collect()
 }
 
 // ── Flat node collection ──────────────────────────────────────────────────────

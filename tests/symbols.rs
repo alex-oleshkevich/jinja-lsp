@@ -332,3 +332,19 @@ fn debug_block_and_macro_spans() {
         eprintln!("VAR '{}' scope={:?}: span bytes {}..{}", v.name, v.scope, v.span.start_byte, v.span.end_byte);
     }
 }
+
+// ─── REQ-SYM-04: deterministic ordering across files ─────────────────────────
+
+#[test]
+fn sym04_same_tier_same_name_len_ordered_by_path_then_name() {
+    // Two macros with the same name in different files — final tiebreak must be
+    // deterministic (alphabetical path) so golden files and CLI output are stable.
+    let macro_src = "{% macro foo() %}{% endmacro %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("b.html", macro_src);
+    ws.index_inline("a.html", macro_src);
+    let results = workspace_symbols("foo", &ws);
+    assert_eq!(results.len(), 2, "both macros must match");
+    assert_eq!(results[0].container_name, "a.html", "a.html must come first (alphabetical)");
+    assert_eq!(results[1].container_name, "b.html", "b.html must come second");
+}
