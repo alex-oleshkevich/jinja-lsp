@@ -276,3 +276,31 @@ fn ulcx_partial_prefix_does_not_over_suppress() {
     assert_eq!(kept.len(), 1, "JINJA-E10 is not a valid prefix and must not suppress");
     assert!(!w107s.is_empty(), "JINJA-E10 must produce W107");
 }
+
+// ---------- jinja-lsp-ep8u: whitespace-control markers in noqa comments ------
+
+#[test]
+fn trim_marker_bare_noqa_all_suppresses() {
+    let directives = parse_noqa_directives("{#- noqa -#}", 0);
+    assert_eq!(directives.len(), 1, "trim-marker noqa must parse as NoqaDirective::All");
+    assert!(matches!(directives[0], NoqaDirective::All { .. }));
+}
+
+#[test]
+fn trim_marker_noqa_with_code_suppresses() {
+    let directives = parse_noqa_directives("{#- noqa: JINJA-E101 -#}", 0);
+    assert_eq!(directives.len(), 1, "trim-marker noqa with code must parse as NoqaDirective::Codes");
+    assert!(matches!(&directives[0], NoqaDirective::Codes { codes, .. } if codes[0] == "JINJA-E101"));
+}
+
+#[test]
+fn trim_marker_noqa_suppresses_via_suppress_by_noqa() {
+    let diags = vec![Diagnostic {
+        file: String::new(), line: 0, col: 0,
+        code: "JINJA-E101".to_owned(), slug: "undefined-identifier".to_owned(),
+        severity: DiagCode::E101.severity(), message: "x undefined".to_owned(),
+    }];
+    let source = "{{ x }}   {#- noqa -#}";
+    let (kept, _w107) = suppress_by_noqa(&diags, source);
+    assert!(kept.is_empty(), "trim-marker noqa must suppress the diagnostic on the same line");
+}

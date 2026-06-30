@@ -32,7 +32,10 @@ pub fn parse_noqa_directives(line_text: &str, line_number: u32) -> Vec<NoqaDirec
     while let Some(start) = search.find("{#") {
         let rest = &search[start + 2..];
         if let Some(end_rel) = rest.find("#}") {
-            let content = rest[..end_rel].trim();
+            let raw = rest[..end_rel].trim();
+            // Strip whitespace-control '-' markers ({#- ... -#} → "- ... -")
+            let raw = raw.strip_prefix('-').unwrap_or(raw).trim();
+            let content = raw.strip_suffix('-').unwrap_or(raw).trim();
             if let Some(dir) = parse_comment(content, line_number) {
                 directives.push(dir);
             }
