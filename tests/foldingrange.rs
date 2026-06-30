@@ -242,6 +242,61 @@ fn fold01_raw_folds_as_single_region_multiline() {
     assert_eq!(regions[0].end_line, 2);
 }
 
+// ─── jinja-lsp-6vsf: for/else, whitespace-control, {% call %}, dual fold ─────
+
+#[test]
+fn vsf6_for_else_folds_as_single_region() {
+    // `{% else %}` is an intermediate clause — not a sub-fold boundary.
+    // The whole for..else..endfor must collapse as ONE region (§11.2).
+    // Lines: 0=for, 1=body, 2=else, 3=default, 4=endfor
+    let src = "{% for x in xs %}\n{{ x }}\n{% else %}\ndefault\n{% endfor %}";
+    let ranges = fold_ranges(src);
+    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    assert_eq!(regions.len(), 1, "for/else/endfor must produce exactly one region: {regions:?}");
+    assert_eq!(regions[0].start_line, 0);
+    assert_eq!(regions[0].end_line, 4, "region must span for (0) to endfor (4)");
+}
+
+#[test]
+fn vsf6_whitespace_control_tags_fold_same_as_regular() {
+    // `{%- for -%}` and `{%- endfor -%}` must fold identically to `{% for %}`/`{% endfor %}`.
+    // Lines: 0=for, 1=body, 2=endfor
+    let src = "{%- for x in xs -%}\n{{ x }}\n{%- endfor -%}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "whitespace-control for must fold same as regular: {ranges:?}"
+    );
+}
+
+#[test]
+fn vsf6_call_block_folds_as_region() {
+    // {% call(x) macro() %}...{% endcall %} must fold as a region.
+    // Lines: 0=call, 1=content, 2=endcall
+    let src = "{% call(x) render_dialog() %}\ncontent\n{% endcall %}";
+    let ranges = fold_ranges(src);
+    assert!(
+        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        "call block must fold as region: {ranges:?}"
+    );
+}
+
+#[test]
+fn vsf6_multiline_macro_opener_emits_both_tag_fold_and_pair_fold() {
+    // Multi-line macro opener produces TWO region folds (§11.2 dual fold):
+    //   1. Tag fold: the opener tag itself (lines 0..2)
+    //   2. Pair fold: the whole macro body from opener start to endmacro (lines 0..4)
+    // Lines: 0..2 = multi-line macro opener, 3=body, 4=endmacro
+    let src = "{% macro render(\n  post\n) %}\nbody\n{% endmacro %}";
+    let ranges = fold_ranges(src);
+    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    let tag_fold = regions.iter().any(|r| r.start_line == 0 && r.end_line == 2);
+    let pair_fold = regions.iter().any(|r| r.start_line == 0 && r.end_line == 4);
+    assert!(tag_fold, "opener tag fold (0..2) must be emitted: {regions:?}");
+    assert!(pair_fold, "pair fold (0..4) must be emitted: {regions:?}");
+    assert_eq!(regions.len(), 2, "exactly two region folds (tag + pair): {regions:?}");
+}
+
 // ─── REQ-FOLD2-03: multi-line block openers also get a tag fold ──────────────
 
 #[test]

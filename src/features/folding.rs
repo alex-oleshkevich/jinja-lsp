@@ -140,7 +140,9 @@ fn scan_events(source: &str) -> Vec<Event> {
 /// Classify a `{% … %}` statement inner content as block-open, block-close, or tag.
 fn classify_statement(inner: &str) -> EventKind {
     let s = inner.trim_matches('-').trim();
-    let keyword = s.split_whitespace().next().unwrap_or("");
+    let first = s.split_whitespace().next().unwrap_or("");
+    // Strip an argument list that follows the keyword without whitespace (e.g. `call(x)`).
+    let keyword = first.find('(').map(|p| &first[..p]).unwrap_or(first);
 
     // Intermediate clauses are neither openers nor closers.
     if matches!(keyword, "elif" | "else" | "pluralize") {
