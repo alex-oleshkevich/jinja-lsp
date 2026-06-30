@@ -302,18 +302,16 @@ fn resolve_macro_item(
         return Some(macro_item(m, current_path));
     }
 
-    // From-imported: {% from "source" import name %}.
+    // From-imported: {% from "source" import name %} or {% from "source" import name as alias %}.
     for fi in &index.from_imports {
-        let is_imported = fi
-            .names
-            .iter()
-            .any(|n| n.name == name || n.alias.as_deref() == Some(name));
-        if !is_imported {
-            continue;
-        }
+        // Resolve alias to the real imported name for lookup in the source template.
+        let real_name = fi.names.iter()
+            .find(|n| n.name == name || n.alias.as_deref() == Some(name))
+            .map(|n| n.name.as_str());
+        let Some(real_name) = real_name else { continue };
         if let Some(src_key) = workspace.resolve_key(&fi.source) {
             if let Some(src_idx) = workspace.templates.get(src_key) {
-                if let Some(m) = src_idx.macros.iter().find(|m| m.name == name) {
+                if let Some(m) = src_idx.macros.iter().find(|m| m.name == real_name) {
                     return Some(macro_item(m, src_key));
                 }
             }

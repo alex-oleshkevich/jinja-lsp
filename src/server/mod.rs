@@ -1038,9 +1038,12 @@ impl LanguageServer for Backend {
         let calls = incoming_calls(&item, &state.workspace);
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
-        let result = calls.iter().map(|c| CallHierarchyIncomingCall {
-            from: internal_item_to_lsp(&c.from, &state.sources, utf8),
-            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
+        let result = calls.iter().map(|c| {
+            let src = state.sources.get(&c.from.uri).map(|s| s.as_str()).unwrap_or("");
+            CallHierarchyIncomingCall {
+                from: internal_item_to_lsp(&c.from, &state.sources, utf8),
+                from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r, src, utf8)).collect(),
+            }
         }).collect();
         Ok(Some(result))
     }
@@ -1054,9 +1057,11 @@ impl LanguageServer for Backend {
         let calls = outgoing_calls(&item, &state.workspace, &state.registry); // primary workspace
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
+        // from_ranges are call sites within item.uri (the caller template).
+        let caller_src = state.sources.get(&item.uri).map(|s| s.as_str()).unwrap_or("").to_owned();
         let result = calls.iter().map(|c| CallHierarchyOutgoingCall {
             to: internal_item_to_lsp(&c.to, &state.sources, utf8),
-            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r)).collect(),
+            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r, &caller_src, utf8)).collect(),
         }).collect();
         Ok(Some(result))
     }
@@ -1506,10 +1511,16 @@ fn lsp_item_to_internal(item: &CallHierarchyItem) -> Option<InternalCallHierarch
     })
 }
 
-fn hr_to_range(r: &HierarchyRange) -> Range {
+fn hr_to_range(r: &HierarchyRange, source: &str, utf8: bool) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: byte_col_to_lsp_char(source_line(source, r.start_line), r.start_col, utf8),
+        },
+        end: Position {
+            line: r.end_line,
+            character: byte_col_to_lsp_char(source_line(source, r.end_line), r.end_col, utf8),
+        },
     }
 }
 

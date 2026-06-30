@@ -342,6 +342,26 @@ fn call04_cycle_outgoing_terminates() {
     assert_eq!(calls[0].to.name, "b");
 }
 
+// ─── jinja-lsp-8b7x: aliased from-import macro ───────────────────────────────
+
+#[test]
+fn call_hierarchy_prepare_resolves_aliased_from_import() {
+    // {% from "macros.html" import greet as salute %} — cursor on "salute()" call should
+    // resolve to the "greet" macro in macros.html.
+    let macro_src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
+    // Use a unique alias ("salute") so col_of finds the call site, not the declaration.
+    let caller_src = r#"{% from "macros.html" import greet as salute %}{{ salute("World") }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", macro_src);
+    let caller_idx = extract(caller_src);
+    // col_of finds the first "salute" which is in the declaration; use the call site.
+    let call_col = caller_src.find("salute(").unwrap() as u32;
+    let items = prepare_call_hierarchy(caller_src, 0, call_col, "caller.html", &caller_idx, &ws, &reg());
+    assert!(!items.is_empty(), "prepare must resolve aliased from-import to greet macro");
+    assert_eq!(items[0].name, "greet", "resolved name must be the real macro name, not the alias");
+    assert_eq!(items[0].uri, "macros.html");
+}
+
 #[test]
 fn call04_nested_macro_body_does_not_steal_enclosing_endmacro() {
     // outer defines inner inside its body; a reference to ping() inside outer
