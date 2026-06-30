@@ -113,15 +113,17 @@ struct CallState {
 }
 
 /// Forward-scan `inner` text, tracking paren/bracket depth and string state,
-/// to find the enclosing open paren and count top-level commas.
+/// to find the INNERMOST enclosing open paren and count its commas.
+///
+/// Uses a stack so that nested calls like `range(1, max(2, |))` return the
+/// innermost call (`max`) rather than the outermost (`range`).
 fn scan_call_state(inner: &str) -> Option<CallState> {
-    let mut depth: i32 = 0;
+    // Stack entry: (open_paren_byte_pos, comma_count_at_this_depth).
+    let mut stack: Vec<(usize, usize)> = Vec::new();
     let mut bracket_depth: i32 = 0;
     let mut brace_depth: i32 = 0;
     let mut in_string = false;
     let mut string_char = '"';
-    let mut last_open_paren: Option<usize> = None;
-    let mut comma_count = 0usize;
 
     for (byte_pos, c) in inner.char_indices() {
         if in_string {
@@ -135,36 +137,24 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
                 in_string = true;
                 string_char = c;
             }
-            '(' => {
-                depth += 1;
-                if depth == 1 {
-                    last_open_paren = Some(byte_pos);
-                    comma_count = 0;
-                }
-            }
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    last_open_paren = None;
-                }
-            }
+            '(' => stack.push((byte_pos, 0)),
+            ')' => { stack.pop(); }
             '[' => bracket_depth += 1,
             ']' => bracket_depth -= 1,
             '{' => brace_depth += 1,
             '}' => brace_depth -= 1,
-            ',' if depth == 1 && bracket_depth == 0 && brace_depth == 0 => comma_count += 1,
+            ',' if !stack.is_empty() && bracket_depth == 0 && brace_depth == 0 => {
+                if let Some(top) = stack.last_mut() {
+                    top.1 += 1;
+                }
+            }
             _ => {}
         }
     }
 
-    if depth <= 0 {
-        return None; // not inside any open call
-    }
-
-    Some(CallState {
-        open_paren_pos: last_open_paren?,
-        comma_count,
-    })
+    // Innermost unclosed paren is the stack top.
+    let (open_paren_pos, comma_count) = stack.last().copied()?;
+    Some(CallState { open_paren_pos, comma_count })
 }
 
 // ── Callee resolution ─────────────────────────────────────────────────────────

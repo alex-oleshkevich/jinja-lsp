@@ -235,3 +235,39 @@ fn sig05_macro_param_default_in_label() {
     let has_default = sh.params.iter().any(|p| p.label.contains('='));
     assert!(has_default, "param with default must include '=' in label: {:?}", sh.params);
 }
+
+// ─── jinja-lsp-gmy7: nested call shows innermost callee ──────────────────────
+
+#[test]
+fn sig_gmy7_nested_call_shows_innermost_callee() {
+    // Cursor inside `inner(2, ` — signature help must show `inner`, not `range`.
+    // `inner` is a local macro so it's definitely resolvable.
+    let src = "{% macro inner(a, b) %}{% endmacro %}{{ range(1, inner(2, }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Cursor after the last comma+space (inside inner's arg list).
+    let col = src.rfind(',').unwrap() as u32 + 2;
+    let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert!(
+        sh.label.contains("inner"),
+        "nested call: label must be 'inner', not 'range': {}",
+        sh.label
+    );
+}
+
+#[test]
+fn sig_gmy7_nested_call_active_param_is_local_to_inner() {
+    // After `inner(2, `, comma_count inside inner is 1 → active_parameter = Some(1).
+    let src = "{% macro inner(a, b) %}{% endmacro %}{{ range(1, inner(2, }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.rfind(',').unwrap() as u32 + 2;
+    let sh = signature_help(src, 0, col, &idx, &reg, &ws).unwrap();
+    assert_eq!(
+        sh.active_parameter, Some(1),
+        "inside inner(2, cursor), local comma count is 1 so active param is Some(1): {:?}",
+        sh.active_parameter
+    );
+}
