@@ -57,10 +57,19 @@ pub fn hover(
             }
             // REQ-HOV-12: special objects (caller, super) may be captured as Function
             // but are registered as Variable — fall back to Variable when no Function entry.
-            ReferenceKind::Function => registry
-                .get(Category::Function, &r.name)
-                .or_else(|| registry.get(Category::Variable, &r.name))
-                .map(|e| format_registry_card_with_span(e, None, &r.span)),
+            ReferenceKind::Function => {
+                let entry = registry
+                    .get(Category::Function, &r.name)
+                    .or_else(|| registry.get(Category::Variable, &r.name));
+                entry.map(|e| {
+                    let mut result = format_registry_card_with_span(e, None, &r.span);
+                    if let Some(note) = scope_note_for_special(&r.name, byte, index) {
+                        result.markdown.push_str("\n\n");
+                        result.markdown.push_str(&note);
+                    }
+                    result
+                })
+            }
             ReferenceKind::Test => {
                 let name = resolve_test_alias(&r.name);
                 let alias_note = if name != r.name.as_str() { Some(r.name.as_str()) } else { None };
@@ -68,7 +77,7 @@ pub fn hover(
                     .get(Category::Test, name)
                     .map(|e| format_registry_card_with_span(e, alias_note, &r.span))
             }
-            ReferenceKind::Identifier => hover_identifier(&r.name, &r.span, index, registry),
+            ReferenceKind::Identifier => hover_identifier(&r.name, &r.span, byte, index, registry),
             ReferenceKind::Attribute => hover_attribute(&r.name, &r.span, source, registry),
         };
         if result.is_some() {
@@ -134,7 +143,12 @@ pub fn hover(
                 .get(Category::Variable, word)
                 .or_else(|| registry.get(Category::Function, word));
             if let Some(e) = entry {
-                return Some(format_registry_card_with_span(e, None, &span));
+                let mut result = format_registry_card_with_span(e, None, &span);
+                if let Some(note) = scope_note_for_special(word, byte, index) {
+                    result.markdown.push_str("\n\n");
+                    result.markdown.push_str(&note);
+                }
+                return Some(result);
             }
         }
 
@@ -224,6 +238,7 @@ pub fn hover(
 fn hover_identifier(
     name: &str,
     span: &Span,
+    byte: usize,
     index: &TemplateIndex,
     registry: &Registry,
 ) -> Option<HoverResult> {
@@ -246,9 +261,14 @@ fn hover_identifier(
         });
     }
 
-    // Check registry variables (loop, self, etc.).
+    // Check registry variables (loop, self, etc.) — REQ-HOV-12: append scope note.
     if let Some(entry) = registry.get(Category::Variable, name) {
-        return Some(format_registry_card_with_span(entry, None, span));
+        let mut result = format_registry_card_with_span(entry, None, span);
+        if let Some(note) = scope_note_for_special(name, byte, index) {
+            result.markdown.push_str("\n\n");
+            result.markdown.push_str(&note);
+        }
+        return Some(result);
     }
 
     // Unknown identifier — no documentation (REQ-HOV-08).
@@ -510,6 +530,31 @@ fn parent_of_attribute(source: &str, attr_start_byte: usize) -> Option<&str> {
         .unwrap_or(0);
     let parent = &before_dot[start..end];
     if parent.is_empty() { None } else { Some(parent) }
+}
+
+/// REQ-HOV-12: return a scope-constraint note when `word` is used outside its valid scope.
+fn scope_note_for_special(word: &str, byte: usize, index: &TemplateIndex) -> Option<String> {
+    let in_for = index.variables.iter().any(|v| {
+        v.scope == VariableScope::ForLoop
+            && v.valid_range.start_byte <= byte
+            && byte <= v.valid_range.end_byte
+    });
+    let in_block = index.blocks.iter().any(|b| {
+        b.body.start_byte <= byte && byte <= b.body.end_byte
+    });
+    let in_macro = index.macros.iter().any(|m| {
+        m.body.start_byte <= byte && byte <= m.body.end_byte
+    });
+    match word {
+        "loop" if !in_for => Some("⚠ `loop` is only valid inside a `{% for %}` block.".to_owned()),
+        "self" | "super" if !in_block => {
+            Some(format!("⚠ `{word}` is only valid inside a block body."))
+        }
+        "caller" | "varargs" | "kwargs" if !in_macro => {
+            Some(format!("⚠ `{word}` is only valid inside a macro or call block."))
+        }
+        _ => None,
+    }
 }
 
 fn scope_label(scope: VariableScope) -> &'static str {

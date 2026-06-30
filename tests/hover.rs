@@ -468,6 +468,68 @@ fn hov12_caller_shows_doc() {
     );
 }
 
+// REQ-HOV-12 scope-gating notes
+
+#[test]
+fn hov12_loop_outside_for_has_scope_note() {
+    let src = "{{ loop.index }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "loop");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("expected hover for loop outside for");
+    assert!(
+        r.markdown.contains("only valid"),
+        "out-of-scope loop must carry a scope note; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov12_loop_inside_for_has_no_scope_note() {
+    let src = "{% for i in items %}{{ loop.index }}{% endfor %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "loop.index");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("expected hover for loop inside for");
+    assert!(
+        !r.markdown.contains("only valid"),
+        "in-scope loop must NOT have a scope note; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov12_super_outside_block_has_scope_note() {
+    let src = "{{ super() }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "super");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("expected hover for super outside block");
+    assert!(
+        r.markdown.contains("only valid"),
+        "out-of-scope super must carry a scope note; got: {:?}", r.markdown
+    );
+}
+
+#[test]
+fn hov12_caller_outside_macro_has_scope_note() {
+    let src = "{{ caller() }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "caller");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("expected hover for caller outside macro");
+    assert!(
+        r.markdown.contains("only valid"),
+        "out-of-scope caller must carry a scope note; got: {:?}", r.markdown
+    );
+}
+
 // ─── REQ-HOV-13: statement keywords show a tag description ───────────────────
 
 #[test]
