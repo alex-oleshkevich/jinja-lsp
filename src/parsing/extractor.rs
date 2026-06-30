@@ -326,8 +326,8 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex)
 
     run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions, source_len);
     run_set(tree, bytes, idx, &seen_set, &scope_regions, source_len);
-    run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions);
-    run_for(tree, bytes, idx, &seen_for, &scope_regions);
+    run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions, source_len);
+    run_for(tree, bytes, idx, &seen_for, &scope_regions, source_len);
     run_with(tree, bytes, idx, &scope_regions);
     run_trans(tree, bytes, idx);
     run_caller_args(tree, bytes, idx);
@@ -414,7 +414,7 @@ fn run_set(
 fn run_for_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
-    scope_regions: &[ScopeRegion],
+    scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_FOR_UNPACKING;
     let mut cur = QueryCursor::new();
@@ -442,10 +442,11 @@ fn run_for_unpacking(
         if let Some(k) = key {
             seen.insert(k, ());
             // Find the ForLoop region whose body_start matches this for-tag's ctrl end.
+            // Fallback to end-of-source for incomplete templates (no {% endfor %}).
             let valid_range = scope_regions.iter()
                 .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
                 .map(|r| byte_span(r.body_start, r.body_end))
-                .unwrap_or(byte_span(for_ctrl_end, for_ctrl_end));
+                .unwrap_or(byte_span(for_ctrl_end, source_len));
             for (name, span) in names {
                 push_var(idx, name, VariableScope::ForLoop, span, valid_range.clone());
             }
@@ -456,7 +457,7 @@ fn run_for_unpacking(
 fn run_for(
     tree: &tree_sitter::Tree, bytes: &[u8],
     idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
-    scope_regions: &[ScopeRegion],
+    scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_FOR;
     let mut cur = QueryCursor::new();
@@ -479,10 +480,11 @@ fn run_for(
             }
         }
         if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
+            // Fallback to end-of-source for incomplete templates (no {% endfor %}).
             let valid_range = scope_regions.iter()
                 .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
                 .map(|r| byte_span(r.body_start, r.body_end))
-                .unwrap_or(byte_span(for_ctrl_end, for_ctrl_end));
+                .unwrap_or(byte_span(for_ctrl_end, source_len));
             push_var(idx, name, VariableScope::ForLoop, name_span, valid_range);
         }
     }

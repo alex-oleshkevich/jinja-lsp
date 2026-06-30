@@ -379,9 +379,13 @@ pub fn complete(
             for e in registry.iter_by_category(Category::ContextVariable) {
                 items.push(variable_item(&e.name));
             }
-            // Scope-local variables from the current template (REQ-CMP-11)
+            // Scope-local variables from the current template (REQ-CMP-11).
+            // Only include variables whose valid_range contains the cursor byte
+            // so macro/block locals don't bleed into outer scopes.
             for var in &index.variables {
-                items.push(variable_item(&var.name));
+                if var.valid_range.start_byte <= byte && byte <= var.valid_range.end_byte {
+                    items.push(variable_item(&var.name));
+                }
             }
             items
         }

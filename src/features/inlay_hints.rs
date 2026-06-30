@@ -263,13 +263,20 @@ fn parse_args(source: &str, args_start: usize) -> Vec<Arg> {
     let mut depth = 0usize;
     let mut in_str = false;
     let mut str_char = b'"';
+    // escaped tracks whether the previous byte was an unescaped backslash.
+    // We toggle it so \\ resets escaped, making the next char unescaped.
+    let mut escaped = false;
     let mut i = args_start;
 
     while i < bytes.len() {
         let b = bytes[i];
 
         if in_str {
-            if b == str_char && (i == 0 || bytes[i - 1] != b'\\') {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == str_char {
                 in_str = false;
             }
         } else if b == b'"' || b == b'\'' {
@@ -441,10 +448,26 @@ fn collect_endblock_echoes(source: &str, template_path: &str, out: &mut Vec<Inla
 /// Find the closing `%}` of a tag, starting the search at `start`.
 ///
 /// Returns the byte offset of `%` in `%}`.
+/// String literals are skipped so `%}` inside `"..."` or `'...'` is not treated as a closer.
 fn find_tag_close(bytes: &[u8], start: usize) -> Option<usize> {
     let mut i = start;
-    while i + 1 < bytes.len() {
-        if bytes[i] == b'%' && bytes[i + 1] == b'}' {
+    let mut in_str = false;
+    let mut str_char = b'"';
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == str_char {
+                in_str = false;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_str = true;
+            str_char = b;
+        } else if b == b'%' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
             return Some(i);
         }
         i += 1;

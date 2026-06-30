@@ -277,10 +277,13 @@ fn build_tree(flat: Vec<FlatNode>) -> Vec<DocumentSymbol> {
     let mut parents: Vec<Option<usize>> = vec![None; n];
     let mut stack: Vec<usize> = Vec::new();
     for i in 0..n {
-        // Pop stack nodes whose span ended before node[i] begins.
+        let node_end = flat[i].start_byte + flat[i].span_len;
+        // Pop stack nodes that do not fully contain node[i]:
+        // either they ended before node[i] starts, or node[i] extends past them.
         while let Some(&top) = stack.last() {
-            if flat[top].start_byte + flat[top].span_len > flat[i].start_byte {
-                break;
+            let top_end = flat[top].start_byte + flat[top].span_len;
+            if top_end > flat[i].start_byte && node_end <= top_end {
+                break; // top fully contains node[i] — it's the parent candidate.
             }
             stack.pop();
         }
@@ -426,32 +429,43 @@ fn find_set_span(
     tags: &[TagInfo],
     full_extents: &HashMap<usize, usize>,
 ) -> Option<Span> {
-    let candidates: Vec<usize> = [
+    // Collect all byte positions where `{% set name …` appears (any whitespace variant).
+    let mut candidates: Vec<usize> = [
         format!("{{% set {} ", name),
         format!("{{% set {}=", name),
         format!("{{% set {} =", name),
         format!("{{%- set {} ", name),
         format!("{{%- set {}=", name),
+        format!("{{%- set {} =", name),
     ]
     .iter()
-    .filter_map(|p| source.find(p.as_str()))
+    .flat_map(|p| {
+        let mut off = 0;
+        let mut hits = Vec::new();
+        while let Some(rel) = source[off..].find(p.as_str()) {
+            hits.push(off + rel);
+            off += rel + 1;
+        }
+        hits
+    })
     .collect();
+    candidates.sort_unstable();
+    candidates.dedup();
 
-    let start = *candidates.iter().min()?;
+    // Pick the first candidate that is NOT inside any block/macro extent.
+    let is_inside = |pos: usize| {
+        tags.iter().filter(|t| !t.is_close).any(|t| {
+            full_extents
+                .get(&t.start_byte)
+                .map(|&full_end| t.start_byte < pos && pos < full_end)
+                .unwrap_or(false)
+        })
+    };
+    let start = candidates.into_iter().find(|&pos| !is_inside(pos))?;
 
-    // Reject if the set byte falls within any block/macro's full construct extent.
-    let inside = tags.iter().filter(|t| !t.is_close).any(|t| {
-        full_extents
-            .get(&t.start_byte)
-            .map(|&full_end| t.start_byte < start && start < full_end)
-            .unwrap_or(false)
-    });
-    if inside {
-        return None;
-    }
-
-    let rest = source.get(start..)?;
-    let end_offset = rest.find("%}")?;
+    // Find the closing %} of this tag, skipping string literals.
+    let rest_bytes = source.get(start..)?.as_bytes();
+    let end_offset = find_tag_close_in_slice(rest_bytes)?;
     let end = start + end_offset + 2;
 
     let (sl, sc) = byte_to_line_col(source, start);
@@ -478,6 +492,35 @@ struct TagInfo {
     is_close: bool,
 }
 
+/// Find the closing `%}` of a tag within `bytes`, skipping string literals so
+/// `%}` inside `"..."` or `'...'` is not treated as a closer.
+/// Returns the byte offset of `%` relative to the start of `bytes`, or `None`.
+fn find_tag_close_in_slice(bytes: &[u8]) -> Option<usize> {
+    let mut i = 0;
+    let mut in_str = false;
+    let mut str_char = b'"';
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == str_char {
+                in_str = false;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_str = true;
+            str_char = b;
+        } else if b == b'%' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Scan all `{% block %}`, `{% endblock %}`, `{% macro %}`, `{% endmacro %}`
 /// tags in `source` and return them in source order.
 fn scan_jinja_tags(source: &str) -> Vec<TagInfo> {
@@ -486,7 +529,7 @@ fn scan_jinja_tags(source: &str) -> Vec<TagInfo> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'%' {
-            if let Some(rel) = source[i + 2..].find("%}") {
+            if let Some(rel) = find_tag_close_in_slice(&bytes[i + 2..]) {
                 let inner = &source[i + 2..i + 2 + rel];
                 let tag_end = i + 2 + rel + 2;
                 if let Some(tag) = classify_tag_content(inner, i, tag_end) {
