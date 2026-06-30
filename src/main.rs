@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "jinja-lsp", about = "Jinja2 template language server")]
+#[command(name = "jinja-lsp", about = "Jinja2 template language server", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
