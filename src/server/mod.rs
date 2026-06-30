@@ -406,6 +406,8 @@ impl LanguageServer for Backend {
 
     /// REQ-ARCH-06: watched-files dispatch — config and template file changes.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let mut any_template_changed = false;
+
         for change in &params.changes {
             let key = Self::uri_to_key(&change.uri);
             // REQ-CFG-10: detect config file changes (jinja.toml or pyproject.toml).
@@ -421,17 +423,23 @@ impl LanguageServer for Backend {
             }
             match change.typ {
                 FileChangeType::CREATED | FileChangeType::CHANGED => {
-                    // template file: Pass 1 + schedule Pass 2
-                    if let Ok(source) = std::fs::read_to_string(change.uri.path()) {
+                    // Use tokio::fs to avoid blocking the async executor on disk I/O.
+                    if let Ok(source) = tokio::fs::read_to_string(change.uri.path()).await {
                         self.pass1(&key, &source).await;
-                        self.pass2().await;
+                        any_template_changed = true;
                     }
                 }
                 FileChangeType::DELETED => {
                     self.state.write().await.workspace.templates.remove(&key);
+                    any_template_changed = true;
                 }
                 _ => {}
             }
+        }
+
+        // Run Pass 2 once for the entire batch rather than once per changed file.
+        if any_template_changed {
+            self.pass2().await;
         }
     }
 
