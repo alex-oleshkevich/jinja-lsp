@@ -29,6 +29,34 @@
           (identifier) @filter)))
     (#eq? @pipe "|")))
 
+; Filter after attribute access: {{ obj.attr | filter }}
+; The outer expression has two child expressions: the attribute chain and the filter part.
+(render_expression
+  (expression
+    (expression)
+    (expression
+      (binary_expression
+        (binary_expression)
+        (binary_operator) @_attr_pipe
+        (unary_expression
+          (primary_expression
+            (identifier) @filter)))
+      (#eq? @_attr_pipe "|"))))
+
+; Function call (filter with args) after attribute access: {{ obj.attr | filter(args) }}
+(render_expression
+  (expression
+    (expression)
+    (expression
+      (binary_expression
+        (binary_expression)
+        (binary_operator) @_attr_fn_pipe
+        (unary_expression
+          (primary_expression
+            (function_call
+              (identifier) @function))))
+      (#eq? @_attr_fn_pipe "|"))))
+
 ; Function calls:
 (render_expression
   (expression

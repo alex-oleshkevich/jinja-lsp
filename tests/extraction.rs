@@ -1,5 +1,5 @@
 use jinja_lsp::parsing::extract;
-use jinja_lsp::workspace::symbols::TemplateRefKind;
+use jinja_lsp::workspace::symbols::{ReferenceKind, TemplateRefKind};
 
 #[test]
 fn extraction_pipeline_indexes_all_constructs() {
@@ -60,6 +60,42 @@ fn extraction_required_block() {
     assert_eq!(index.blocks.len(), 1);
     assert_eq!(index.blocks[0].name, "hero");
     assert!(index.blocks[0].required);
+}
+
+// ── jinja-lsp-k8oy: filter references after attribute chains ───────────────
+
+#[test]
+fn extr10_filter_after_attr_captured_as_filter() {
+    // {{ post.title | upper }} — 'upper' must be captured as ReferenceKind::Filter
+    let src = "{{ post.title | upper }}";
+    let idx = extract(src);
+    let filter_refs: Vec<_> = idx.references.iter()
+        .filter(|r| r.name == "upper" && r.kind == ReferenceKind::Filter)
+        .collect();
+    assert!(!filter_refs.is_empty(), "upper must be captured as Filter in '{{ post.title | upper }}';\n  references = {:?}", idx.references);
+}
+
+#[test]
+fn extr10_filter_with_args_after_attr_captured_as_function() {
+    // {{ post.title | truncate(60) }} — treesitter promotes filter(args) to function_call,
+    // so 'truncate' must be captured as ReferenceKind::Function (enabling the hover fallback).
+    let src = "{{ post.title | truncate(60) }}";
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx.references.iter()
+        .filter(|r| r.name == "truncate" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(!fn_refs.is_empty(), "truncate must be captured as Function in '{{ post.title | truncate(60) }}';\n  references = {:?}", idx.references);
+}
+
+#[test]
+fn extr10_deep_attr_chain_filter_captured() {
+    // {{ post.author.name | truncate(60) }} — two-level attribute chain before filter
+    let src = "{{ post.author.name | truncate(60) }}";
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx.references.iter()
+        .filter(|r| r.name == "truncate" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(!fn_refs.is_empty(), "truncate must be captured after deep attr chain;\n  references = {:?}", idx.references);
 }
 
 #[test]

@@ -161,6 +161,11 @@ fn check_e103(
         if registry.get(Category::Function, name).is_some() {
             continue;
         }
+        // Filters called with args are captured as ReferenceKind::Function by treesitter
+        // (grammar emits a function_call node). Check Category::Filter to avoid false positives.
+        if registry.get(Category::Filter, name).is_some() {
+            continue;
+        }
         out.push(Diagnostic {
             file: path.to_owned(),
             line: r.span.start_line,

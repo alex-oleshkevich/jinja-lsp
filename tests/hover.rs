@@ -618,3 +618,32 @@ fn hov02_filter_with_args_hover_returns_doc() {
     let r = result.unwrap();
     assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
 }
+
+#[test]
+fn hov02_attr_chain_filter_without_args_returns_doc() {
+    // {{ post.title | upper }} — filter after attribute chain, without call args.
+    let src = "{{ post.title | upper }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.find("upper").unwrap() as u32;
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "hover on 'upper' after attribute chain must return doc");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("upper"), "expected 'upper' in doc");
+}
+
+#[test]
+fn hov02_attr_chain_filter_with_args_returns_doc() {
+    // {{ post.title | truncate(60) }} — filter-with-args after attribute chain.
+    // treesitter captures filter(args) as ReferenceKind::Function; hover uses Category::Filter fallback.
+    let src = "{{ post.title | truncate(60) }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let col = src.find("truncate").unwrap() as u32;
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "hover on 'truncate(60)' after attribute chain must return doc");
+    let r = result.unwrap();
+    assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
+}
