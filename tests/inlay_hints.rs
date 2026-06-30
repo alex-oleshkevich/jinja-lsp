@@ -5,7 +5,7 @@ use jinja_lsp::features::inlay_hints::{
     inlay_hint_resolve, inlay_hints, InlayHintData, InlayHintKind, InlayHintsConfig,
 };
 use jinja_lsp::parsing::extract;
-use jinja_lsp::workspace::index::{TemplateIndex, WorkspaceIndex};
+use jinja_lsp::workspace::index::WorkspaceIndex;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,16 +37,6 @@ fn hints_cfg(
     let registry = reg();
     let ws = WorkspaceIndex::default();
     inlay_hints(src, "test.html", &idx, &registry, &ws, &cfg)
-}
-
-fn label_at(
-    hs: &[jinja_lsp::features::inlay_hints::InlayHint],
-    line: u32,
-    col: u32,
-) -> Option<&str> {
-    hs.iter()
-        .find(|h| h.line == line && h.col == col)
-        .map(|h| h.label.as_str())
 }
 
 fn has_param_hint(hs: &[jinja_lsp::features::inlay_hints::InlayHint]) -> bool {
