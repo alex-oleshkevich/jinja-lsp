@@ -187,3 +187,5 @@ fn starlette_blog_matches_golden() {
 #[test] fn fixture_call_and_paths() { check_or_update("call-and-paths"); }
 /// Config-reload fixture — valid templates with starlette extras; golden file is empty.
 #[test] fn fixture_config_reload() { check_or_update("config-reload"); }
+/// User-hints fixture — W106 on undeclared attribute; hints suppress E101 for declared vars.
+#[test] fn fixture_user_hints() { check_or_update("user-hints"); }

@@ -8,6 +8,10 @@ Verifies that each major LSP request/notification round-trip works end-to-end:
   - textDocument/definition  (macro call site → macro declaration)
   - textDocument/codeAction  (at a position, possibly with diagnostics)
 """
+import json
+from pathlib import Path
+from urllib.parse import unquote
+
 import pytest
 from lsprotocol import types as lsp
 
@@ -17,6 +21,8 @@ from conftest import FIXTURES
 POST = FIXTURES / "starlette-blog" / "templates" / "blog" / "post.html"
 MACROS = FIXTURES / "starlette-blog" / "templates" / "blog" / "macros.html"
 BASE = FIXTURES / "starlette-blog" / "templates" / "base.html"
+
+_SEVERITY = {1: "error", 2: "warning", 3: "info", 4: "hint"}
 
 
 def _open(client, path, version=1):
@@ -34,16 +40,69 @@ def _open(client, path, version=1):
     return uri
 
 
+def _lsp_diags_for_fixture(client, fixture_dir: Path) -> list:
+    """Return Branch-B diagnostics matching Branch A golden shape (minus slug)."""
+    fixture_str = str(fixture_dir)
+    result = []
+    for uri, diags in client.diagnostics.items():
+        path = Path(unquote(uri.removeprefix("file://")))
+        if fixture_str not in str(path):
+            continue
+        for d in diags:
+            sev_int = d.severity.value if hasattr(d.severity, "value") else int(d.severity)
+            result.append({
+                "file": path.name,
+                "line": d.range.start.line,
+                "col": d.range.start.character,
+                "code": str(d.code) if d.code is not None else "",
+                "severity": _SEVERITY.get(sev_int, "error"),
+                "message": d.message,
+            })
+    result.sort(key=lambda d: (d["file"], d["line"], d["col"]))
+    return result
+
+
 # ── journeys ──────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_did_open_publishes_diagnostics(client):
-    """REQ-E2E-06: didOpen triggers textDocument/publishDiagnostics."""
+    """REQ-E2E-02/REQ-E2E-06: didOpen publishDiagnostics matches Branch A golden (starlette-blog)."""
     uri = _open(client, BASE)
     await client.wait_for_notification("textDocument/publishDiagnostics")
-    # After notification, the URI must be present in client.diagnostics
+    # starlette-blog golden is [] — verify no diagnostics are published for base.html.
     assert uri in client.diagnostics
+    diags = list(client.diagnostics[uri])
+    assert diags == [], (
+        f"REQ-E2E-02 parity failure: starlette-blog/base.html golden is empty but "
+        f"server published {len(diags)} diagnostic(s): {diags}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_did_open_parity_with_branch_a(client):
+    """REQ-E2E-02: Branch B publishDiagnostics matches Branch A golden file (syntax-errors)."""
+    syntax_errors = FIXTURES / "syntax-errors"
+    golden = json.loads((syntax_errors / "expected-diagnostics.json").read_text())
+    expected = [
+        {
+            "file": d["file"], "line": d["line"], "col": d["col"],
+            "code": d["code"], "severity": d["severity"], "message": d["message"],
+        }
+        for d in golden
+    ]
+    expected.sort(key=lambda d: (d["file"], d["line"], d["col"]))
+
+    for tmpl in sorted((syntax_errors / "templates").glob("*.html")):
+        _open(client, tmpl)
+        await client.wait_for_notification("textDocument/publishDiagnostics")
+
+    actual = _lsp_diags_for_fixture(client, syntax_errors / "templates")
+    assert actual == expected, (
+        f"REQ-E2E-02 Branch A/B parity mismatch for syntax-errors fixture.\n"
+        f"Branch A (golden): {expected}\n"
+        f"Branch B (server): {actual}"
+    )
 
 
 @pytest.mark.asyncio

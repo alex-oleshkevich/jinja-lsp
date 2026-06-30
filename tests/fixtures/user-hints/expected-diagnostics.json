@@ -1,0 +1,11 @@
+[
+  {
+    "file": "detail.html",
+    "line": 3,
+    "col": 8,
+    "code": "JINJA-W106",
+    "slug": "unknown-attribute",
+    "severity": "warning",
+    "message": "'user' has no declared attribute 'phone'"
+  }
+]
