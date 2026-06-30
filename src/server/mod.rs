@@ -756,9 +756,21 @@ impl LanguageServer for Backend {
         params: CodeActionParams,
     ) -> Result<Option<CodeActionResponse>> {
         let key = Self::uri_to_key(&params.text_document.uri);
-        let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+
+        // Clone everything needed and drop the read guard before CPU-bound work.
+        let (source, index, workspace, registry, utf8, sources_snapshot) = {
+            let state = self.state.read().await;
+            let Some(source) = state.sources.get(&key) else { return Ok(None) };
+            let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+            (
+                source.clone(),
+                index.clone(),
+                state.workspace.clone(),
+                state.registry.clone(),
+                state.position_encoding_utf8,
+                state.sources.clone(),
+            )
+        };
 
         // Convert LSP diagnostics to internal ones.
         let diags: Vec<crate::diagnostic::Diagnostic> = params.context.diagnostics
@@ -780,14 +792,14 @@ impl LanguageServer for Backend {
             })
             .collect();
 
-        let mut actions = code_actions(source, &key, &diags, index, &state.workspace, &state.registry);
+        let mut actions = code_actions(&source, &key, &diags, &index, &workspace, &registry);
 
         // REQ-ACT-07 / REQ-ACT-08: when the client sends a non-empty range (selection),
         // also emit refactor actions for wrap and extract-to-macro.
         let range = &params.range;
         if range.start != range.end {
             let sel = selection_code_actions(
-                source,
+                &source,
                 &key,
                 range.start.line,
                 range.end.line,
@@ -799,11 +811,9 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let utf8 = state.position_encoding_utf8;
-        let sources = &state.sources;
         let lsp_actions: Vec<CodeActionOrCommand> = actions
             .into_iter()
-            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key, sources, utf8)))
+            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key, &sources_snapshot, utf8)))
             .collect();
 
         Ok(Some(lsp_actions))

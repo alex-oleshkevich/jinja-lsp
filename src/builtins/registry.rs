@@ -158,6 +158,7 @@ pub fn parse_doc_str(src: &str, source: Source) -> Option<(DocEntry, Vec<AttrDoc
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 /// REQ-BLTN-01: registry keyed by category then name.
+#[derive(Clone)]
 pub struct Registry {
     entries: HashMap<Category, HashMap<String, DocEntry>>,
     attributes: HashMap<String, HashMap<String, AttrDoc>>,
