@@ -461,8 +461,8 @@ fn rename_shadowing_variable(
         .map(|r| TextEdit {
             start_line: r.span.start_line,
             start_col: r.span.start_col,
-            end_line: r.span.start_line,
-            end_col: r.span.start_col + var_name.len() as u32,
+            end_line: r.span.end_line,
+            end_col: r.span.end_col,
             new_text: new_name.clone(),
         });
 
