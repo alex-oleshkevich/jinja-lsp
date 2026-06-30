@@ -157,25 +157,29 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
 
     // REQ-LINT-09: run all per-file checks across every indexed template.
     use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::builtins::hints::load_sidecar;
     use jinja_lsp::diagnostics::checks::run_checks;
     use jinja_lsp::diagnostics::suppress_by_noqa;
     // Build registry the same way the LSP server does — core + extras + custom_builtins + hints.
     // Relative paths are resolved against cfg_root (the directory containing jinja.toml).
-    let mut registry = Registry::load_core();
+    let mut base_registry = Registry::load_core();
     let extras: Vec<&str> = cfg.extras.iter().map(|s| s.as_str()).collect();
-    registry.load_packs(&extras);
+    base_registry.load_packs(&extras);
     for dir_str in &cfg.custom_builtins {
-        registry.load_custom_builtins(&cfg_root.join(dir_str));
+        base_registry.load_custom_builtins(&cfg_root.join(dir_str));
     }
     for dir_str in &cfg.hints {
-        registry.load_hints_from_dir(&cfg_root.join(dir_str));
+        base_registry.load_hints_from_dir(&cfg_root.join(dir_str));
     }
 
     let t1 = std::time::Instant::now();
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     for idx in workspace.templates.values() {
         let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
-        let raw = run_checks(&source, &idx.path, idx, &registry, &workspace);
+        // REQ-HINT-01: overlay per-template sidecar hints on top of the base registry.
+        let mut effective_registry = base_registry.clone();
+        load_sidecar(std::path::Path::new(&idx.path), &mut effective_registry);
+        let raw = run_checks(&source, &idx.path, idx, &effective_registry, &workspace);
         let (kept, w107s) = suppress_by_noqa(&raw, &source);
         all_diags.extend(kept);
         // suppress_by_noqa produces W107s with file: "" — backfill the path here.

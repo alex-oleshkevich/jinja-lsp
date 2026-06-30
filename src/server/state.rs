@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use crate::{
-    builtins::registry::Registry,
+    builtins::{hints::load_sidecar, registry::Registry},
     config::{ConfigError, ConfigOverlay, ConfigWarning, JinjaConfig},
     parsing::{extract, inline::detect_inline_regions},
     workspace::{build_workspace, index::WorkspaceIndex},
@@ -49,6 +49,9 @@ pub struct ServerState {
     /// Re-applied on top of every file-based config reload so the editor's
     /// settings always take precedence over jinja.toml (E15 §5.7).
     pub init_overlay: Option<ConfigOverlay>,
+    /// REQ-HINT-01: per-template registries that layer a sidecar `.hints.md` on top of
+    /// the folder registry. Populated (and invalidated) by `update_file`.
+    pub sidecar_registries: HashMap<String, Registry>,
 }
 
 impl ServerState {
@@ -68,6 +71,7 @@ impl ServerState {
             workspace_root: None,
             extra_folders: Vec::new(),
             init_overlay: None,
+            sidecar_registries: HashMap::new(),
         }
     }
 
@@ -86,6 +90,7 @@ impl ServerState {
             workspace_root: None,
             extra_folders: Vec::new(),
             init_overlay: None,
+            sidecar_registries: HashMap::new(),
         }
     }
 
@@ -159,7 +164,17 @@ impl ServerState {
     }
 
     /// REQ-EXTR-08: Return the Registry for the folder that owns `key`.
+    /// REQ-HINT-01: if a sidecar `.hints.md` was loaded for this template,
+    /// returns that overlay registry instead of the bare folder registry.
     pub fn registry_for<'a>(&'a self, key: &str) -> &'a Registry {
+        if let Some(sidecar) = self.sidecar_registries.get(key) {
+            return sidecar;
+        }
+        self.base_registry_for(key)
+    }
+
+    /// Folder/global registry without sidecar overlay — used to build sidecars.
+    pub fn base_registry_for<'a>(&'a self, key: &str) -> &'a Registry {
         self.extra_folders.iter()
             .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
@@ -193,6 +208,25 @@ impl ServerState {
             let config = self.config.clone();
             Self::index_file_into(key, source, &mut self.workspace, &config);
             self.generation += 1;
+        }
+
+        // REQ-HINT-01: rebuild the per-template sidecar registry when the template changes.
+        // Use base_registry_for (not registry_for) so the stale sidecar is never its own seed.
+        let base = self.base_registry_for(key).clone();
+        self.refresh_sidecar(key, base);
+    }
+
+    /// Check for `{key}.hints.md` and (re)build the sidecar registry entry.
+    /// Clears the cached entry when no sidecar exists so stale hints are evicted.
+    pub fn refresh_sidecar(&mut self, key: &str, base_registry: Registry) {
+        let path = Path::new(key);
+        let sidecar_exists = crate::builtins::hints::find_sidecar(path).is_some();
+        if sidecar_exists {
+            let mut reg = base_registry;
+            load_sidecar(path, &mut reg);
+            self.sidecar_registries.insert(key.to_owned(), reg);
+        } else {
+            self.sidecar_registries.remove(key);
         }
     }
 

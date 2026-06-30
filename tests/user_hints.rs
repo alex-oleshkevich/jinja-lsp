@@ -172,6 +172,69 @@ fn post_attributes_in_registry_after_hint() {
     assert!(reg.get_attr("post", "author").is_some(), "post.author must be in attr map");
 }
 
+// ---------- REQ-HINT-01: ServerState.update_file wires sidecar into registry --
+
+#[test]
+fn server_state_sidecar_cached_on_update_file() {
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::builtins::registry::{Category, Source};
+
+    let template_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/user-hints/templates/detail.html");
+    let key = template_path.to_str().unwrap();
+
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file(key, "{{ page_title }}");
+
+    // The sidecar entry must have been cached.
+    assert!(
+        state.sidecar_registries.contains_key(key),
+        "sidecar_registries must have an entry for the template with a sidecar"
+    );
+
+    // registry_for must return the sidecar-overlaid registry.
+    let reg = state.registry_for(key);
+    let entry = reg.get(Category::ContextVariable, "page_title");
+    assert!(entry.is_some(), "registry_for must include the sidecar hint page_title");
+    assert_eq!(entry.unwrap().source, Source::Hint);
+}
+
+#[test]
+fn server_state_no_sidecar_entry_for_template_without_sidecar() {
+    use jinja_lsp::server::state::ServerState;
+
+    let template_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/user-hints/templates/base.html");
+    let key = template_path.to_str().unwrap();
+
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file(key, "{% block body %}{% endblock %}");
+
+    assert!(
+        !state.sidecar_registries.contains_key(key),
+        "sidecar_registries must be empty for a template without a sidecar"
+    );
+}
+
+#[test]
+fn server_state_refresh_sidecar_evicts_stale_entry() {
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::builtins::registry::Registry;
+
+    let mut state = ServerState::with_config(Default::default());
+    // Manually insert a fake sidecar entry.
+    state.sidecar_registries.insert("no_such.html".to_owned(), Registry::load_core());
+
+    // refresh_sidecar for a path with no sidecar on disk must evict the entry.
+    let base = state.base_registry_for("no_such.html").clone();
+    state.refresh_sidecar("no_such.html", base);
+
+    assert!(
+        !state.sidecar_registries.contains_key("no_such.html"),
+        "stale sidecar entry must be evicted when no sidecar file exists"
+    );
+}
+
 // ---------- REQ-HINT-08: malformed hint is skipped, siblings load -------------
 
 #[test]
