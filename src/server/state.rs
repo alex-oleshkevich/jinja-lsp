@@ -7,6 +7,20 @@ use crate::{
     workspace::{build_workspace, index::WorkspaceIndex},
 };
 
+/// Per-folder state for additional workspace folders (folder 1..N).
+/// Folder 0 (the primary folder) is stored directly in `ServerState`.
+pub struct FolderState {
+    /// Absolute path of the workspace folder root.
+    pub root: std::path::PathBuf,
+    pub workspace: WorkspaceIndex,
+    pub config: JinjaConfig,
+    pub registry: Registry,
+    /// Absolute path of the config file discovered for this folder.
+    pub config_file_path: Option<String>,
+    /// Incremented by Pass 1; Pass 2 guards against stale relinks.
+    pub generation: u64,
+}
+
 /// Shared mutable state held behind Arc<RwLock<>> in the LSP backend.
 pub struct ServerState {
     pub workspace: WorkspaceIndex,
@@ -14,7 +28,7 @@ pub struct ServerState {
     pub config: JinjaConfig,
     /// Raw source text per file key — used by formatting handlers.
     pub sources: HashMap<String, String>,
-    /// Incremented by every Pass 1; Pass 2 checks it to discard stale relinks.
+    /// Incremented by every Pass 1 on the primary folder; Pass 2 checks it to discard stale relinks.
     pub generation: u64,
     /// REQ-BLTN-07: unified doc registry — core + custom_builtins from config.
     pub registry: Registry,
@@ -28,6 +42,9 @@ pub struct ServerState {
     pub config_file_path: Option<String>,
     /// REQ-CFG-10: workspace root path — needed to re-discover config on reload.
     pub workspace_root: Option<String>,
+    /// REQ-EXTR-08: additional workspace folders (folder 1..N).
+    /// Each gets its own isolated WorkspaceIndex and config.
+    pub extra_folders: Vec<FolderState>,
 }
 
 impl ServerState {
@@ -45,6 +62,7 @@ impl ServerState {
             position_encoding_utf8: false,
             config_file_path: None,
             workspace_root: None,
+            extra_folders: Vec::new(),
         }
     }
 
@@ -61,6 +79,7 @@ impl ServerState {
             position_encoding_utf8: false,
             config_file_path: None,
             workspace_root: None,
+            extra_folders: Vec::new(),
         }
     }
 
@@ -84,7 +103,7 @@ impl ServerState {
 
     /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +
     /// extension packs + configured custom_builtins dirs + user hints dirs.
-    fn build_registry(config: &JinjaConfig) -> Registry {
+    pub fn build_registry(config: &JinjaConfig) -> Registry {
         let mut reg = Registry::load_core();
         // REQ-EXT-02: load configured extension packs.
         let extras: Vec<&str> = config.extras.iter().map(|s| s.as_str()).collect();
@@ -100,39 +119,89 @@ impl ServerState {
         reg
     }
 
+    /// REQ-EXTR-08: Return the WorkspaceIndex for the folder that owns `key`.
+    /// Uses longest-prefix match on folder roots. Falls back to the primary workspace.
+    pub fn workspace_for<'a>(&'a self, key: &str) -> &'a WorkspaceIndex {
+        self.extra_folders.iter()
+            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+            .map(|f| &f.workspace)
+            .unwrap_or(&self.workspace)
+    }
+
+    /// REQ-EXTR-08: Mutable borrow of the extra FolderState that owns `key`, if any.
+    /// Returns `None` if the file belongs to the primary folder.
+    fn extra_folder_for_mut(&mut self, key: &str) -> Option<&mut FolderState> {
+        let idx = self.extra_folders.iter().enumerate()
+            .filter(|(_, f)| key.starts_with(f.root.to_str().unwrap_or("")))
+            .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+            .map(|(i, _)| i)?;
+        Some(&mut self.extra_folders[idx])
+    }
+
+    /// REQ-EXTR-08: Return the Registry for the folder that owns `key`.
+    pub fn registry_for<'a>(&'a self, key: &str) -> &'a Registry {
+        self.extra_folders.iter()
+            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+            .map(|f| &f.registry)
+            .unwrap_or(&self.registry)
+    }
+
+    /// REQ-EXTR-08: Return the JinjaConfig for the folder that owns `key`.
+    pub fn config_for<'a>(&'a self, key: &str) -> &'a JinjaConfig {
+        self.extra_folders.iter()
+            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+            .map(|f| &f.config)
+            .unwrap_or(&self.config)
+    }
+
     /// Pass 1 (REQ-ARCH-03): re-extract one file and atomically replace its
     /// TemplateIndex without touching any other entry.
     ///
     /// REQ-INLN-02/REQ-EXTR-05: if `key` is a host file (non-Jinja extension),
     /// detect embedded Jinja templates and index each one as `key::<offset>`.
+    ///
+    /// REQ-EXTR-08: routes the update to the correct folder's WorkspaceIndex.
     pub fn update_file(&mut self, key: &str, source: &str) {
+        self.sources.insert(key.to_owned(), source.to_owned());
+
+        if let Some(folder) = self.extra_folder_for_mut(key) {
+            Self::index_file_into(key, source, &mut folder.workspace, &folder.config);
+            folder.generation += 1;
+        } else {
+            let config = self.config.clone();
+            Self::index_file_into(key, source, &mut self.workspace, &config);
+            self.generation += 1;
+        }
+    }
+
+    /// Index `source` at `key` into the given workspace, handling inline regions.
+    fn index_file_into(key: &str, source: &str, workspace: &mut WorkspaceIndex, config: &JinjaConfig) {
         let mut idx = extract(source);
         idx.path = key.to_owned();
-        self.workspace.templates.insert(key.to_owned(), idx);
-        self.sources.insert(key.to_owned(), source.to_owned());
+        workspace.templates.insert(key.to_owned(), idx);
 
         // Remove stale inline entries from a previous version of this file.
         let inline_prefix = format!("{key}::");
-        self.workspace.templates.retain(|k, _| !k.starts_with(&inline_prefix));
+        workspace.templates.retain(|k, _| !k.starts_with(&inline_prefix));
 
         // For host files, detect embedded Jinja templates and index each one.
-        if self.is_host_file(key) {
-            let patterns: Vec<&str> = self.config.inline_patterns.iter().map(|s| s.as_str()).collect();
+        if Self::is_host_file_for_config(key, config) {
+            let patterns: Vec<&str> = config.inline_patterns.iter().map(|s| s.as_str()).collect();
             for region in detect_inline_regions(source, &patterns) {
                 let inline_key = format!("{key}::{}", region.host_offset);
-                self.workspace.index_inline(&inline_key, &region.content);
+                workspace.index_inline(&inline_key, &region.content);
             }
         }
-
-        self.generation += 1;
     }
 
-    /// True when `key` has a file extension that is NOT in the configured Jinja extensions.
-    fn is_host_file(&self, key: &str) -> bool {
+    fn is_host_file_for_config(key: &str, config: &JinjaConfig) -> bool {
         let ext = Path::new(key)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        !ext.is_empty() && !self.config.extensions.iter().any(|e| e == ext)
+        !ext.is_empty() && !config.extensions.iter().any(|e| e == ext)
     }
 }

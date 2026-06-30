@@ -73,8 +73,11 @@ impl Backend {
     /// Pass 2 (REQ-ARCH-04 / REQ-EXTR-06): relink the workspace — build the
     /// import graph and assemble template chains.  Generation-guarded: if Pass 1
     /// runs while the blocking relink is in progress the stale result is discarded.
+    ///
+    /// REQ-EXTR-08: also relinks each extra workspace folder independently.
     #[tracing::instrument(skip(self), name = "pass2_relink")]
     async fn pass2(&self) {
+        // Relink the primary workspace.
         let (gen_snapshot, workspace_snapshot) = {
             let state = self.state.read().await;
             (state.generation, state.workspace.clone())
@@ -96,6 +99,31 @@ impl Backend {
                 state.workspace = relinked;
             }
         }
+
+        // REQ-EXTR-08: relink each extra folder's workspace independently.
+        let folder_count = self.state.read().await.extra_folders.len();
+        for i in 0..folder_count {
+            let (gen_snapshot, workspace_snapshot) = {
+                let state = self.state.read().await;
+                let f = &state.extra_folders[i];
+                (f.generation, f.workspace.clone())
+            };
+            let span = tracing::info_span!("pass2_blocking_relink_extra", folder = i);
+            let relinked = tokio::task::spawn_blocking(move || {
+                let _guard = span.enter();
+                let mut ws = workspace_snapshot;
+                ws.relink();
+                ws
+            })
+            .await
+            .ok();
+            if let Some(relinked) = relinked {
+                let mut state = self.state.write().await;
+                if state.extra_folders[i].generation == gen_snapshot {
+                    state.extra_folders[i].workspace = relinked;
+                }
+            }
+        }
     }
 
     fn uri_to_key(uri: &Url) -> String {
@@ -105,13 +133,16 @@ impl Backend {
     /// Run checks on one file and push findings to the client (REQ-DIAG / F01).
     async fn publish_file_diagnostics(&self, key: &str) {
         let state = self.state.read().await;
-        let (Some(source), Some(index)) = (state.sources.get(key), state.workspace.templates.get(key))
+        let workspace = state.workspace_for(key);
+        let (Some(source), Some(index)) = (state.sources.get(key), workspace.templates.get(key))
         else {
             return;
         };
-        let raw = run_checks(source, key, index, &state.registry, &state.workspace);
-        let select: Vec<&str> = state.config.lint.select.iter().map(|s| s.as_str()).collect();
-        let ignore: Vec<&str> = state.config.lint.ignore.iter().map(|s| s.as_str()).collect();
+        let registry = state.registry_for(key);
+        let raw = run_checks(source, key, index, registry, workspace);
+        let config = state.config_for(key);
+        let select: Vec<&str> = config.lint.select.iter().map(|s| s.as_str()).collect();
+        let ignore: Vec<&str> = config.lint.ignore.iter().map(|s| s.as_str()).collect();
         let filtered: Vec<crate::diagnostic::Diagnostic> =
             filter_by_config(&raw, &select, &ignore).into_iter().cloned().collect();
         let (kept, w107s) = suppress_by_noqa(&filtered, source);
@@ -125,8 +156,53 @@ impl Backend {
     }
 
     /// REQ-CFG-10: re-parse the config file and reload affected state.
+    /// REQ-EXTR-08: detects which folder the config belongs to and reloads only that folder.
     #[tracing::instrument(skip(self), name = "config_reload")]
     async fn reload_config_file(&self, file_path: &str) {
+        // Check if the config belongs to an extra folder (REQ-EXTR-08).
+        let extra_idx = {
+            let state = self.state.read().await;
+            state.extra_folders.iter().enumerate()
+                .find(|(_, f)| f.config_file_path.as_deref() == Some(file_path)
+                    || f.root.to_str().map(|r| file_path.starts_with(r)).unwrap_or(false))
+                .map(|(i, _)| i)
+        };
+
+        if let Some(ei) = extra_idx {
+            let root = {
+                let state = self.state.read().await;
+                state.extra_folders[ei].root.to_string_lossy().into_owned()
+            };
+            let root_path = std::path::Path::new(&root);
+            let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    tracing::warn!("jinja-lsp: extra folder config reload error (retaining previous): {e}");
+                    return;
+                }
+            };
+            let dirs = new_config.resolved_template_dirs(root_path);
+            let exts = new_config.extensions.clone();
+            let new_registry = ServerState::build_registry(&new_config);
+            {
+                let mut state = self.state.write().await;
+                state.extra_folders[ei].config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
+                state.extra_folders[ei].config = new_config;
+                state.extra_folders[ei].registry = new_registry;
+            }
+            let new_workspace = tokio::task::spawn_blocking(move || {
+                let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+                let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+            })
+            .await
+            .unwrap_or_default();
+            self.state.write().await.extra_folders[ei].workspace = new_workspace;
+            tracing::info!("jinja-lsp: extra folder config reloaded from {file_path}");
+            return;
+        }
+
+        // Primary folder config reload.
         let root = {
             let state = self.state.read().await;
             state.workspace_root.clone()
@@ -198,21 +274,33 @@ impl LanguageServer for Backend {
             .map(|encs| encs.contains(&PositionEncodingKind::UTF8))
             .unwrap_or(false);
 
-        // jinja-lsp-uoyh: Resolve workspace root, discover config, build workspace.
-        let root_path: Option<std::path::PathBuf> = params.root_uri.as_ref()
-            .and_then(|u| u.to_file_path().ok())
-            .or_else(|| {
-                params.workspace_folders.as_ref()?.first()
-                    .and_then(|f| f.uri.to_file_path().ok())
-            });
+        // jinja-lsp-uoyh: Resolve workspace root from root_uri or first workspace folder.
+        // Additional workspace folders (REQ-EXTR-08) get their own FolderState below.
+        let all_folder_paths: Vec<std::path::PathBuf> = {
+            let mut paths: Vec<std::path::PathBuf> = Vec::new();
+            if let Some(root) = params.root_uri.as_ref().and_then(|u| u.to_file_path().ok()) {
+                paths.push(root);
+            }
+            if let Some(folders) = &params.workspace_folders {
+                for f in folders {
+                    if let Ok(p) = f.uri.to_file_path() {
+                        if !paths.contains(&p) {
+                            paths.push(p);
+                        }
+                    }
+                }
+            }
+            paths
+        };
+        let root_path: Option<&std::path::PathBuf> = all_folder_paths.first();
 
         // REQ-CFG-01 / REQ-CFG-10: discover config from project root; record path for live reload.
-        let (discovered_config, config_file_path) = root_path.as_deref()
+        let (discovered_config, config_file_path) = root_path
             .and_then(|root| crate::config::JinjaConfig::discover_with_path(root).ok())
             .unwrap_or_default();
 
-        // Build workspace index in a blocking thread — may read many files from disk.
-        let initial_workspace = if let Some(root) = &root_path {
+        // Build primary workspace index in a blocking thread — may read many files from disk.
+        let initial_workspace = if let Some(root) = root_path {
             let dirs = discovered_config.resolved_template_dirs(root);
             let exts: Vec<String> = discovered_config.extensions.clone();
             tokio::task::spawn_blocking(move || {
@@ -226,6 +314,32 @@ impl LanguageServer for Backend {
             crate::workspace::index::WorkspaceIndex::default()
         };
 
+        // REQ-EXTR-08: build an isolated FolderState for each additional workspace folder.
+        let mut extra_folders: Vec<state::FolderState> = Vec::new();
+        for extra_root in all_folder_paths.iter().skip(1) {
+            let (extra_cfg, extra_cfg_path) = crate::config::JinjaConfig::discover_with_path(extra_root)
+                .ok()
+                .unwrap_or_default();
+            let extra_registry = ServerState::build_registry(&extra_cfg);
+            let extra_dirs = extra_cfg.resolved_template_dirs(extra_root);
+            let extra_exts: Vec<String> = extra_cfg.extensions.clone();
+            let extra_workspace = tokio::task::spawn_blocking(move || {
+                let dir_refs: Vec<&std::path::Path> = extra_dirs.iter().map(|p| p.as_path()).collect();
+                let ext_refs: Vec<&str> = extra_exts.iter().map(|s| s.as_str()).collect();
+                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+            })
+            .await
+            .unwrap_or_default();
+            extra_folders.push(state::FolderState {
+                root: extra_root.clone(),
+                workspace: extra_workspace,
+                config: extra_cfg,
+                registry: extra_registry,
+                config_file_path: extra_cfg_path.map(|p| p.to_string_lossy().into_owned()),
+                generation: 0,
+            });
+        }
+
         // REQ-EDIT-10 / REQ-CFG-07: apply InitializationOptions overlay on top of discovered config.
         {
             let mut state = self.state.write().await;
@@ -233,7 +347,8 @@ impl LanguageServer for Backend {
             state.position_encoding_utf8 = utf8;
             state.workspace = initial_workspace;
             state.config_file_path = config_file_path.map(|p| p.to_string_lossy().into_owned());
-            state.workspace_root = root_path.as_ref().map(|p| p.to_string_lossy().into_owned());
+            state.workspace_root = root_path.map(|p| p.to_string_lossy().into_owned());
+            state.extra_folders = extra_folders;
             state.reset_config(discovered_config);
             if let Some(opts) = params.initialization_options {
                 if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(opts) {
@@ -435,7 +550,17 @@ impl LanguageServer for Backend {
                     }
                 }
                 FileChangeType::DELETED => {
-                    self.state.write().await.workspace.templates.remove(&key);
+                    let mut state = self.state.write().await;
+                    // REQ-EXTR-08: remove from the correct folder's workspace.
+                    let extra_idx = state.extra_folders.iter().enumerate()
+                        .filter(|(_, f)| key.starts_with(f.root.to_str().unwrap_or("")))
+                        .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+                        .map(|(i, _)| i);
+                    if let Some(ei) = extra_idx {
+                        state.extra_folders[ei].workspace.templates.remove(&key);
+                    } else {
+                        state.workspace.templates.remove(&key);
+                    }
                     any_template_changed = true;
                 }
                 _ => {}
@@ -458,10 +583,11 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position.text_document.uri);
         let pos = params.text_document_position.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, state.position_encoding_utf8);
-        let (items, is_incomplete) = complete(source, pos.line, byte_col, index, &state.registry, &state.workspace);
+        let (items, is_incomplete) = complete(source, pos.line, byte_col, index, state.registry_for(&key), workspace);
         if items.is_empty() {
             return Ok(None);
         }
@@ -479,6 +605,7 @@ impl LanguageServer for Backend {
 
     async fn completion_resolve(&self, mut item: CompletionItem) -> Result<CompletionItem> {
         // REQ-CMP-05: fill documentation lazily from the item's data field.
+        // completion_resolve has no document URI, so falls back to the primary registry.
         if let Some(data) = item.data.as_ref().and_then(|d| d.as_str()) {
             let state = self.state.read().await;
             if let Some(doc) = resolve_doc(data, &state.registry) {
@@ -495,11 +622,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(result) = hover_feature(source, pos.line, byte_col, index, &state.registry, &state.workspace)
+        let Some(result) = hover_feature(source, pos.line, byte_col, index, state.registry_for(&key), workspace)
         else {
             return Ok(None);
         };
@@ -528,11 +656,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(help) = sig_help_feature(source, pos.line, byte_col, index, &state.registry, &state.workspace) else {
+        let Some(help) = sig_help_feature(source, pos.line, byte_col, index, state.registry_for(&key), workspace) else {
             return Ok(None);
         };
         let sig_info = SignatureInformation {
@@ -558,11 +687,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(loc) = go_to_definition(source, pos.line, byte_col, &key, index, &state.registry, &state.workspace)
+        let Some(loc) = go_to_definition(source, pos.line, byte_col, &key, index, state.registry_for(&key), workspace)
         else {
             return Ok(None);
         };
@@ -579,11 +709,12 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let include_decl = params.context.include_declaration;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let locs = find_references(source, pos.line, byte_col, &key, include_decl, index, &state.registry, &state.workspace);
+        let locs = find_references(source, pos.line, byte_col, &key, include_decl, index, state.registry_for(&key), workspace);
         if locs.is_empty() { return Ok(None); }
         let locations: Vec<Location> = locs.iter().map(|r| ref_to_location(r, &state.sources, utf8)).collect();
         Ok(Some(locations))
@@ -596,7 +727,7 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace_for(&key).templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let syms = document_symbols(source, index);
         if syms.is_empty() {
@@ -615,6 +746,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<SymbolInformation>>> {
         let state = self.state.read().await;
         let utf8 = state.position_encoding_utf8;
+        // workspace_symbols searches the primary folder; multi-folder symbol search is a future enhancement.
         let syms = workspace_symbols(&params.query, &state.workspace);
         if syms.is_empty() { return Ok(None); }
         let result = syms.iter().map(|s| ws_to_lsp_symbol(s, &state.sources, utf8)).collect();
@@ -628,11 +760,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let highlights = document_highlight(source, pos.line, byte_col, index, &state.registry);
+        let highlights = document_highlight(source, pos.line, byte_col, index, state.registry_for(&key));
         if highlights.is_empty() { return Ok(None); }
         let result = highlights.iter().map(|h| {
             let kind = match h.kind {
@@ -676,11 +809,12 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<InlayHint>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let cfg = InlayHintsConfig::default();
-        let hints = inlay_hints(source, &key, index, &state.registry, &state.workspace, &cfg);
+        let hints = inlay_hints(source, &key, index, state.registry_for(&key), workspace, &cfg);
         if hints.is_empty() { return Ok(None); }
         let result = hints.iter().map(|h| {
             let data = inlay_hint_data_to_json(&h.data);
@@ -709,7 +843,8 @@ impl LanguageServer for Backend {
             InlayHintData::EndBlock { template_path, .. } => template_path.clone(),
         };
         let state = self.state.read().await;
-        let Some(index) = state.workspace.templates.get(&path) else { return Ok(params) };
+        let workspace = state.workspace_for(&path);
+        let Some(index) = workspace.templates.get(&path) else { return Ok(params) };
         // Reconstruct an internal InlayHint with only the data field; resolve fills tooltip.
         let internal = crate::features::inlay_hints::InlayHint {
             line: params.position.line,
@@ -719,7 +854,7 @@ impl LanguageServer for Backend {
             tooltip: None,
             data: hint_data,
         };
-        let resolved = inlay_hint_resolve(internal, index, &state.registry, &state.workspace);
+        let resolved = inlay_hint_resolve(internal, index, state.registry_for(&path), workspace);
         if let Some(tooltip) = resolved.tooltip {
             params.tooltip = Some(InlayHintTooltip::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
@@ -732,7 +867,7 @@ impl LanguageServer for Backend {
     async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = state.workspace_for(&key).templates.get(&key) else { return Ok(None) };
         let cfg = CodeLensConfig::default();
         let lenses = code_lens_feature(&key, index, &cfg);
         if lenses.is_empty() { return Ok(None); }
@@ -765,7 +900,7 @@ impl LanguageServer for Backend {
             title: None,
             data: lens_data,
         };
-        let resolved = code_lens_resolve_feature(internal, &state.workspace);
+        let resolved = code_lens_resolve_feature(internal, state.workspace_for(&path));
         if let Some(title) = resolved.title {
             if !title.is_empty() {
                 params.command = Some(Command { title, command: String::new(), arguments: None });
@@ -784,13 +919,14 @@ impl LanguageServer for Backend {
         // Clone everything needed and drop the read guard before CPU-bound work.
         let (source, index, workspace, registry, utf8, sources_snapshot) = {
             let state = self.state.read().await;
+            let ws = state.workspace_for(&key);
             let Some(source) = state.sources.get(&key) else { return Ok(None) };
-            let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+            let Some(index) = ws.templates.get(&key) else { return Ok(None) };
             (
                 source.clone(),
                 index.clone(),
-                state.workspace.clone(),
-                state.registry.clone(),
+                ws.clone(),
+                state.registry_for(&key).clone(),
                 state.position_encoding_utf8,
                 state.sources.clone(),
             )
@@ -880,11 +1016,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document.uri);
         let pos = params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some((_target, name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, &state.workspace)
+        let Some((_target, name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, workspace)
         else {
             return Ok(None);
         };
@@ -911,15 +1048,16 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let new_name = &params.new_name;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some((target, old_name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, &state.workspace)
+        let Some((target, old_name)) = rename_at_cursor(source, &key, pos.line, byte_col, index, workspace)
         else {
             return Ok(None);
         };
-        let Some(we) = compute_rename(source, &key, &old_name, new_name, target, index, &state.workspace)
+        let Some(we) = compute_rename(source, &key, &old_name, new_name, target, index, workspace)
         else {
             return Ok(None);
         };
@@ -933,11 +1071,12 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let items = prepare_call_hierarchy(source, pos.line, byte_col, &key, index, &state.workspace, &state.registry);
+        let items = prepare_call_hierarchy(source, pos.line, byte_col, &key, index, workspace, state.registry_for(&key));
         if items.is_empty() { return Ok(None); }
         let result = items.iter().map(|i| internal_item_to_lsp(i, &state.sources, utf8)).collect();
         Ok(Some(result))
@@ -949,6 +1088,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<CallHierarchyIncomingCall>>> {
         let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
         let state = self.state.read().await;
+        // incoming/outgoing_calls work on the primary workspace; multi-folder call hierarchy is a future enhancement.
         let calls = incoming_calls(&item, &state.workspace);
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
@@ -965,7 +1105,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<CallHierarchyOutgoingCall>>> {
         let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
         let state = self.state.read().await;
-        let calls = outgoing_calls(&item, &state.workspace, &state.registry);
+        let calls = outgoing_calls(&item, &state.workspace, &state.registry); // primary workspace
         if calls.is_empty() { return Ok(None); }
         let utf8 = state.position_encoding_utf8;
         let result = calls.iter().map(|c| CallHierarchyOutgoingCall {
@@ -981,9 +1121,10 @@ impl LanguageServer for Backend {
     ) -> Result<Option<SemanticTokensResult>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
-        let tokens = stok_full(source, index, &state.registry, &state.workspace);
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let tokens = stok_full(source, index, state.registry_for(&key), workspace);
         if tokens.is_empty() { return Ok(None); }
         let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
@@ -995,9 +1136,10 @@ impl LanguageServer for Backend {
     ) -> Result<Option<SemanticTokensRangeResult>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
         let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace.templates.get(&key) else { return Ok(None) };
-        let tokens = stok_range(source, params.range.start.line, params.range.end.line, index, &state.registry, &state.workspace);
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let tokens = stok_range(source, params.range.start.line, params.range.end.line, index, state.registry_for(&key), workspace);
         if tokens.is_empty() { return Ok(None); }
         let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
         Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens { result_id: None, data })))
