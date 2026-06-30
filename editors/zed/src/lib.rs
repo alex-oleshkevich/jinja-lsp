@@ -108,23 +108,63 @@ fn download_release(language_server_id: &LanguageServerId) -> Result<String> {
         .find(|a| a.name == archive_name)
         .ok_or_else(|| format!("jinja-lsp release asset '{archive_name}' not found"))?;
 
+    // REQ-EDIT-12: fetch the binary checksum published by F21 (release.yml).
+    // The `.binary.sha256` asset contains the SHA256 hex of the extracted binary (not the archive).
+    let checksum_asset_name = format!("{archive_name}.binary.sha256");
+    let checksum_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == checksum_asset_name)
+        .ok_or_else(|| format!("checksum asset '{checksum_asset_name}' not found in release"))?;
+
     zed::set_language_server_installation_status(
         language_server_id,
         &zed::LanguageServerInstallationStatus::Downloading,
     );
 
+    // Download the binary checksum (plain text hex, no compression).
+    let checksum_file = format!("{archive_name}.binary.sha256.txt");
+    zed::download_file(&checksum_asset.download_url, &checksum_file, zed::DownloadedFileType::Uncompressed)?;
+    let expected_hex = std::fs::read_to_string(&checksum_file)
+        .map_err(|e| format!("failed to read checksum file: {e}"))?;
+
     // Download and extract the archive into a versioned directory.
-    // The `file-path` argument is used as the directory name inside the extension working dir.
     let install_dir = format!("jinja-lsp-{}", release.version);
     zed::download_file(&asset.download_url, &install_dir, file_type)?;
 
     let binary_path = format!("{install_dir}/{binary_name}");
     zed::make_file_executable(&binary_path)?;
 
+    // REQ-EDIT-12: verify the extracted binary against the published checksum.
+    // A mismatch means the download is corrupt or tampered — reject it.
+    verify_binary_checksum(&binary_path, expected_hex.trim())?;
+
     // Persist the installed version so future launches can skip the GitHub API call.
     let _ = std::fs::write(INSTALLED_VERSION_FILE, &release.version);
 
     Ok(binary_path)
+}
+
+/// Compute SHA-256 of the binary at `path` and compare against the hex string in `expected`.
+/// `expected` may be bare hex or in `sha256sum` format (`<hex>  <filename>`).
+fn verify_binary_checksum(path: &str, expected: &str) -> Result<()> {
+    use sha2::{Digest, Sha256};
+
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("failed to read binary for checksum verification: {e}"))?;
+
+    let digest = Sha256::digest(&bytes);
+    let actual: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+
+    // Accept both bare hex and `sha256sum`-style lines.
+    let expected_hex = expected.split_whitespace().next().unwrap_or("").to_lowercase();
+
+    if actual != expected_hex {
+        return Err(format!(
+            "checksum mismatch for {path}: expected {expected_hex}, got {actual}"
+        ));
+    }
+    Ok(())
 }
 
 /// Map the current platform to (rust-target-triple, archive-ext, download-type, binary-name).

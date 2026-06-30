@@ -103,6 +103,7 @@ jobs:
           ARCHIVE=jinja-lsp-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
           tar czf "$ARCHIVE" -C "$(dirname $BINARY)" "$(basename $BINARY)"
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          sha256sum "$BINARY" | awk '{print $1}' > "$ARCHIVE.binary.sha256"
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
 
       - name: Package (Windows)
@@ -114,6 +115,8 @@ jobs:
           Compress-Archive -Path $BINARY -DestinationPath $ARCHIVE
           $hash = (Get-FileHash $ARCHIVE -Algorithm SHA256).Hash.ToLower()
           "$hash  $ARCHIVE" | Out-File -Encoding ASCII "$ARCHIVE.sha256"
+          $binHash = (Get-FileHash $BINARY -Algorithm SHA256).Hash.ToLower()
+          $binHash | Out-File -Encoding ASCII "$ARCHIVE.binary.sha256"
           echo "ARCHIVE=$ARCHIVE" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # REQ-REL-13: signed provenance via GitHub Attestations (SLSA L2).
@@ -129,6 +132,7 @@ jobs:
           path: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
+            ${{ env.ARCHIVE }}.binary.sha256
 
   # REQ-REL-10: platform wheels via maturin.
   # REQ-REL-14: wheels must depend on build so a binary build failure aborts wheel builds early.

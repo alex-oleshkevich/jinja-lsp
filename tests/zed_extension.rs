@@ -120,8 +120,19 @@ fn zed_extension_source_downloads_release_binary() {
         src.contains("latest_github_release"),
         "src/lib.rs must fetch from github release to locate the binary"
     );
-    // Note: zed_extension_api 0.2 has no checksum-verification API; verification
-    // is skipped. Transport integrity is provided by HTTPS. (REQ-EDIT-12 aspirational.)
+    // REQ-EDIT-12: must fetch the published binary checksum and verify before launching.
+    assert!(
+        src.contains("binary.sha256"),
+        "src/lib.rs must fetch the .binary.sha256 checksum asset published by release.yml"
+    );
+    assert!(
+        src.contains("verify_binary_checksum"),
+        "src/lib.rs must call verify_binary_checksum after downloading"
+    );
+    assert!(
+        src.contains("sha2") || src.contains("Sha256"),
+        "src/lib.rs must use sha2 to compute the binary's SHA-256"
+    );
 }
 
 // ─── T-17: REQ-EDIT-08 — jinja2-lsp id and Jinja2 (HTML) language ───────────
@@ -165,7 +176,6 @@ fn zed_asset_names_match_release_workflow() {
 fn zed_download_uses_archive_file_types() {
     let src = include_str!("../editors/zed/src/lib.rs");
     // Binaries are published as .tar.gz (Linux/macOS) and .zip (Windows).
-    // Using Uncompressed would download the archive bytes and try to exec them.
     assert!(
         src.contains("GzipTar"),
         "zed lib.rs must use DownloadedFileType::GzipTar for .tar.gz archives"
@@ -174,9 +184,22 @@ fn zed_download_uses_archive_file_types() {
         src.contains("Zip"),
         "zed lib.rs must use DownloadedFileType::Zip for Windows .zip archives"
     );
+    // Uncompressed is allowed exclusively for the tiny checksum text file download.
+    // The main binary archive must still use GzipTar or Zip (asserted above).
     assert!(
-        !src.contains("Uncompressed"),
-        "zed lib.rs must NOT use DownloadedFileType::Uncompressed for compressed release archives"
+        src.contains("Uncompressed"),
+        "zed lib.rs must use DownloadedFileType::Uncompressed to download the .binary.sha256 text file"
+    );
+}
+
+#[test]
+fn zed_checksum_mismatch_is_rejected() {
+    let src = include_str!("../editors/zed/src/lib.rs");
+    // REQ-EDIT-12/T-16: a mismatch must produce an error (Err return) — never launch the binary.
+    // verify_binary_checksum returns Err on mismatch; the `?` in download_release propagates it.
+    assert!(
+        src.contains("checksum mismatch"),
+        "verify_binary_checksum must return Err with 'checksum mismatch' on hash mismatch"
     );
 }
 
@@ -187,5 +210,17 @@ fn zed_no_nonexistent_api_calls() {
     assert!(
         !src.contains("verify_file_against_checksum"),
         "zed lib.rs must not call verify_file_against_checksum (not in zed_extension_api 0.2)"
+    );
+}
+
+#[test]
+fn zed_binary_sha256_published_by_release_workflow() {
+    let src = include_str!("../.github/workflows/release.yml");
+    // REQ-EDIT-12: release.yml must compute and upload the extracted-binary hash
+    // so the Zed extension can verify it. Archive hash alone is insufficient because
+    // download_file extracts the archive before the extension can access its bytes.
+    assert!(
+        src.contains("binary.sha256"),
+        "release.yml must publish a .binary.sha256 asset containing the extracted-binary hash"
     );
 }
