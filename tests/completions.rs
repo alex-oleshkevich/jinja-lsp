@@ -321,3 +321,31 @@ fn cmp04_from_import_unknown_source_returns_empty() {
     let items = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
     assert!(items.is_empty(), "unknown source must return no completions; got: {items:?}");
 }
+
+// ─── jinja-lsp-n6su: attr completion data must resolve to docs ───────────────
+
+#[test]
+fn n6su_resolve_doc_handles_attr_prefix() {
+    let reg = Registry::load_core();
+    // "loop" is a built-in special object with attribute docs (e.g. loop.index).
+    let doc = resolve_doc("attr:loop.index", &reg);
+    assert!(doc.is_some(), "resolve_doc must handle 'attr:parent.attr' data keys");
+}
+
+#[test]
+fn n6su_attr_item_data_key_is_resolvable() {
+    // Attribute completions for "loop" must carry a data key that resolve_doc can handle.
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let src = "{% for x in y %}{{ loop. }}{% endfor %}";
+    let idx = extract(src);
+    // position after "loop." — the dot triggers attribute completion
+    let col = src.find("loop.").unwrap() as u32 + "loop.".len() as u32;
+    let items = complete(src, 0, col, &idx, &reg, &ws);
+    for item in &items {
+        if let Some(data) = &item.data {
+            let doc = resolve_doc(data, &reg);
+            assert!(doc.is_some(), "attr item data '{data}' must resolve; got None");
+        }
+    }
+}

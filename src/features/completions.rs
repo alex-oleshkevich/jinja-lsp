@@ -431,6 +431,15 @@ pub fn complete(
 /// `filter`, `function`, `test`, `variable`.
 pub fn resolve_doc(data: &str, registry: &Registry) -> Option<String> {
     let (cat_str, name) = data.split_once(':')?;
+    if cat_str == "attr" {
+        let (parent, attr_name) = name.split_once('.')?;
+        let attr = registry.get_attr(parent, attr_name)?;
+        let mut parts = vec![format!("**{}.{}**", parent, attr_name)];
+        if let Some(ty) = &attr.ty {
+            parts.push(format!("Type: `{ty}`"));
+        }
+        return Some(parts.join("\n\n"));
+    }
     let category = match cat_str {
         "filter" => Category::Filter,
         "function" => Category::Function,
