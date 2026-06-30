@@ -108,7 +108,7 @@ pub fn hover(
             let body = if tr.is_dynamic {
                 "Computed at runtime — cannot resolve statically.".to_owned()
             } else {
-                let exists = workspace.templates.contains_key(&tr.path);
+                let exists = workspace.get_by_ref(&tr.path).is_some();
                 let note = if tr.ignore_missing && !exists {
                     " (not found — ignored)"
                 } else if exists {
@@ -404,17 +404,22 @@ fn is_descendant_of(descendant: &str, ancestor: &str, workspace: &WorkspaceIndex
     let mut current = descendant.to_owned();
     let mut seen = std::collections::HashSet::new();
     loop {
-        let parent = match workspace.templates.get(&current).and_then(|idx| idx.extends()) {
+        let extends_path = match workspace.get_by_ref(&current).and_then(|idx| idx.extends()) {
             Some(e) => e.path.clone(),
             None => return false,
         };
-        if parent == ancestor {
+        // Resolve the relative extends ref to the workspace key for consistent comparison.
+        let parent_key = match workspace.resolve_key(&extends_path) {
+            Some(k) => k.to_owned(),
+            None => return false,
+        };
+        if parent_key == ancestor {
             return true;
         }
-        if !seen.insert(parent.clone()) {
+        if !seen.insert(parent_key.clone()) {
             return false; // cycle guard
         }
-        current = parent;
+        current = parent_key;
     }
 }
 

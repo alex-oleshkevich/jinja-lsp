@@ -186,7 +186,7 @@ fn resolve_macro_params(
             // The call-site name is the alias (if any) or the original name.
             let call_name = imp.alias.as_deref().unwrap_or(&imp.name);
             if call_name == name {
-                if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
                     if let Some(mac) = src_idx.macros.iter().find(|m| m.name == imp.name) {
                         return Some(mac.parameters.iter().map(|p| p.name.clone()).collect());
                     }
@@ -504,7 +504,7 @@ fn resolve_param_tooltip(
         for imp in &fi.names {
             let call_name = imp.alias.as_deref().unwrap_or(&imp.name);
             if call_name == symbol_name {
-                if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
                     if let Some(mac) = src_idx.macros.iter().find(|m| m.name == imp.name) {
                         let p = mac.parameters.get(param_idx)?;
                         return Some(fmt_macro_param(&p.name, p.default.as_deref()));

@@ -93,7 +93,7 @@ impl TemplateIndex {
                             || n.name == reference.name
                     });
                     if imported {
-                        if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                        if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
                             // Find by original name (alias is local, original is in src).
                             let orig = fi.names.iter()
                                 .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == reference.name)
@@ -240,9 +240,17 @@ impl WorkspaceIndex {
         chain
     }
 
+    /// Look up a template by a reference path that may be relative (`"base.html"`)
+    /// even when the workspace is keyed by absolute paths (LSP server path).
+    ///
+    /// Returns `None` when no template in the workspace matches `ref_path`.
+    pub fn get_by_ref(&self, ref_path: &str) -> Option<&TemplateIndex> {
+        self.resolve_key(ref_path).and_then(|k| self.templates.get(k))
+    }
+
     // Maps an extends target (relative path) to the actual map key, handling
     // the mismatch between relative keys (build_workspace) and absolute keys (server).
-    fn resolve_key<'a>(&'a self, target: &'a str) -> Option<&'a str> {
+    pub(crate) fn resolve_key<'a>(&'a self, target: &'a str) -> Option<&'a str> {
         if self.templates.contains_key(target) {
             return Some(target);
         }

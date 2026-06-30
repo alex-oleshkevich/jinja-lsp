@@ -679,7 +679,7 @@ fn resolve_callee_params(callee: &str, index: &TemplateIndex, registry: &Registr
         for n in &fi.names {
             let matches = n.name == callee || n.alias.as_deref() == Some(callee);
             if matches {
-                if let Some(src_idx) = workspace.templates.get(&fi.source) {
+                if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
                     if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
                         return m.parameters.iter().map(|p| p.name.clone()).collect();
                     }

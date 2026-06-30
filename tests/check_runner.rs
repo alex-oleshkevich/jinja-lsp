@@ -369,6 +369,55 @@ fn no_e601_for_known_extends_path() {
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E601").count(), 0);
 }
 
+// ─── jinja-lsp-1i26: workspace key contract (abs keys ↔ relative refs) ───────
+
+#[test]
+fn no_e601_for_valid_extends_with_abs_keyed_workspace() {
+    // Simulates the server path: build_workspace_abs keys templates by absolute path.
+    // Template references use relative paths ("base.html").
+    // E601 must NOT fire when the referred template exists in the workspace.
+    use std::fs;
+    use tempfile::TempDir;
+    use jinja_lsp::workspace::build_workspace_abs;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("base.html"), "{% block content %}{% endblock %}").unwrap();
+    fs::write(dir.path().join("child.html"), r#"{% extends "base.html" %}"#).unwrap();
+
+    let ws = build_workspace_abs(&[dir.path()], &["html"]);
+    let child_abs = dir.path().join("child.html").to_string_lossy().into_owned();
+    let source = fs::read_to_string(&child_abs).unwrap();
+    let idx = extract(&source);
+
+    let diags = run_checks(&source, &child_abs, &idx, &registry(), &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E601").count(), 0,
+        "E601 must not fire for a valid extends when workspace uses absolute keys: {diags:?}"
+    );
+}
+
+#[test]
+fn no_e404_for_non_cyclic_extends_with_abs_keyed_workspace() {
+    use std::fs;
+    use tempfile::TempDir;
+    use jinja_lsp::workspace::build_workspace_abs;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("base.html"), "{% block content %}{% endblock %}").unwrap();
+    fs::write(dir.path().join("child.html"), r#"{% extends "base.html" %}"#).unwrap();
+
+    let ws = build_workspace_abs(&[dir.path()], &["html"]);
+    let child_abs = dir.path().join("child.html").to_string_lossy().into_owned();
+    let source = fs::read_to_string(&child_abs).unwrap();
+    let idx = extract(&source);
+
+    let diags = run_checks(&source, &child_abs, &idx, &registry(), &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
+        "E404 must not fire for non-cyclic extends with abs-keyed workspace: {diags:?}"
+    );
+}
+
 // ─── E101: undefined-variable ────────────────────────────────────────────────
 
 fn registry_with_context_var(name: &str) -> Registry {

@@ -311,9 +311,11 @@ fn resolve_macro_item(
         if !is_imported {
             continue;
         }
-        if let Some(src_idx) = workspace.templates.get(&fi.source) {
-            if let Some(m) = src_idx.macros.iter().find(|m| m.name == name) {
-                return Some(macro_item(m, &fi.source));
+        if let Some(src_key) = workspace.resolve_key(&fi.source) {
+            if let Some(src_idx) = workspace.templates.get(src_key) {
+                if let Some(m) = src_idx.macros.iter().find(|m| m.name == name) {
+                    return Some(macro_item(m, src_key));
+                }
             }
         }
     }

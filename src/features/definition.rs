@@ -43,9 +43,9 @@ pub fn go_to_definition(
     // ── Template reference paths (extends/include/import/from strings) ────────
     for tr in &index.template_refs {
         if byte_in_span(byte, &tr.span) && !tr.is_dynamic {
-            if workspace.templates.contains_key(&tr.path) {
+            if let Some(key) = workspace.resolve_key(&tr.path) {
                 return Some(DefinitionLocation {
-                    target_path: tr.path.clone(),
+                    target_path: key.to_owned(),
                     target_start_line: 0,
                     target_start_col: 0,
                     target_end_line: 0,
@@ -112,9 +112,11 @@ pub fn go_to_definition(
             'outer: for fi in &index.from_imports {
                 for n in &fi.names {
                     if n.name == word || n.alias.as_deref() == Some(word) {
-                        if let Some(src_idx) = workspace.templates.get(&fi.source) {
-                            if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
-                                return Some(span_to_def(&fi.source, &m.span));
+                        if let Some(src_key) = workspace.resolve_key(&fi.source) {
+                            if let Some(src_idx) = workspace.templates.get(src_key) {
+                                if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                                    return Some(span_to_def(src_key, &m.span));
+                                }
                             }
                         }
                         break 'outer;
@@ -129,9 +131,9 @@ pub fn go_to_definition(
     for alias in &index.import_aliases {
         if byte_in_span(byte, &alias.span) {
             // Jump to source template (more useful than jumping to same-file declaration).
-            if workspace.templates.contains_key(&alias.source) {
+            if let Some(key) = workspace.resolve_key(&alias.source) {
                 return Some(DefinitionLocation {
-                    target_path: alias.source.clone(),
+                    target_path: key.to_owned(),
                     target_start_line: 0,
                     target_start_col: 0,
                     target_end_line: 0,
@@ -184,9 +186,11 @@ fn resolve_ident(
     'from_loop: for fi in &index.from_imports {
         for n in &fi.names {
             if n.name == name || n.alias.as_deref() == Some(name) {
-                if let Some(src_idx) = workspace.templates.get(&fi.source) {
-                    if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
-                        return Some(span_to_def(&fi.source, &m.span));
+                if let Some(src_key) = workspace.resolve_key(&fi.source) {
+                    if let Some(src_idx) = workspace.templates.get(src_key) {
+                        if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                            return Some(span_to_def(src_key, &m.span));
+                        }
                     }
                 }
                 break 'from_loop;
@@ -289,9 +293,10 @@ fn resolve_alias_attr(
     workspace: &WorkspaceIndex,
 ) -> Option<DefinitionLocation> {
     let alias = index.import_aliases.iter().find(|a| a.alias == parent)?;
-    let src_idx = workspace.templates.get(&alias.source)?;
+    let src_key = workspace.resolve_key(&alias.source)?;
+    let src_idx = workspace.templates.get(src_key)?;
     let m = src_idx.macros.iter().find(|m| m.name == attr)?;
-    Some(span_to_def(&alias.source, &m.span))
+    Some(span_to_def(src_key, &m.span))
 }
 
 fn span_to_def(path: &str, span: &Span) -> DefinitionLocation {

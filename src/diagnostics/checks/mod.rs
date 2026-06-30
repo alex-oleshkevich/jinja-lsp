@@ -496,7 +496,7 @@ fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
     // Only applies to child templates.
     let extends = index.template_refs.iter().find(|r| matches!(r.kind, TemplateRefKind::Extends));
     let Some(parent_ref) = extends else { return };
-    let Some(parent_idx) = workspace.templates.get(&parent_ref.path) else { return };
+    let Some(parent_idx) = workspace.get_by_ref(&parent_ref.path) else { return };
 
     let child_block_names: std::collections::HashSet<&str> =
         index.blocks.iter().map(|b| b.name.as_str()).collect();
@@ -606,13 +606,18 @@ fn check_e404(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
 }
 
 fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<String>, workspace: &WorkspaceIndex) -> bool {
-    if current == target {
+    // Resolve current to the workspace key (handles relative ref vs absolute key mismatch).
+    let current_key = match workspace.resolve_key(current) {
+        Some(k) => k.to_owned(),
+        None => return false,
+    };
+    if current_key == target {
         return true;
     }
-    if !visited.insert(current.to_owned()) {
+    if !visited.insert(current_key.clone()) {
         return false;
     }
-    let Some(idx) = workspace.templates.get(current) else { return false };
+    let Some(idx) = workspace.templates.get(&current_key) else { return false };
     for tr in &idx.template_refs {
         if tr.is_dynamic || tr.ignore_missing {
             continue;
@@ -707,7 +712,7 @@ fn resolve_macro<'a>(callee: &str, index: &'a TemplateIndex, workspace: &'a Work
             .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == callee)
             .map(|n| n.name.as_str())
         else { continue };
-        if let Some(src_idx) = workspace.templates.get(&fi.source) {
+        if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
             if let Some(m) = src_idx.macros.iter().find(|m| m.name == orig) {
                 return Some(m);
             }
@@ -730,7 +735,7 @@ fn check_e601(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
             continue;
         }
         if matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Include | TemplateRefKind::Import | TemplateRefKind::From)
-            && !workspace.templates.contains_key(&tr.path)
+            && workspace.get_by_ref(&tr.path).is_none()
         {
             out.push(Diagnostic {
                 file: path.to_owned(),
