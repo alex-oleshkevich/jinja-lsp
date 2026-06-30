@@ -242,3 +242,16 @@ fn t6zo5_invalid_noqa_w107_appears_in_check_output() {
         "W107 invalid-noqa must appear in check output, got codes: {codes:?}");
     assert_eq!(code, 1, "W107 is a finding → exit 1");
 }
+
+// ---------- jinja-lsp-6g3l: invalid --format must exit 2 -------------------
+
+#[test]
+fn t6g3l_invalid_format_value_exits_2() {
+    // An unrecognized --format value is a usage error and must exit 2.
+    let tmp = tmpdir("fmt_bogus");
+    fs::write(tmp.join("t.html"), "{{ x }}").unwrap();
+    let (_, stderr, code) = check(&["--format", "bogus", tmp.to_str().unwrap()]);
+    assert_eq!(code, 2, "unrecognized --format must exit 2, got {code}; stderr: {stderr}");
+    assert!(stderr.contains("bogus") || stderr.contains("format"),
+        "stderr must mention the invalid value or 'format': {stderr}");
+}

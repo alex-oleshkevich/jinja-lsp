@@ -204,7 +204,11 @@ fn run_check(paths: Vec<String>, format: &str, config_path: Option<&str>, select
         abs.replace('\\', "/")
     };
 
-    // REQ-LINT-04/05/06: output format
+    // REQ-LINT-04/05/06: output format — reject unknown values (exit 2).
+    if !matches!(format, "rich" | "compact" | "json") {
+        eprintln!("error: invalid --format value {:?}: expected one of rich, compact, json", format);
+        return 2;
+    }
     match format {
         "json" => {
             // REQ-LINT-06/07: JSON array with 7-key shape, workspace-relative paths
