@@ -276,6 +276,46 @@ fn cmp08_from_import_macro_params_offered() {
 fn reg() -> Registry { Registry::load_core() }
 
 #[test]
+fn cmp08_filter_call_params_offered() {
+    // REQ-CMP-08: cursor inside a filter call must offer that filter's keyword args.
+    // `{{ x | truncate( }}` — the open paren wins over the bare `|` context.
+    let src = "{{ x | truncate( }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let col = src.find('(').unwrap() as u32 + 1;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(
+        labels.iter().any(|l| l.contains("length")),
+        "truncate 'length=' must be offered inside filter call: {labels:?}"
+    );
+    // Must NOT be the full filter list
+    assert!(
+        !labels.iter().any(|l| *l == "upper"),
+        "full filter list must NOT be offered inside filter call: {labels:?}"
+    );
+}
+
+#[test]
+fn cmp08_filter_call_kwargs_are_keyword_arg_kind() {
+    // Items inside a filter-call context must have KeywordArg kind, not Filter.
+    let src = "{{ x | truncate( }}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let col = src.find('(').unwrap() as u32 + 1;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &ws);
+    assert!(!items.is_empty(), "must have items inside filter call paren");
+    for item in &items {
+        assert_eq!(
+            item.kind,
+            jinja_lsp::features::completions::CompletionKind::KeywordArg,
+            "filter call kwarg items must have kind=KeywordArg, got {:?} for {:?}",
+            item.kind, item.label
+        );
+    }
+}
+
+#[test]
 fn bovp_detect_context_mid_multibyte_char_does_not_panic() {
     // "é" is 2 bytes; byte 1 is NOT a char boundary.
     // detect_context must not panic when given a mid-char byte offset.

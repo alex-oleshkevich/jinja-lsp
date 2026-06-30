@@ -135,14 +135,16 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
         }
     }
 
+    // REQ-CMP-08: call-args context — cursor is inside unclosed `callee(`.
+    // Must be checked BEFORE the filter context: `{{ x | truncate( }}` has both
+    // a `|` and an open paren; the open paren is the innermost, most specific context.
+    if let Some(callee) = callee_before_open_paren(inner) {
+        return CursorContext::CallArgs { callee };
+    }
+
     // Filter context: there is a `|` in the inner text.
     if inner.contains('|') {
         return CursorContext::Filter;
-    }
-
-    // REQ-CMP-08: call-args context — cursor is inside unclosed `callee(`.
-    if let Some(callee) = callee_before_open_paren(inner) {
-        return CursorContext::CallArgs { callee };
     }
 
     CursorContext::Expression
@@ -300,23 +302,6 @@ fn last_identifier(s: &str) -> &str {
         .map(|i| i + 1)
         .unwrap_or(0);
     &trimmed[start..]
-}
-
-/// True when `text` ends inside an unclosed string literal (either `"` or `'`).
-fn has_unclosed_string(text: &str) -> bool {
-    let mut in_string = false;
-    let mut quote_char = '"';
-    for c in text.chars() {
-        if in_string {
-            if c == quote_char {
-                in_string = false;
-            }
-        } else if c == '"' || c == '\'' {
-            in_string = true;
-            quote_char = c;
-        }
-    }
-    in_string
 }
 
 /// REQ-CMP-08: if `inner` ends with an unclosed `identifier(…`, return the callee name.
@@ -523,7 +508,7 @@ pub fn complete(
 
         // REQ-CMP-08: call-args context → macro parameter names as `name=` completions.
         CursorContext::CallArgs { callee } => {
-            let params = resolve_callee_params(&callee, index, workspace);
+            let params = resolve_callee_params(&callee, index, registry, workspace);
             params.iter().map(|p| kwarg_item(p)).collect()
         }
 
@@ -613,8 +598,8 @@ pub fn resolve_doc(data: &str, registry: &Registry) -> Option<String> {
     Some(parts.join("\n\n"))
 }
 
-/// REQ-CMP-08: Resolve parameter names for `callee` from local macros, from-imports, or workspace.
-fn resolve_callee_params(callee: &str, index: &TemplateIndex, workspace: &WorkspaceIndex) -> Vec<String> {
+/// REQ-CMP-08: Resolve parameter names for `callee` from local macros, from-imports, or registry.
+fn resolve_callee_params(callee: &str, index: &TemplateIndex, registry: &Registry, workspace: &WorkspaceIndex) -> Vec<String> {
     // 1. Local macro.
     if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
         return m.parameters.iter().map(|p| p.name.clone()).collect();
@@ -631,6 +616,13 @@ fn resolve_callee_params(callee: &str, index: &TemplateIndex, workspace: &Worksp
                     }
                 }
             }
+        }
+    }
+
+    // 3. Registry filter — params exclude the implicit receiver (same as signature_help).
+    for cat in [Category::Filter, Category::Test, Category::Function] {
+        if let Some(entry) = registry.get(cat, callee) {
+            return entry.params.iter().map(|p| p.name.clone()).collect();
         }
     }
 
