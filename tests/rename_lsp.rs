@@ -2,7 +2,7 @@
 // Constitution §4.7 / F17 §2: rename is a Non-Goal as an LSP method;
 // it is delivered as a code-action command instead.
 
-use jinja_lsp::features::rename::{rename_at_cursor, compute_rename, RenameTarget};
+use jinja_lsp::features::rename::{rename_at_cursor, compute_rename, check_rename_preconditions, RenameTarget};
 use jinja_lsp::server::state::ServerState;
 
 // ─── Architecture conformance: LSP method must NOT be advertised ─────────────
@@ -62,4 +62,23 @@ fn rename_block_via_state() {
     let (target, name) = result.unwrap();
     assert_eq!(name, "content");
     assert_eq!(target, RenameTarget::Workspace);
+}
+
+// ─── jinja-lsp-8vf4: validation integration via state ────────────────────────
+
+#[test]
+fn rename_invalid_identifier_refused_via_preconditions() {
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file("t.html", "{% set count = 1 %}{{ count }}");
+    let source = state.sources.get("t.html").unwrap();
+    let index = state.workspace.templates.get("t.html").unwrap();
+    let (target, _) = rename_at_cursor(source, "t.html", 0, 22, index, &state.workspace).unwrap();
+    assert!(check_rename_preconditions("123abc", &target, index).is_some());
+    assert!(check_rename_preconditions("total", &target, index).is_none());
+}
+
+#[test]
+fn rename_command_advertised_in_server() {
+    let src = include_str!("../src/server/mod.rs");
+    assert!(src.contains("jinja-lsp.rename"), "rename command must be registered in execute_command_provider");
 }

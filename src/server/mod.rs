@@ -35,6 +35,7 @@ use crate::features::semantic_tokens::{
     TOKEN_TYPES, TOKEN_MODIFIERS,
 };
 use crate::features::symbols::{document_symbols, workspace_symbols, SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol};
+use crate::features::rename::{rename_at_cursor, compute_rename, check_rename_preconditions};
 use state::ServerState;
 
 /// REQ-ARCH-02: direct all tracing output to stderr; never stdout (stdout
@@ -432,7 +433,7 @@ impl LanguageServer for Backend {
                     },
                 )),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["jinja-lsp.extract-macro".to_owned()],
+                    commands: vec!["jinja-lsp.extract-macro".to_owned(), "jinja-lsp.rename".to_owned()],
                     ..Default::default()
                 }),
                 document_formatting_provider: Some(OneOf::Left(true)),
@@ -994,6 +995,34 @@ impl LanguageServer for Backend {
                 let state = self.state.read().await;
                 let Some(source) = state.sources.get(path) else { return Ok(None) };
                 let Some(workspace_edit) = crate::features::extract_macro::compute_extract_macro(source, path, start_line as u32, end_line as u32, name) else {
+                    return Ok(None);
+                };
+                let utf8 = state.position_encoding_utf8;
+                let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
+                let _ = self.client.apply_edit(lsp_edit).await;
+                Ok(None)
+            }
+            // REQ-ACT-11: args[0]: {path, line, col, new_name}
+            "jinja-lsp.rename" => {
+                let Some(arg) = params.arguments.first() else { return Ok(None) };
+                let Some(obj) = arg.as_object() else { return Ok(None) };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
+                let Some(line) = obj.get("line").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let Some(col) = obj.get("col").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let Some(new_name) = obj.get("new_name").and_then(|v| v.as_str()) else { return Ok(None) };
+                let state = self.state.read().await;
+                let workspace = state.workspace_for(path);
+                let Some(source) = state.sources.get(path) else { return Ok(None) };
+                let Some(index) = workspace.templates.get(path) else { return Ok(None) };
+                let Some((target, old_name)) = rename_at_cursor(source, path, line as u32, col as u32, index, workspace) else {
+                    return Ok(None);
+                };
+                // REQ-ACT-11: validate identifier and check for scope collision before applying.
+                if let Some(reason) = check_rename_preconditions(new_name, &target, index) {
+                    self.client.show_message(MessageType::WARNING, reason).await;
+                    return Ok(None);
+                }
+                let Some(workspace_edit) = compute_rename(source, path, &old_name, new_name, target, index, workspace) else {
                     return Ok(None);
                 };
                 let utf8 = state.position_encoding_utf8;

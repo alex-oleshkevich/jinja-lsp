@@ -235,6 +235,70 @@ fn act11_local_rename_whole_file_when_no_scope() {
     assert!(edits.len() >= 2, "expected at least 2 edits without scope: {edits:?}");
 }
 
+// ─── jinja-lsp-8vf4: identifier validation and collision refusal ──────────────
+
+#[test]
+fn act11_invalid_identifier_is_refused() {
+    use jinja_lsp::features::rename::check_rename_preconditions;
+
+    let source = "{% set count = 1 %}{{ count }}";
+    let idx = extract(source);
+
+    let target = RenameTarget::Local { scope: None };
+    // Digits-only name
+    let r = check_rename_preconditions("123", &target, &idx);
+    assert!(r.is_some(), "digits-only name must be refused");
+    // Empty string
+    let r = check_rename_preconditions("", &target, &idx);
+    assert!(r.is_some(), "empty name must be refused");
+    // Name with spaces
+    let r = check_rename_preconditions("my var", &target, &idx);
+    assert!(r.is_some(), "name with spaces must be refused");
+    // Valid name
+    let r = check_rename_preconditions("total", &target, &idx);
+    assert!(r.is_none(), "valid identifier 'total' must not be refused");
+    // Leading underscore is valid in Jinja
+    let r = check_rename_preconditions("_tmp", &target, &idx);
+    assert!(r.is_none(), "_tmp must be accepted as valid identifier");
+}
+
+#[test]
+fn act11_collision_in_same_scope_is_refused() {
+    use jinja_lsp::features::rename::check_rename_preconditions;
+
+    // Both `count` and `total` are in scope at the same time.
+    let source = "{% set count = 1 %}{% set total = 2 %}{{ count }} {{ total }}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    // Try to rename `count` to `total` — `total` already binds in the same scope.
+    let cursor_byte = source.find("{{ count }}").unwrap() + 3;
+    let result = rename_at_cursor(source, "t.html", 0, cursor_byte as u32, &idx, &ws);
+    let (target, _) = result.expect("rename_at_cursor must find count");
+
+    let r = check_rename_preconditions("total", &target, &idx);
+    assert!(r.is_some(), "renaming count→total must be refused (total already binds in scope)");
+    assert!(r.unwrap().contains("collision"), "refusal message must mention collision");
+}
+
+#[test]
+fn act11_collision_outside_scope_is_allowed() {
+    use jinja_lsp::features::rename::check_rename_preconditions;
+
+    // `item` from for-loop has a restricted scope; `total` only exists outside that scope.
+    let source = "{% for item in xs %}{{ item }}{% endfor %}{% set total = 2 %}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    // Rename `item` inside the for-loop — `total` is outside that scope, no collision.
+    let cursor_byte = source.find("{{ item }}").unwrap() + 3;
+    let result = rename_at_cursor(source, "t.html", 0, cursor_byte as u32, &idx, &ws);
+    let (target, _) = result.expect("rename_at_cursor must find item");
+
+    let r = check_rename_preconditions("total", &target, &idx);
+    assert!(r.is_none(), "renaming item→total must be allowed; 'total' is outside the for-loop scope");
+}
+
 #[test]
 #[ignore]
 fn debug_spans() {

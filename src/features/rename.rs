@@ -98,6 +98,55 @@ fn tightest_scope_for(name: &str, byte: usize, index: &TemplateIndex) -> Option<
         .map(|v| v.valid_range.clone())
 }
 
+/// Validate `new_name` and check for scope collisions before producing edits.
+///
+/// Returns `Some(message)` if the rename should be refused — the caller must surface
+/// this as a `window/showMessage` notification and produce no edit.
+/// Returns `None` if the rename is valid and should proceed.
+pub fn check_rename_preconditions(
+    new_name: &str,
+    target: &RenameTarget,
+    index: &TemplateIndex,
+) -> Option<String> {
+    if !is_valid_jinja_identifier(new_name) {
+        return Some(format!(
+            "'{new_name}' is not a valid Jinja identifier (must match [a-zA-Z_][a-zA-Z0-9_]*)"
+        ));
+    }
+    if let RenameTarget::Local { scope } = target {
+        if has_collision(new_name, scope.as_ref(), index) {
+            return Some(format!(
+                "'{new_name}' already binds in the same scope — rename would create a collision"
+            ));
+        }
+    }
+    None
+}
+
+/// A valid Jinja identifier starts with a letter or underscore, followed by letters, digits, or underscores.
+pub fn is_valid_jinja_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Returns true if any existing VariableDefinition named `new_name` has a `valid_range`
+/// overlapping with `scope`. Two ranges overlap when neither ends before the other starts.
+fn has_collision(new_name: &str, scope: Option<&Span>, index: &TemplateIndex) -> bool {
+    let (scope_start, scope_end) = match scope {
+        Some(s) => (s.start_byte, s.end_byte),
+        None => (0, usize::MAX), // whole-file scope overlaps with everything
+    };
+    index.variables.iter().any(|v| {
+        v.name == new_name
+            && v.valid_range.start_byte < scope_end
+            && v.valid_range.end_byte > scope_start
+    })
+}
+
 /// Compute the WorkspaceEdit for renaming `old_name` → `new_name`.
 ///
 /// For `Local` target: rewrites all identifier references in `file`.
