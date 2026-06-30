@@ -523,9 +523,13 @@ fn delete_region_clean(source: &str, start_line: u32, end_line: u32) -> TextEdit
 // ── REQ-ACT-05 — Create a missing template file ──────────────────────────────
 
 fn create_template(diag: &Diagnostic) -> Option<CodeAction> {
+    use std::path::{Component, Path};
     let path = extract_quoted_name(&diag.message)?;
     // Reject paths that escape the templates root — defense in depth (rejected upstream too).
-    if path.contains("../") || path.starts_with('/') {
+    // Normalize backslashes so Windows-style ..\  traversal is caught on all platforms.
+    let normalized = path.replace('\\', "/");
+    let p = Path::new(&normalized);
+    if p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir)) {
         return None;
     }
     Some(CodeAction {

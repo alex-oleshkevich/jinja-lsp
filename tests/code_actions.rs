@@ -494,6 +494,26 @@ fn act05_absolute_path_no_action() {
     assert!(actions.is_empty(), "absolute path must not get a create action");
 }
 
+// ─── vv5j: path-traversal guard must cover backslash and bare '..' ────────────
+
+#[test]
+fn vv5j_bare_dotdot_final_segment_no_action() {
+    let src = r#"{% extends "templates/.." %}"#;
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "templates/..")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "bare '..' final segment must be rejected");
+}
+
+#[test]
+fn vv5j_backslash_traversal_no_action() {
+    let src = "{% extends \"..\\\\secret.html\" %}";
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "..\\secret.html")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(actions.is_empty(), "backslash '..' traversal must be rejected");
+}
+
 // ─── REQ-ACT-06 helpers ──────────────────────────────────────────────────────
 
 fn w301(line: u32, name: &str) -> Diagnostic {
