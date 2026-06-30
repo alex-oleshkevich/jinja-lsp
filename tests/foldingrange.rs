@@ -224,3 +224,30 @@ fn fold01_raw_folds_as_single_region_multiline() {
     assert_eq!(regions[0].start_line, 0);
     assert_eq!(regions[0].end_line, 2);
 }
+
+// ─── REQ-FOLD2-03: multi-line block openers also get a tag fold ──────────────
+
+#[test]
+fn fold03_multiline_macro_opener_emits_tag_fold() {
+    // REQ-FOLD2-03: a multi-line `{% macro %}` opener must fold the tag itself
+    // (in addition to the pair fold that covers the whole macro body).
+    // Source: line 0 = macro opener (2 lines), line 2 = body, line 3 = endmacro
+    let src = "{% macro render(\n  post\n) %}\nbody\n{% endmacro %}";
+    let ranges = fold_ranges(src);
+    // There must be a Region fold just for the opener tag: lines 0..2 (or 0..1 etc.)
+    let opener_tag_fold = ranges.iter().any(|r| {
+        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
+    });
+    assert!(opener_tag_fold, "multi-line macro opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}");
+}
+
+#[test]
+fn fold03_multiline_block_opener_emits_tag_fold() {
+    // Same for `{% block %}` — multi-line opener must fold the tag itself.
+    let src = "{% block\n  content\n%}\nbody\n{% endblock %}";
+    let ranges = fold_ranges(src);
+    let opener_tag_fold = ranges.iter().any(|r| {
+        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
+    });
+    assert!(opener_tag_fold, "multi-line block opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}");
+}

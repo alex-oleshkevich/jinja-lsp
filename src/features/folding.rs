@@ -180,10 +180,26 @@ fn build_ranges(events: &[Event]) -> Vec<FoldRange> {
     for event in events {
         match &event.kind {
             EventKind::BlockOpen(name) => {
+                // REQ-FOLD2-03: multi-line opener tag itself also gets a fold.
+                if event.start_line != event.end_line {
+                    result.push(FoldRange {
+                        start_line: event.start_line,
+                        end_line: event.end_line,
+                        kind: FoldKind::Region,
+                    });
+                }
                 stack.push((name.clone(), event.start_line));
             }
 
             EventKind::BlockClose(name) => {
+                // REQ-FOLD2-03: multi-line closer tag itself also gets a fold.
+                if event.start_line != event.end_line {
+                    result.push(FoldRange {
+                        start_line: event.start_line,
+                        end_line: event.end_line,
+                        kind: FoldKind::Region,
+                    });
+                }
                 // Find the innermost matching opener.
                 if let Some(pos) = stack.iter().rposition(|(n, _)| n == name) {
                     let (_, open_line) = stack.remove(pos);
