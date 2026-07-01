@@ -195,25 +195,23 @@ fn check_e103(
 // REQ-HINT-05: off by default; only fires against hinted context_variables with declared attrs.
 
 fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Registry, out: &mut Vec<Diagnostic>) {
+    // Dotted attribute access: {{ obj.attr }} — captured as ReferenceKind::Attribute.
     for r in &index.references {
         if r.kind != ReferenceKind::Attribute {
             continue;
         }
         let attr = r.name.as_str();
-        // Determine the parent variable name via backward text scan.
         let Some(parent) = attribute_parent(source, r.span.start_byte) else { continue };
-        // Only fires for hinted context_variables (REQ-HINT-05).
-        if registry.get(Category::ContextVariable, parent).is_none() {
-            continue;
+        let Some(entry) = registry.get(Category::ContextVariable, parent) else { continue };
+        // REQ-HINT-03: template scope — skip if this hint does not apply to the current file.
+        if let Some(t) = &entry.template {
+            if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
+                continue;
+            }
         }
-        // If no attrs are declared, the list is considered incomplete — no W106.
         let declared_attrs = registry.attrs_for(parent);
-        if declared_attrs.is_empty() {
-            continue;
-        }
-        if declared_attrs.iter().any(|a| a.attr == attr) {
-            continue;
-        }
+        if declared_attrs.is_empty() { continue; }
+        if declared_attrs.iter().any(|a| a.attr == attr) { continue; }
         out.push(Diagnostic {
             file: path.to_owned(),
             line: r.span.start_line,
@@ -224,6 +222,88 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
             message: format!("'{}' has no declared attribute '{}'", parent, attr),
         });
     }
+
+    // Subscript attribute access: {{ obj["attr"] }} or {{ obj['attr'] }}.
+    // The tree-sitter grammar does not produce Attribute references for subscript nodes,
+    // so we scan the source text directly (REQ-HINT-05).
+    for (parent, attr, line, col) in subscript_accesses(source) {
+        let Some(entry) = registry.get(Category::ContextVariable, parent) else { continue };
+        if let Some(t) = &entry.template {
+            if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
+                continue;
+            }
+        }
+        let declared_attrs = registry.attrs_for(parent);
+        if declared_attrs.is_empty() { continue; }
+        if declared_attrs.iter().any(|a| a.attr == attr) { continue; }
+        out.push(Diagnostic {
+            file: path.to_owned(),
+            line,
+            col,
+            code: "JINJA-W106".to_owned(),
+            slug: "unknown-attribute".to_owned(),
+            severity: DiagnosticSeverity::Warning,
+            message: format!("'{}' has no declared attribute '{}'", parent, attr),
+        });
+    }
+}
+
+/// Scan source text for `identifier["key"]` and `identifier['key']` patterns.
+/// Returns (parent_name, attr_name, line, col) for each match; col points at the key.
+fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
+    let mut out = Vec::new();
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // Find `[` preceded by an identifier.
+        if bytes[i] != b'[' { i += 1; continue; }
+        // Find the identifier before `[`.
+        let before_bracket = i;
+        if before_bracket == 0 { i += 1; continue; }
+        let id_end = before_bracket;
+        let mut id_start = id_end;
+        while id_start > 0 && (bytes[id_start - 1].is_ascii_alphanumeric() || bytes[id_start - 1] == b'_') {
+            id_start -= 1;
+        }
+        if id_start == id_end { i += 1; continue; } // no identifier before `[`
+        let parent = match std::str::from_utf8(&bytes[id_start..id_end]) {
+            Ok(s) if !s.is_empty() => s,
+            _ => { i += 1; continue; }
+        };
+        // After `[`, expect an optional space then a quote.
+        let mut j = i + 1;
+        while j < bytes.len() && bytes[j] == b' ' { j += 1; }
+        if j >= bytes.len() { i += 1; continue; }
+        let quote = bytes[j];
+        if quote != b'"' && quote != b'\'' { i += 1; continue; }
+        let key_start = j + 1;
+        let key_byte = key_start;
+        // Find closing quote.
+        let mut k = key_start;
+        while k < bytes.len() && bytes[k] != quote { k += 1; }
+        if k >= bytes.len() { i += 1; continue; }
+        let attr = match std::str::from_utf8(&bytes[key_start..k]) {
+            Ok(s) if !s.is_empty() => s,
+            _ => { i += 1; continue; }
+        };
+        // Verify closing `]` follows.
+        let mut l = k + 1;
+        while l < bytes.len() && bytes[l] == b' ' { l += 1; }
+        if l >= bytes.len() || bytes[l] != b']' { i += 1; continue; }
+        // Compute line/col of the key (points at the opening quote + 1, i.e. the key content).
+        let (line, col) = {
+            let mut line = 0u32;
+            let mut col = 0u32;
+            for (idx, &b) in bytes[..key_byte].iter().enumerate() {
+                let _ = idx;
+                if b == b'\n' { line += 1; col = 0; } else { col += 1; }
+            }
+            (line, col)
+        };
+        out.push((parent, attr, line, col));
+        i = l + 1;
+    }
+    out
 }
 
 /// Scan backwards from `attr_start_byte` to find the parent identifier name.

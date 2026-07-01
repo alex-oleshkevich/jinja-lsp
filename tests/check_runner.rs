@@ -681,6 +681,84 @@ fn w106_is_off_by_default_in_filter() {
         "W106 must appear when explicitly selected");
 }
 
+// ─── W106: template-scope fix (jinja-lsp-o45w) ───────────────────────────────
+
+fn registry_with_scoped_context_var_attrs(name: &str, template: &str, attrs: &[&str]) -> Registry {
+    let attrs_yaml = attrs.iter().map(|a| format!("  - name: {a}")).collect::<Vec<_>>().join("\n");
+    let src = format!(
+        "---\nname: {name}\ncategory: context_variable\ntemplate: {template}\nattributes:\n{attrs_yaml}\n---\nA scoped hinted variable."
+    );
+    let mut reg = Registry::load_core();
+    if let Some((entry, attr_docs)) = parse_doc_str(&src, Source::Hint) {
+        reg.insert(entry);
+        for a in attr_docs { reg.insert_attr(a); }
+    }
+    reg
+}
+
+#[test]
+fn w106_scoped_hint_fires_only_in_scoped_template() {
+    // post scoped to "detail.html" — W106 must fire in detail.html but NOT in "other.html".
+    let src = "{{ post.autor }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("detail.html", src)]);
+    let reg = registry_with_scoped_context_var_attrs("post", "detail.html", &["title", "slug"]);
+
+    let diags_scoped = run_checks(src, "detail.html", &idx, &reg, &ws);
+    assert!(
+        diags_scoped.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must fire in the scoped template"
+    );
+
+    let diags_other = run_checks(src, "other.html", &idx, &reg, &ws);
+    assert!(
+        diags_other.iter().all(|d| d.code != "JINJA-W106"),
+        "W106 must NOT fire in a different template when the hint is scoped"
+    );
+}
+
+// ─── W106: subscript access (jinja-lsp-4x6i) ─────────────────────────────────
+
+#[test]
+fn w106_fires_for_subscript_unknown_attribute() {
+    // post["autor"] should trigger W106 the same as post.autor
+    let src = r#"{{ post["autor"] }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert!(
+        diags.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must fire for subscript access with an unknown attribute"
+    );
+}
+
+#[test]
+fn no_w106_for_subscript_known_attribute() {
+    let src = r#"{{ post["title"] }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
+        "known attribute via subscript must not trigger W106"
+    );
+}
+
+#[test]
+fn w106_subscript_single_quote_key() {
+    let src = "{{ post['autor'] }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert!(
+        diags.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must fire for single-quoted subscript access with an unknown attribute"
+    );
+}
+
 // ─── E501: wrong-call-args ───────────────────────────────────────────────────
 
 #[test]
