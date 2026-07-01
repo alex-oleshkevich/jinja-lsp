@@ -72,6 +72,6 @@ fn line_col(source: &str, offset: usize) -> (u32, u32) {
     let before = &source[..offset.min(source.len())];
     let line = before.bytes().filter(|&b| b == b'\n').count() as u32;
     let line_start = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
-    let col = before[line_start..].encode_utf16().count() as u32;
+    let col = before[line_start..].len() as u32;
     (line, col)
 }

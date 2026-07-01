@@ -386,3 +386,39 @@ fn call04_nested_macro_body_does_not_steal_enclosing_endmacro() {
     assert_eq!(calls[0].from.name, "outer", "ping() is enclosed by outer, not inner");
     assert_eq!(calls[0].from.kind, ItemKind::Function);
 }
+
+// ─── jinja-lsp-6cbt: global_item detail/URI shape ────────────────────────────
+
+#[test]
+fn call6cbt_global_function_detail_and_uri_use_pack_prefix() {
+    // A registry function from a named pack must produce:
+    //   detail = "global - <pack> pack"
+    //   uri    = "jinja-builtin:<pack>/<name>"
+    use jinja_lsp::builtins::registry::{Category, DocEntry, Source};
+
+    let src = "{% macro caller() %}{{ url_for('index') }}{% endmacro %}";
+    let idx = extract(src);
+    let w = ws(&[("t.html", src)]);
+
+    // Build a registry with url_for coming from a "starlette" pack.
+    let mut r = reg();
+    r.insert(DocEntry {
+        name: "url_for".to_owned(),
+        category: Category::Function,
+        source: Source::Pack("starlette".to_owned()),
+        signature: None,
+        since: None,
+        params: vec![],
+        body: String::new(),
+        ty: None,
+        template: None,
+    });
+
+    let item = prepare_call_hierarchy(src, 0, col_of(src, "caller"), "t.html", &idx, &w, &r)
+        .into_iter().next().expect("must prepare item");
+    let calls = outgoing_calls(&item, &w, &r);
+    let url_for_edge = calls.iter().find(|c| c.to.name == "url_for").expect("url_for must be a outgoing edge");
+
+    assert_eq!(url_for_edge.to.detail, "global - starlette pack", "detail must name the pack");
+    assert_eq!(url_for_edge.to.uri, "jinja-builtin:starlette/url_for", "URI must include pack prefix");
+}

@@ -379,7 +379,11 @@ fn name_span_in(source: &str, tag_start_byte: usize, name: &str) -> Span {
                     let p = slice.as_bytes()[abs_rel - 1];
                     p.is_ascii_alphanumeric() || p == b'_'
                 };
-                if !preceded_by_ident {
+                let followed_by_ident = abs_rel + name.len() < slice.len() && {
+                    let f = slice.as_bytes()[abs_rel + name.len()];
+                    f.is_ascii_alphanumeric() || f == b'_'
+                };
+                if !preceded_by_ident && !followed_by_ident {
                     break abs_rel;
                 }
                 search_from = abs_rel + 1;

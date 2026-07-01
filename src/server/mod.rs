@@ -688,7 +688,8 @@ impl LanguageServer for Backend {
         };
         let target_source = state.sources.get(&loc.target_path).map(|s| s.as_str()).unwrap_or("");
         if state.definition_link_support {
-            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(target_source, &loc, utf8)])))
+            let origin = lsp_range_at_cursor(source, pos.line, pos.character, utf8);
+            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(target_source, &loc, utf8, Some(origin))])))
         } else {
             Ok(Some(GotoDefinitionResponse::Scalar(definition_to_location(target_source, &loc, utf8))))
         }
@@ -857,16 +858,19 @@ impl LanguageServer for Backend {
     async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
         let Some(index) = state.workspace_for(&key).templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
         let cfg = CodeLensConfig::default();
         let lenses = code_lens_feature(&key, index, &cfg);
         if lenses.is_empty() { return Ok(None); }
         let result = lenses.into_iter().map(|l| {
             let data = lens_data_to_json(&l.data);
+            let character = byte_col_to_lsp_char(source_line(source, l.line), l.col, utf8);
             CodeLens {
                 range: Range {
-                    start: Position { line: l.line, character: l.col },
-                    end: Position { line: l.line, character: l.col },
+                    start: Position { line: l.line, character },
+                    end: Position { line: l.line, character },
                 },
                 command: l.title.map(|title| Command {
                     title,
@@ -1374,13 +1378,23 @@ fn definition_to_location(target_source: &str, loc: &DefinitionLocation, utf8: b
     Location { uri: path_to_uri(&loc.target_path), range: def_range(target_source, loc, utf8) }
 }
 
-fn definition_to_link(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> LocationLink {
+fn definition_to_link(target_source: &str, loc: &DefinitionLocation, utf8: bool, origin: Option<Range>) -> LocationLink {
     let range = def_range(target_source, loc, utf8);
     LocationLink {
-        origin_selection_range: None,
+        origin_selection_range: origin,
         target_uri: path_to_uri(&loc.target_path),
         target_range: range,
         target_selection_range: range,
+    }
+}
+
+fn lsp_range_at_cursor(source: &str, line: u32, character: u32, utf8: bool) -> Range {
+    let line_text = source_line(source, line);
+    let col = lsp_char_to_byte_col(line_text, character, utf8);
+    let end_col = byte_col_to_lsp_char(line_text, col + 1, utf8);
+    Range {
+        start: Position { line, character },
+        end: Position { line, character: end_col },
     }
 }
 

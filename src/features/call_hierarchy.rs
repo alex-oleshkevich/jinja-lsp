@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    builtins::registry::{Category, Registry},
+    builtins::registry::{Category, Registry, Source},
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
         symbols::{EnclosingOwner, MacroDefinition, ReferenceKind, Span, TemplateRefKind},
@@ -174,9 +174,10 @@ pub fn outgoing_calls(
         } else if let Some((def_path, m)) = find_macro_in_workspace(workspace, &r.name) {
             // Macro defined elsewhere in the workspace.
             macro_item(&m, &def_path)
-        } else if registry.get(Category::Function, &r.name).is_some() {
+        } else if let Some(entry) = registry.get(Category::Function, &r.name) {
             // Registry global — terminal, synthetic URI.
-            global_item(&r.name, "global")
+            let pack = if let Source::Pack(p) = &entry.source { p.as_str() } else { "global" };
+            global_item(&r.name, pack)
         } else {
             continue; // unknown — skip
         };
@@ -249,8 +250,8 @@ fn global_item(name: &str, pack: &str) -> CallHierarchyItem {
     CallHierarchyItem {
         name: name.to_owned(),
         kind: ItemKind::Function,
-        detail: pack.to_owned(),
-        uri: format!("jinja-builtin:{name}"),
+        detail: format!("global - {pack} pack"),
+        uri: format!("jinja-builtin:{pack}/{name}"),
         range: zero.clone(),
         selection_range: zero,
     }

@@ -48,6 +48,39 @@ fn sym_q634_macro_named_acro_selection_points_to_name_not_keyword() {
     );
 }
 
+// ─── jinja-lsp-wbsh: name that is a PREFIX of its keyword ────────────────────
+
+#[test]
+fn sym_wbsh_macro_name_prefix_of_keyword_selects_name_not_keyword() {
+    // "ma" is a prefix of "macro" — without the trailing guard, name_span_in
+    // would stop at the "ma" inside "macro" rather than the actual name.
+    let src = "{% macro ma() %}{% endmacro %}";
+    let idx = extract(src);
+    let syms = document_symbols(src, &idx);
+    let s = find_sym(&syms, "ma").expect("macro 'ma' must appear in symbols");
+    let ma_byte = src.find(" ma(").map(|p| p + 1).unwrap() as u32;
+    assert_eq!(
+        s.selection_range.start_col, ma_byte,
+        "selection_range must point to the standalone name, not the prefix inside the keyword; got col {}",
+        s.selection_range.start_col
+    );
+}
+
+#[test]
+fn sym_wbsh_block_name_prefix_of_keyword_selects_name_not_keyword() {
+    // "bl" is a prefix of "block" — the trailing guard must catch it.
+    let src = "{% block bl %}{% endblock %}";
+    let idx = extract(src);
+    let syms = document_symbols(src, &idx);
+    let s = find_sym(&syms, "bl").expect("block 'bl' must appear in symbols");
+    let bl_byte = src.find(" bl ").map(|p| p + 1).unwrap() as u32;
+    assert_eq!(
+        s.selection_range.start_col, bl_byte,
+        "selection_range must point to the standalone name; got col {}",
+        s.selection_range.start_col
+    );
+}
+
 // ─── REQ-SYM-01: SymbolKind mapping ──────────────────────────────────────────
 
 #[test]
