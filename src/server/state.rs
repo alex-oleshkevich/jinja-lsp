@@ -125,6 +125,26 @@ impl ServerState {
         self.registry = Self::build_registry(&self.config);
     }
 
+    /// ADR-005 / REQ-CFG-10: diff-aware config reload.
+    ///
+    /// Applies the new config (with overlay re-applied) and rebuilds the registry ONLY
+    /// when registry-affecting fields changed (`extras`, `custom_builtins`, `hints`).
+    ///
+    /// Returns `(registry_rebuilt, workspace_rescan_needed)` so the caller can skip the
+    /// expensive workspace re-scan when only lint or non-workspace fields changed.
+    pub fn reload_config_selective(&mut self, new_config: JinjaConfig) -> (bool, bool) {
+        let (registry_changed, workspace_changed) = config_delta(&self.config, &new_config);
+        if registry_changed {
+            self.reload_base_config(new_config);
+        } else {
+            self.config = new_config;
+            if let Some(overlay) = self.init_overlay.clone() {
+                self.config.apply_overlay(overlay);
+            }
+        }
+        (registry_changed, workspace_changed)
+    }
+
     /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +
     /// extension packs + configured custom_builtins dirs + user hints dirs.
     pub fn build_registry(config: &JinjaConfig) -> Registry {
@@ -267,6 +287,24 @@ impl ServerState {
             .unwrap_or("");
         !ext.is_empty() && !config.extensions.iter().any(|e| e == ext)
     }
+}
+
+/// ADR-005 / REQ-CFG-10: compute which sections of the config changed between two versions.
+///
+/// Returns `(registry_changed, workspace_changed)`:
+/// - `registry_changed`: `extras`, `custom_builtins`, or `hints` differ — rebuild the registry.
+/// - `workspace_changed`: `templates_raw`, `extensions`, or `inline_patterns` differ — re-scan.
+///
+/// `lint` changes affect diagnostics only; neither flag is set so the caller skips both
+/// the registry rebuild and the workspace re-scan.
+pub fn config_delta(old: &JinjaConfig, new: &JinjaConfig) -> (bool, bool) {
+    let registry_changed = old.extras != new.extras
+        || old.custom_builtins != new.custom_builtins
+        || old.hints != new.hints;
+    let workspace_changed = old.templates_raw != new.templates_raw
+        || old.extensions != new.extensions
+        || old.inline_patterns != new.inline_patterns;
+    (registry_changed, workspace_changed)
 }
 
 /// REQ-EXTR-08 / mauu: path-boundary-safe starts_with check for folder roots.

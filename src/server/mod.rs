@@ -214,21 +214,29 @@ impl Backend {
             };
             let dirs = new_config.resolved_template_dirs(root_path);
             let exts = new_config.extensions.clone();
-            let new_registry = ServerState::build_registry(&new_config);
+            let workspace_changed;
             {
                 let mut state = self.state.write().await;
                 state.extra_folders[ei].config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
+                let (registry_changed, ws_changed) = crate::server::state::config_delta(
+                    &state.extra_folders[ei].config, &new_config,
+                );
+                workspace_changed = ws_changed;
+                if registry_changed {
+                    state.extra_folders[ei].registry = ServerState::build_registry(&new_config);
+                }
                 state.extra_folders[ei].config = new_config;
-                state.extra_folders[ei].registry = new_registry;
             }
-            let new_workspace = tokio::task::spawn_blocking(move || {
-                let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
-                let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
-                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
-            })
-            .await
-            .unwrap_or_default();
-            self.state.write().await.extra_folders[ei].workspace = new_workspace;
+            if workspace_changed {
+                let new_workspace = tokio::task::spawn_blocking(move || {
+                    let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+                    let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+                    crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+                })
+                .await
+                .unwrap_or_default();
+                self.state.write().await.extra_folders[ei].workspace = new_workspace;
+            }
             tracing::info!("jinja-lsp: extra folder config reloaded from {file_path}");
             self.republish_all_diagnostics().await;
             return;
@@ -251,6 +259,7 @@ impl Backend {
                 return;
             }
         };
+        let workspace_changed;
         let dirs: Vec<std::path::PathBuf>;
         let exts: Vec<String>;
         {
@@ -258,16 +267,19 @@ impl Backend {
             state.config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
             dirs = new_config.resolved_template_dirs(root_path);
             exts = new_config.extensions.clone();
-            state.reload_base_config(new_config);
+            let (_, ws_changed) = state.reload_config_selective(new_config);
+            workspace_changed = ws_changed;
         }
-        let new_workspace = tokio::task::spawn_blocking(move || {
-            let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
-            let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
-            crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
-        })
-        .await
-        .unwrap_or_default();
-        self.state.write().await.workspace = new_workspace;
+        if workspace_changed {
+            let new_workspace = tokio::task::spawn_blocking(move || {
+                let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+                let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+            })
+            .await
+            .unwrap_or_default();
+            self.state.write().await.workspace = new_workspace;
+        }
         tracing::info!("jinja-lsp: config reloaded from {file_path}");
         self.republish_all_diagnostics().await;
     }

@@ -349,3 +349,130 @@ fn ci5n_from_file_returns_error_for_missing_file() {
     let result = jinja_lsp::config::JinjaConfig::from_file(&root.join("nonexistent.toml"));
     assert!(result.is_err(), "from_file must return error for a missing file");
 }
+
+// ─── ADR-005 / REQ-CFG-10: config_delta diff logic ───────────────────────────
+
+#[test]
+fn config_delta_registry_changed_when_extras_differ() {
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.extras = vec!["starlette".to_owned()];
+    let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(registry_changed, "extras change must set registry_changed");
+    assert!(!workspace_changed, "extras change must not set workspace_changed");
+}
+
+#[test]
+fn config_delta_registry_changed_when_custom_builtins_differ() {
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.custom_builtins = vec!["/some/dir".to_owned()];
+    let (registry_changed, _) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(registry_changed, "custom_builtins change must set registry_changed");
+}
+
+#[test]
+fn config_delta_registry_changed_when_hints_differ() {
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.hints = vec!["/hints/dir".to_owned()];
+    let (registry_changed, _) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(registry_changed, "hints change must set registry_changed");
+}
+
+#[test]
+fn config_delta_workspace_changed_when_templates_differ() {
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.templates_raw = vec!["templates".to_owned()];
+    let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(workspace_changed, "templates change must set workspace_changed");
+    assert!(!registry_changed, "templates change must not set registry_changed");
+}
+
+#[test]
+fn config_delta_workspace_changed_when_extensions_differ() {
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.extensions = vec!["html".to_owned(), "jinja".to_owned()];
+    let (_, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(workspace_changed, "extensions change must set workspace_changed");
+}
+
+#[test]
+fn config_delta_no_change_when_only_lint_differs() {
+    use jinja_lsp::config::LintConfig;
+    let old = JinjaConfig::default();
+    let mut new = JinjaConfig::default();
+    new.lint = LintConfig { select: vec!["JINJA-E101".to_owned()], ignore: vec![] };
+    let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
+    assert!(!registry_changed, "lint-only change must not set registry_changed");
+    assert!(!workspace_changed, "lint-only change must not set workspace_changed");
+}
+
+#[test]
+fn reload_config_selective_skips_registry_rebuild_for_lint_only_change() {
+    use jinja_lsp::config::LintConfig;
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::builtins::registry::{Category, Source, DocEntry};
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Insert a sentinel entry that a real registry rebuild would NOT contain.
+    let sentinel = DocEntry {
+        name: "my_sentinel".to_owned(),
+        category: Category::Filter,
+        signature: None,
+        since: None,
+        params: vec![],
+        body: "sentinel".to_owned(),
+        source: Source::Custom,
+        ty: None,
+        template: None,
+    };
+    state.registry.insert(sentinel);
+    assert!(state.registry.get(Category::Filter, "my_sentinel").is_some(), "sentinel must be inserted");
+
+    // Reload with a config that only changes lint (not extras/custom_builtins/hints).
+    let mut new_cfg = JinjaConfig::default();
+    new_cfg.lint = LintConfig { select: vec!["JINJA-E101".to_owned()], ignore: vec![] };
+    let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
+
+    assert!(!registry_rebuilt, "registry must NOT be rebuilt for lint-only change");
+    assert!(
+        state.registry.get(Category::Filter, "my_sentinel").is_some(),
+        "sentinel must survive a lint-only reload (registry not rebuilt)"
+    );
+    assert_eq!(state.config.lint.select, vec!["JINJA-E101"], "lint must be updated");
+}
+
+#[test]
+fn reload_config_selective_rebuilds_registry_when_extras_change() {
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::builtins::registry::{Category, Source, DocEntry};
+
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    let sentinel = DocEntry {
+        name: "my_sentinel_extras".to_owned(),
+        category: Category::Filter,
+        signature: None,
+        since: None,
+        params: vec![],
+        body: "sentinel".to_owned(),
+        source: Source::Custom,
+        ty: None,
+        template: None,
+    };
+    state.registry.insert(sentinel);
+
+    let mut new_cfg = JinjaConfig::default();
+    new_cfg.extras = vec!["starlette".to_owned()];
+    let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
+
+    assert!(registry_rebuilt, "registry must be rebuilt when extras change");
+    // Sentinel is gone since registry was rebuilt from scratch.
+    assert!(
+        state.registry.get(Category::Filter, "my_sentinel_extras").is_none(),
+        "sentinel must be gone after registry rebuild"
+    );
+    assert_eq!(state.config.extras, vec!["starlette"], "extras must be updated");
+}
