@@ -465,7 +465,11 @@ impl LanguageServer for Backend {
                     },
                 )),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["jinja-lsp.extract-macro".to_owned(), "jinja-lsp.rename".to_owned()],
+                    commands: vec![
+                        "jinja-lsp.extract-macro".to_owned(),
+                        "jinja-lsp.wrap-block".to_owned(),
+                        "jinja-lsp.rename".to_owned(),
+                    ],
                     ..Default::default()
                 }),
                 document_formatting_provider: Some(OneOf::Left(true)),
@@ -1052,6 +1056,27 @@ impl LanguageServer for Backend {
                 let _ = self.client.apply_edit(lsp_edit).await;
                 Ok(None)
             }
+            // REQ-ACT-07: args[0]: {path, start_line, end_line, name}
+            "jinja-lsp.wrap-block" => {
+                let Some(arg) = params.arguments.first() else { return Ok(None) };
+                let Some(obj) = arg.as_object() else { return Ok(None) };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
+                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else { return Ok(None) };
+                let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("new_block");
+                let state = self.state.read().await;
+                let Some(source) = state.sources.get(path) else { return Ok(None) };
+                let Some(workspace_edit) = crate::features::wrap::wrap_selection(
+                    source, path, start_line as u32, end_line as u32,
+                    crate::features::wrap::WrapKind::Block(name.to_owned()),
+                ) else {
+                    return Ok(None);
+                };
+                let utf8 = state.position_encoding_utf8;
+                let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
+                let _ = self.client.apply_edit(lsp_edit).await;
+                Ok(None)
+            }
             // REQ-ACT-11: args[0]: {path, line, col, new_name}
             "jinja-lsp.rename" => {
                 let Some(arg) = params.arguments.first() else { return Ok(None) };
@@ -1335,12 +1360,18 @@ fn to_lsp_action(
         Some(lsp_diags)
     };
 
+    let command = action.command.map(|(cmd_id, args)| Command {
+        title: cmd_id.clone(),
+        command: cmd_id,
+        arguments: Some(vec![args]),
+    });
+
     CodeAction {
         title: action.title,
         kind,
         diagnostics,
         edit,
-        command: None,
+        command,
         is_preferred: Some(action.is_preferred),
         disabled: None,
         data: None,
@@ -1786,6 +1817,7 @@ mod server_tests {
             diagnostics: vec![diag],
             is_preferred: true,
             edit: None,
+            command: None,
         };
 
         let lsp = to_lsp_action(action, "t.html", &sources, true);
@@ -1810,6 +1842,7 @@ mod server_tests {
             diagnostics: vec![],
             is_preferred: false,
             edit: None,
+            command: None,
         };
 
         let lsp = to_lsp_action(action, "t.html", &HashMap::new(), true);

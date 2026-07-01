@@ -712,6 +712,11 @@ fn act08_t03_wrap_block_produces_refactor_rewrite_action() {
     let actions = selection_code_actions(src, "t.html", 0, 0);
     let wrap_block = actions.iter().find(|a| a.title.contains("block")).expect("wrap-block action must exist");
     assert!(matches!(wrap_block.kind, ActionKind::RefactorRewrite));
+    // REQ-ACT-07: wrap-block uses executeCommand so the editor can prompt for a name.
+    assert!(wrap_block.edit.is_none(), "wrap-block must not carry an inline edit");
+    let (cmd_id, args) = wrap_block.command.as_ref().expect("wrap-block must carry a command");
+    assert_eq!(cmd_id, "jinja-lsp.wrap-block");
+    assert_eq!(args["path"], "t.html");
 }
 
 #[test]
@@ -769,23 +774,27 @@ fn act07_t01_extract_macro_produces_refactor_extract_action() {
     let actions = selection_code_actions(src, "t.html", 0, 0);
     let extract_action = actions.iter().find(|a| a.title.contains("macro")).expect("extract-macro action must exist");
     assert!(matches!(extract_action.kind, ActionKind::RefactorExtract), "extract must be RefactorExtract");
-    assert!(extract_action.edit.is_some());
+    // REQ-ACT-08: emits a server command (editor prompts for name), no inline edit.
+    assert!(extract_action.edit.is_none(), "extract-macro must not carry an inline edit");
+    let (cmd_id, args) = extract_action.command.as_ref().expect("extract-macro must carry a command");
+    assert_eq!(cmd_id, "jinja-lsp.extract-macro");
+    assert_eq!(args["path"], "t.html");
+    assert_eq!(args["start_line"], 0);
+    assert_eq!(args["end_line"], 0);
 }
 
 #[test]
-fn act07_t02_extract_macro_edit_replaces_selection_and_appends_definition() {
+fn act07_t02_extract_macro_command_carries_expected_args() {
     let src = "<p>hello</p>\n<p>world</p>";
-    let actions = selection_code_actions(src, "t.html", 0, 0);
+    let actions = selection_code_actions(src, "t.html", 0, 1);
     let extract_action = actions.iter().find(|a| a.title.contains("macro")).unwrap();
-    let edit = extract_action.edit.as_ref().unwrap();
-    let edits = edit.changes.get("t.html").unwrap();
-    // Extract produces 2 edits: replace selection + append macro def.
-    assert_eq!(edits.len(), 2);
-    // First edit replaces selection with a call expression.
-    assert!(edits[0].new_text.contains("()"), "replacement must be a call");
-    // Second edit appends the macro definition.
-    assert!(edits[1].new_text.contains("macro"), "appended edit must contain macro definition");
-    assert!(edits[1].new_text.contains("endmacro"), "appended edit must close macro");
+    let (cmd_id, args) = extract_action.command.as_ref().unwrap();
+    assert_eq!(cmd_id, "jinja-lsp.extract-macro");
+    // path, start_line, end_line, name are all present.
+    assert!(args.get("path").is_some());
+    assert!(args.get("start_line").is_some());
+    assert!(args.get("end_line").is_some());
+    assert!(args.get("name").is_some());
 }
 
 // ─── jinja-lsp-gspz: remove_name_from_import_line must skip the quoted path ──

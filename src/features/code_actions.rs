@@ -6,10 +6,7 @@ use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::Diagnostic,
     edit::{TextEdit, WorkspaceEdit},
-    features::{
-        extract_macro::compute_extract_macro,
-        wrap::{selection_is_well_formed, wrap_selection, WrapKind},
-    },
+    features::wrap::{selection_is_well_formed, wrap_selection, WrapKind},
     workspace::index::{TemplateIndex, WorkspaceIndex},
 };
 
@@ -30,6 +27,9 @@ pub struct CodeAction {
     pub diagnostics: Vec<Diagnostic>,
     pub is_preferred: bool,
     pub edit: Option<WorkspaceEdit>,
+    /// Server-side command executed after any edit — used for refactors that need
+    /// user input (REQ-ACT-07/08). Carried as (command_id, arguments).
+    pub command: Option<(String, serde_json::Value)>,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -127,7 +127,6 @@ pub fn selection_code_actions(
     for (kind, title) in [
         (WrapKind::If, "Wrap selection in {% if %}"),
         (WrapKind::For, "Wrap selection in {% for %}"),
-        (WrapKind::Block("new_block".to_owned()), "Wrap selection in {% block %}"),
     ] {
         if let Some(edit) = wrap_selection(source, file, start_line, end_line, kind) {
             actions.push(CodeAction {
@@ -136,17 +135,48 @@ pub fn selection_code_actions(
                 diagnostics: vec![],
                 is_preferred: false,
                 edit: Some(edit),
+                command: None,
             });
         }
     }
 
-    if let Some(edit) = compute_extract_macro(source, file, start_line, end_line, "extracted_macro") {
+    // REQ-ACT-07: Block wrap uses executeCommand so the editor can prompt for a name.
+    if selection_is_well_formed(source, start_line, end_line) {
+        actions.push(CodeAction {
+            title: "Wrap selection in {% block %}".to_owned(),
+            kind: ActionKind::RefactorRewrite,
+            diagnostics: vec![],
+            is_preferred: false,
+            edit: None,
+            command: Some((
+                "jinja-lsp.wrap-block".to_owned(),
+                serde_json::json!({
+                    "path": file,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "name": "new_block"
+                }),
+            )),
+        });
+    }
+
+    // REQ-ACT-08: Extract macro uses executeCommand so the editor can prompt for a name.
+    if selection_is_well_formed(source, start_line, end_line) {
         actions.push(CodeAction {
             title: "Extract selection to macro".to_owned(),
             kind: ActionKind::RefactorExtract,
             diagnostics: vec![],
             is_preferred: false,
-            edit: Some(edit),
+            edit: None,
+            command: Some((
+                "jinja-lsp.extract-macro".to_owned(),
+                serde_json::json!({
+                    "path": file,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "name": "extracted_macro"
+                }),
+            )),
         });
     }
 
@@ -184,6 +214,7 @@ fn remove_unused_macro(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -210,6 +241,7 @@ fn remove_unused_import(
             diagnostics: vec![diag.clone()],
             is_preferred: true,
             edit: Some(WorkspaceEdit::single(file, edit)),
+            command: None,
         });
     }
 
@@ -230,6 +262,7 @@ fn remove_unused_import(
             diagnostics: vec![diag.clone()],
             is_preferred: true,
             edit: Some(WorkspaceEdit::single(file, edit)),
+            command: None,
         });
     }
 
@@ -250,6 +283,7 @@ fn remove_unused_import(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -278,6 +312,7 @@ fn resolve_undefined_function(
             diagnostics: vec![diag.clone()],
             is_preferred: true,
             edit: Some(WorkspaceEdit::single(file, edit)),
+            command: None,
         });
     }
 
@@ -296,6 +331,7 @@ fn resolve_undefined_function(
                 diagnostics: vec![diag.clone()],
                 is_preferred: false,
                 edit: Some(WorkspaceEdit::single(file, edit)),
+                command: None,
             });
         }
         let edit = TextEdit {
@@ -311,6 +347,7 @@ fn resolve_undefined_function(
             diagnostics: vec![diag.clone()],
             is_preferred: false,
             edit: Some(WorkspaceEdit::single(file, edit)),
+            command: None,
         });
     }
 
@@ -360,6 +397,7 @@ fn suggest_spelling_correction(
                 diagnostics: vec![diag.clone()],
                 is_preferred: false,
                 edit: Some(WorkspaceEdit::single(file, edit)),
+                command: None,
             }
         })
         .collect()
@@ -384,6 +422,7 @@ fn remove_duplicate_block(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -403,6 +442,7 @@ fn remove_duplicate_macro(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -421,6 +461,7 @@ fn remove_duplicate_import_alias(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -439,6 +480,7 @@ fn remove_duplicate_from_import(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
@@ -485,6 +527,7 @@ fn rename_shadowing_variable(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit { changes, create_files: vec![] }),
+        command: None,
     })
 }
 
@@ -544,6 +587,7 @@ fn create_template(diag: &Diagnostic) -> Option<CodeAction> {
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::create_file(&path)),
+        command: None,
     })
 }
 
@@ -575,6 +619,7 @@ fn insert_block_stub(
         diagnostics: vec![diag.clone()],
         is_preferred: true,
         edit: Some(WorkspaceEdit::single(file, edit)),
+        command: None,
     })
 }
 
