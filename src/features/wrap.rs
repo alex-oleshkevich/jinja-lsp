@@ -18,10 +18,38 @@ pub enum WrapKind {
     Block(String),
 }
 
+/// Returns `true` when the selected lines form a well-balanced set of Jinja delimiter pairs.
+///
+/// A selection "splits a tag" when `{%`, `{{`, or `{#` has no matching close (or vice-versa)
+/// within the selected lines — inserting a wrapper around such a selection would corrupt the
+/// template (P3). The check is a simple open-vs-close byte-pair count; block-level nesting
+/// (e.g. unclosed `{% if %}`) is out of scope for now.
+pub fn selection_is_well_formed(source: &str, start_line: u32, end_line: u32) -> bool {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let selected = match lines.get(start_line as usize..=end_line as usize) {
+        Some(sl) => sl.join("\n"),
+        None => return false,
+    };
+    let s = selected.as_bytes();
+    let count = |open: &[u8; 2], close: &[u8; 2]| -> (usize, usize) {
+        let mut o = 0usize;
+        let mut c = 0usize;
+        for i in 0..s.len().saturating_sub(1) {
+            if &s[i..i + 2] == open  { o += 1; }
+            if &s[i..i + 2] == close { c += 1; }
+        }
+        (o, c)
+    };
+    let (so, sc) = count(b"{%", b"%}");
+    let (eo, ec) = count(b"{{", b"}}");
+    let (co, cc) = count(b"{#", b"#}");
+    so == sc && eo == ec && co == cc
+}
+
 /// Produce a WorkspaceEdit that wraps [start_line, end_line] (inclusive) in the given wrapper.
 ///
-/// Inserts the opening tag as a new line before start_line and the closing tag
-/// as a new line after end_line. Host-language lines within the selection are not modified (P5).
+/// Replaces the selected range with: open_tag + re-indented body (2 spaces per F18) + close_tag.
+/// Host-language bytes outside the wrap are not modified (P5).
 pub fn wrap_selection(
     source: &str,
     file: &str,
@@ -29,6 +57,9 @@ pub fn wrap_selection(
     end_line: u32,
     kind: WrapKind,
 ) -> Option<WorkspaceEdit> {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let body_lines = lines.get(start_line as usize..=end_line as usize)?;
+
     let (open_tag, close_tag) = match &kind {
         WrapKind::If => ("{% if condition %}".to_owned(), "{% endif %}".to_owned()),
         WrapKind::For => ("{% for item in items %}".to_owned(), "{% endfor %}".to_owned()),
@@ -38,32 +69,25 @@ pub fn wrap_selection(
         ),
     };
 
-    // Insert the opening tag before start_line by prepending "<tag>\n" at (start_line, 0).
-    let open_edit = TextEdit {
+    // Re-indent body one level (2 spaces per F18 indentation model); empty lines stay empty.
+    let indented_body: String = body_lines
+        .iter()
+        .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let new_text = format!("{open_tag}\n{indented_body}\n{close_tag}");
+
+    let end_col = lines.get(end_line as usize).map(|l| l.len() as u32).unwrap_or(0);
+    let edit = TextEdit {
         start_line,
         start_col: 0,
-        end_line: start_line,
-        end_col: 0,
-        new_text: format!("{open_tag}\n"),
-    };
-
-    // Insert the closing tag AFTER end_line by appending "\n<tag>" at the END of end_line.
-    // Using end-of-line avoids the middle-of-file bug where inserting at (end_line+1, 0)
-    // would produce "{% endif %}existing_content" on one line.
-    let end_line_len = source
-        .split('\n')
-        .nth(end_line as usize)
-        .map(|l| l.len() as u32)
-        .unwrap_or(0);
-    let close_edit = TextEdit {
-        start_line: end_line,
-        start_col: end_line_len,
         end_line,
-        end_col: end_line_len,
-        new_text: format!("\n{close_tag}"),
+        end_col,
+        new_text,
     };
 
     let mut changes = HashMap::new();
-    changes.insert(file.to_owned(), vec![open_edit, close_edit]);
+    changes.insert(file.to_owned(), vec![edit]);
     Some(WorkspaceEdit { changes, create_files: vec![] })
 }

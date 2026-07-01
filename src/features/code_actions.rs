@@ -8,7 +8,7 @@ use crate::{
     edit::{TextEdit, WorkspaceEdit},
     features::{
         extract_macro::compute_extract_macro,
-        wrap::{wrap_selection, WrapKind},
+        wrap::{selection_is_well_formed, wrap_selection, WrapKind},
     },
     workspace::index::{TemplateIndex, WorkspaceIndex},
 };
@@ -111,12 +111,17 @@ pub fn code_actions(
 }
 
 /// REQ-ACT-07 / REQ-ACT-08: Selection-triggered refactor actions (wrap + extract to macro).
+/// Neither action is offered when the selection splits a Jinja delimiter (P3).
 pub fn selection_code_actions(
     source: &str,
     file: &str,
     start_line: u32,
     end_line: u32,
 ) -> Vec<CodeAction> {
+    if !selection_is_well_formed(source, start_line, end_line) {
+        return vec![];
+    }
+
     let mut actions = Vec::new();
 
     for (kind, title) in [

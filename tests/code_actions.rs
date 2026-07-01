@@ -722,10 +722,43 @@ fn act08_t04_wrap_if_edit_inserts_tags_around_selection() {
     let wrap_if = actions.iter().find(|a| a.title.contains("if")).unwrap();
     let edit = wrap_if.edit.as_ref().unwrap();
     let edits = edit.changes.get("t.html").unwrap();
-    // Should have 2 edits: open tag before start_line, close tag after end_line.
-    assert_eq!(edits.len(), 2, "wrap produces exactly 2 edits");
-    assert!(edits[0].new_text.contains("if condition"), "open edit must contain opening tag");
-    assert!(edits[1].new_text.contains("endif"), "close edit must contain closing tag");
+    // Single replacement edit spanning the whole selection.
+    assert_eq!(edits.len(), 1, "wrap produces exactly 1 edit");
+    assert!(edits[0].new_text.contains("if condition"), "edit must contain opening tag");
+    assert!(edits[0].new_text.contains("endif"), "edit must contain closing tag");
+    assert!(edits[0].new_text.contains("  <p>hello</p>"), "body must be indented one level");
+    assert!(edits[0].new_text.contains("  <p>world</p>"), "both body lines must be indented");
+}
+
+// ─── T-24: split-selection negative — no wrap offered ────────────────────────
+
+#[test]
+fn act08_t24_split_tag_no_wrap_offered() {
+    // Selection contains `{%` with no matching `%}` — splits a statement tag.
+    let src = "before\n{% if x";
+    let actions = selection_code_actions(src, "t.html", 0, 1);
+    assert!(
+        actions.iter().all(|a| !a.title.contains("Wrap")),
+        "wrap must not be offered when selection splits a tag"
+    );
+}
+
+#[test]
+fn act08_t24b_split_tag_no_extract_offered() {
+    let src = "{% if x";
+    let actions = selection_code_actions(src, "t.html", 0, 0);
+    assert!(actions.is_empty(), "no actions when selection splits a tag");
+}
+
+#[test]
+fn act08_t24c_balanced_tags_wraps_offered() {
+    // Selection has balanced {%/%} — wraps should be offered.
+    let src = "{% if x %}\nhello\n{% endif %}";
+    let actions = selection_code_actions(src, "t.html", 0, 2);
+    assert!(
+        actions.iter().any(|a| a.title.contains("Wrap")),
+        "wraps must be offered for a well-formed selection"
+    );
 }
 
 // ─── REQ-ACT-07: extract-to-macro ────────────────────────────────────────────

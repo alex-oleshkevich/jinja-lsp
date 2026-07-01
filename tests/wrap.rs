@@ -1,91 +1,127 @@
 // REQ-ACT-08: Wrap selection in block, if, or for.
 
-use jinja_lsp::features::wrap::{wrap_selection, WrapKind};
+use jinja_lsp::features::wrap::{selection_is_well_formed, wrap_selection, WrapKind};
 
-// ─── T-01: wrap selection in if ──────────────────────────────────────────────
+fn single_edit(source: &str, start: u32, end: u32, kind: WrapKind) -> jinja_lsp::edit::TextEdit {
+    let we = wrap_selection(source, "/tpl.html", start, end, kind)
+        .expect("wrap_selection returned None");
+    let mut edits = we.changes.into_values().next().expect("no changes");
+    assert_eq!(edits.len(), 1, "expected exactly 1 edit");
+    edits.remove(0)
+}
+
+// ─── T-01: wrap single-line selection in if ───────────────────────────────────
 
 #[test]
 fn act08_t01_wrap_in_if() {
-    let source = "<p>hello</p>";
-    let we = wrap_selection(source, "/tpl.html", 0, 0, WrapKind::If);
-    assert!(we.is_some(), "expected a WorkspaceEdit");
-    let we = we.unwrap();
-    let edits = we.changes.get("/tpl.html").unwrap();
-    // Should insert {% if condition %} before and {% endif %} after
-    let new_text: Vec<&str> = edits.iter().map(|e| e.new_text.as_str()).collect();
-    assert!(new_text.iter().any(|t| t.contains("{% if")), "expected if tag");
-    assert!(new_text.iter().any(|t| t.contains("{% endif %}")), "expected endif tag");
+    let e = single_edit("<p>hello</p>", 0, 0, WrapKind::If);
+    assert!(e.new_text.contains("{% if condition %}"), "missing open tag");
+    assert!(e.new_text.contains("{% endif %}"), "missing close tag");
+    assert!(e.new_text.contains("  <p>hello</p>"), "body must be indented one level");
 }
 
 // ─── T-02: wrap selection in for ─────────────────────────────────────────────
 
 #[test]
 fn act08_t02_wrap_in_for() {
-    let source = "<li>{{ item }}</li>";
-    let we = wrap_selection(source, "/tpl.html", 0, 0, WrapKind::For);
-    assert!(we.is_some());
-    let we = we.unwrap();
-    let edits = we.changes.get("/tpl.html").unwrap();
-    let new_text: Vec<&str> = edits.iter().map(|e| e.new_text.as_str()).collect();
-    assert!(new_text.iter().any(|t| t.contains("{% for")), "expected for tag");
-    assert!(new_text.iter().any(|t| t.contains("{% endfor %}")), "expected endfor tag");
+    let e = single_edit("<li>{{ item }}</li>", 0, 0, WrapKind::For);
+    assert!(e.new_text.contains("{% for item in items %}"), "missing open tag");
+    assert!(e.new_text.contains("{% endfor %}"), "missing close tag");
+    assert!(e.new_text.contains("  <li>{{ item }}</li>"), "body must be indented one level");
 }
 
 // ─── T-03: wrap selection in block ───────────────────────────────────────────
 
 #[test]
 fn act08_t03_wrap_in_block_with_placeholder() {
-    let source = "<main>content</main>";
-    let we = wrap_selection(source, "/tpl.html", 0, 0, WrapKind::Block("main_block".to_owned()));
-    assert!(we.is_some());
-    let we = we.unwrap();
-    let edits = we.changes.get("/tpl.html").unwrap();
-    let new_text: Vec<&str> = edits.iter().map(|e| e.new_text.as_str()).collect();
-    assert!(new_text.iter().any(|t| t.contains("{% block main_block %}")), "expected block tag");
-    assert!(new_text.iter().any(|t| t.contains("{% endblock %}")), "expected endblock tag");
+    let e = single_edit("<main>content</main>", 0, 0, WrapKind::Block("main_block".to_owned()));
+    assert!(e.new_text.contains("{% block main_block %}"), "missing block open tag");
+    assert!(e.new_text.contains("{% endblock %}"), "missing endblock tag");
+    assert!(e.new_text.contains("  <main>content</main>"), "body must be indented one level");
 }
 
-// ─── T-04: multi-line selection wraps whole range ────────────────────────────
+// ─── T-04: multi-line selection re-indents all body lines ────────────────────
 
 #[test]
 fn act08_t04_multi_line_wrap() {
     let source = "line1\nline2\nline3";
-    let we = wrap_selection(source, "/tpl.html", 0, 2, WrapKind::If);
-    assert!(we.is_some());
-    let we = we.unwrap();
-    let edits = we.changes.get("/tpl.html").unwrap();
-    // One insertion before line 0, one after line 2
-    assert_eq!(edits.len(), 2, "expected exactly 2 edits (open+close)");
-    let sorted: Vec<_> = {
-        let mut v = edits.clone();
-        v.sort_by_key(|e| e.start_line);
-        v
-    };
-    assert_eq!(sorted[0].start_line, 0, "opener at line 0");
-    // close_edit anchors at the END of end_line (col = len("line3")) so adjacent
-    // file content is not disturbed — start_line is end_line, not end_line+1.
-    assert_eq!(sorted[1].start_line, 2, "closer anchored at end of line 2");
-    assert!(sorted[1].new_text.contains("{% endif %}"), "closer contains endif");
+    let e = single_edit(source, 0, 2, WrapKind::If);
+    // Edit covers the entire [0:0 .. 2:end] range.
+    assert_eq!(e.start_line, 0);
+    assert_eq!(e.start_col, 0);
+    assert_eq!(e.end_line, 2);
+    assert_eq!(e.end_col, "line3".len() as u32);
+    // All body lines must be indented.
+    let expected = "{% if condition %}\n  line1\n  line2\n  line3\n{% endif %}";
+    assert_eq!(e.new_text, expected);
 }
 
-// ─── T-05: middle-of-file selection — closer must not merge with next line ───
+// ─── T-05: middle-of-file selection — surrounding lines are not touched ───────
 
 #[test]
 fn act08_t05_middle_of_file_wrap() {
     let source = "header\n<p>one</p>\n<p>two</p>\nfooter";
-    // Wrap lines 1-2 (the two <p> lines); line 3 "footer" must stay below.
-    let we = wrap_selection(source, "/tpl.html", 1, 2, WrapKind::If);
-    assert!(we.is_some());
-    let we = we.unwrap();
-    let edits = we.changes.get("/tpl.html").unwrap();
-    assert_eq!(edits.len(), 2);
+    // Wrap lines 1-2; lines 0 ("header") and 3 ("footer") must be untouched.
+    let e = single_edit(source, 1, 2, WrapKind::If);
+    assert_eq!(e.start_line, 1, "edit starts at line 1");
+    assert_eq!(e.start_col, 0);
+    assert_eq!(e.end_line, 2, "edit ends at line 2");
+    assert_eq!(e.end_col, "<p>two</p>".len() as u32, "edit ends at end-of-line col");
+    let expected = "{% if condition %}\n  <p>one</p>\n  <p>two</p>\n{% endif %}";
+    assert_eq!(e.new_text, expected);
+}
 
-    // The close edit must be anchored at the END of line 2, not the START of line 3.
-    let close = edits.iter().max_by_key(|e| e.start_line).unwrap();
-    assert_eq!(close.start_line, 2, "close anchored at line 2");
-    // col must be at the end of "<p>two</p>" (10 chars)
-    assert_eq!(close.start_col, "<p>two</p>".len() as u32, "close at end-of-line col");
-    // new_text must start with \n so the tag gets its own line
-    assert!(close.new_text.starts_with('\n'), "close_tag preceded by newline");
-    assert!(close.new_text.contains("{% endif %}"), "close contains endif");
+// ─── T-21: REQ-ACT-08 — body re-indented one level (T-22/T-23 spec rows) ─────
+
+#[test]
+fn act08_t21_body_re_indented_one_level() {
+    // A body line already indented 2 spaces gets 2 more → 4 spaces total.
+    let source = "  <p>nested</p>";
+    let e = single_edit(source, 0, 0, WrapKind::If);
+    assert!(e.new_text.contains("    <p>nested</p>"), "pre-existing indent preserved + one level added");
+}
+
+// ─── T-22: empty lines within the body are not padded ────────────────────────
+
+#[test]
+fn act08_t22_empty_lines_not_padded() {
+    let source = "a\n\nb";
+    let e = single_edit(source, 0, 2, WrapKind::If);
+    // The middle empty line must remain empty (no trailing spaces added).
+    let lines: Vec<&str> = e.new_text.split('\n').collect();
+    assert_eq!(lines[2], "", "empty line must stay empty");
+}
+
+// ─── selection_is_well_formed unit tests (T-24 spec row guard) ───────────────
+
+#[test]
+fn well_formed_plain_text_ok() {
+    assert!(selection_is_well_formed("<p>hello</p>", 0, 0));
+}
+
+#[test]
+fn well_formed_balanced_statement_ok() {
+    assert!(selection_is_well_formed("{% if x %}\nhello\n{% endif %}", 0, 2));
+}
+
+#[test]
+fn well_formed_unbalanced_open_rejected() {
+    // `{%` with no matching `%}`
+    assert!(!selection_is_well_formed("{% if x", 0, 0));
+}
+
+#[test]
+fn well_formed_unbalanced_close_rejected() {
+    // `%}` with no matching `{%`
+    assert!(!selection_is_well_formed("hello%}", 0, 0));
+}
+
+#[test]
+fn well_formed_expression_balanced_ok() {
+    assert!(selection_is_well_formed("{{ x }}", 0, 0));
+}
+
+#[test]
+fn well_formed_expression_split_rejected() {
+    assert!(!selection_is_well_formed("{{ x", 0, 0));
 }
