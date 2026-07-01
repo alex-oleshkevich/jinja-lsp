@@ -69,6 +69,39 @@ fn no_e102_for_builtin_filter() {
     assert_eq!(e102, 0, "builtin filter 'upper' must not trigger E102");
 }
 
+#[test]
+fn no_e101_cascade_for_undefined_filter() {
+    // F01 §10: an undefined filter must produce exactly E102, never an additional E101.
+    // The filter name is captured as both @identifier and @filter by tree-sitter;
+    // check_e101 must skip positions already tagged as Filter.
+    let src = r#"{{ "hello" | totally_fake_filter_xyz }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e102_count = diags.iter().filter(|d| d.code == "JINJA-E102").count();
+    let e101_count = diags.iter().filter(|d| d.code == "JINJA-E101").count();
+    assert_eq!(e102_count, 1, "exactly one E102 must be emitted: {diags:?}");
+    assert_eq!(e101_count, 0, "E101 must NOT cascade from an undefined filter: {diags:?}");
+}
+
+#[test]
+fn no_e101_cascade_for_undefined_filter_after_variable() {
+    // Same as above but filter applied to a real variable — that variable's E101
+    // must still fire for `name`, but NOT for the filter name.
+    let src = "{{ name | totally_fake_filter_xyz }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let e101_names: Vec<&str> = diags.iter()
+        .filter(|d| d.code == "JINJA-E101")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        !e101_names.iter().any(|m| m.contains("totally_fake_filter_xyz")),
+        "filter name must not cascade to E101: {diags:?}"
+    );
+}
+
 // ─── E104: undefined test ─────────────────────────────────────────────────────
 
 #[test]

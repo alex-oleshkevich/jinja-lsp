@@ -205,8 +205,8 @@ fn inline_diagnostic_position_translated_to_host_coords() {
     let registry = Registry::load_core();
     let iidx = ws.templates.get("views.py::0").unwrap();
     let raw = run_checks(inline_content, "views.py::0", iidx, &registry, &ws);
-    // There should be a diagnostic (E101 unknown variable or similar) for undefined_filter
-    // If no diagnostic (filter unknown in base), that's OK — just verify translation math
+    // E102 fires for undefined_filter; E101 for `x` (undefined variable).
+    // Whatever diagnostics appear, just verify the position translation math.
     for d in &raw {
         let (hl, hc) = range.to_host_position(d.line, d.col);
         // The host-translated position must be >= host_col (since content starts after it)

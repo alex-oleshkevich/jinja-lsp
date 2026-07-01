@@ -69,6 +69,15 @@ fn check_e101(
     workspace: &WorkspaceIndex,
     out: &mut Vec<Diagnostic>,
 ) {
+    // F01 §10: prevent E101 cascade — tree-sitter captures filter/test names as both
+    // @identifier and @filter/@custom_test.  Skip identifiers already captured precisely.
+    let filter_test_bytes: std::collections::HashSet<usize> = index
+        .references
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Filter | ReferenceKind::Test))
+        .map(|r| r.span.start_byte)
+        .collect();
+
     // Names that structurally suppress E101 without a registry lookup.
     let macro_names: std::collections::HashSet<&str> =
         index.macros.iter().map(|m| m.name.as_str()).collect();
@@ -92,6 +101,10 @@ fn check_e101(
         // are captured as @object with the intermediate path as the name.  They are not
         // bare variable references and must not trigger E101.
         if r.name.contains('.') {
+            continue;
+        }
+        // Skip identifiers that the grammar also captured precisely as a filter or test.
+        if filter_test_bytes.contains(&r.span.start_byte) {
             continue;
         }
         // Local variable in scope — resolve_reference handles valid_range containment.
