@@ -162,9 +162,15 @@ pub fn suppress_by_noqa(
                 && file_suppress_codes.iter().any(|f| is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())) {
                 return false;
             }
-            // line-level suppression
+            // REQ-DIAG-05: line-level suppression — check the diagnostic's own line
+            // and (for multi-line tags) the tag's opening-delimiter line.
+            let tag_open_line = find_enclosing_tag_open_line(&lines, diag.line as usize);
+            let suppression_lines: &[u32] = &match tag_open_line {
+                Some(ol) if ol != diag.line => [diag.line, ol],
+                _ => [diag.line, diag.line],
+            };
             for dir in &all_directives {
-                if dir.line() != diag.line {
+                if !suppression_lines.contains(&dir.line()) {
                     continue;
                 }
                 match dir {
@@ -190,4 +196,31 @@ pub fn suppress_by_noqa(
 /// A valid noqa ID must be an exact member of the known-codes list (full codes or class prefixes).
 fn is_valid_noqa_id(id: &str, known: &[&str]) -> bool {
     known.contains(&id)
+}
+
+/// REQ-DIAG-05: find the opening-delimiter line of the multi-line tag that encloses
+/// `diag_line`, if any.  A `{%` that opens on line K but has no matching `%}` on the
+/// same line is considered "multi-line"; its line K is the opening delimiter.
+///
+/// Returns `None` if `diag_line` is 0 or if no unclosed `{%` is found.
+fn find_enclosing_tag_open_line(lines: &[&str], diag_line: usize) -> Option<u32> {
+    if diag_line == 0 {
+        return None;
+    }
+    for line_no in (0..diag_line).rev() {
+        let line = lines[line_no];
+        if let Some(open_pos) = line.find("{%") {
+            let after_open = &line[open_pos..];
+            if !after_open.contains("%}") {
+                // {%…} opens here but doesn't close on this line → multi-line tag
+                return Some(line_no as u32);
+            }
+        }
+        // A line that closes a tag without opening one (e.g. leading `%}`)
+        // means we've left the span of any tag that opened before it.
+        if line.contains("%}") && !line.contains("{%") {
+            break;
+        }
+    }
+    None
 }

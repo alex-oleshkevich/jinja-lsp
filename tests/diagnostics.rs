@@ -346,3 +346,45 @@ fn e101_attribute_chain_intermediate_not_undefined() {
         "intermediate attribute chain 'request.user' must not fire E101: {e101_names:?}"
     );
 }
+
+// ---------- jinja-lsp-qzq6: noqa on opening-delimiter line of multi-line tag --
+
+#[test]
+fn noqa_on_opening_delimiter_line_suppresses_inner_diagnostic() {
+    // Multi-line {%...%} tag: noqa on line 0 (the opening delimiter line)
+    // but the diagnostic is on line 1 (inside the tag body).
+    // REQ-DIAG-05: noqa on the opening delimiter line must also suppress.
+    let source = "{% set x =  {# noqa: JINJA-E101 #}\n    undefined_var %}";
+    let diag = make_diag(1, "JINJA-E101", "undefined-variable");
+    let (kept, _w107s) = suppress_by_noqa(&[diag], source);
+    assert!(kept.is_empty(),
+        "noqa on opening delimiter line 0 must suppress diagnostic on line 1");
+}
+
+#[test]
+fn noqa_on_diagnostic_line_still_suppresses() {
+    // Existing single-line behavior must be unaffected.
+    let source = "{% set x = undefined_var %}  {# noqa: JINJA-E101 #}";
+    let diag = make_diag(0, "JINJA-E101", "undefined-variable");
+    let (kept, _) = suppress_by_noqa(&[diag], source);
+    assert!(kept.is_empty(), "noqa on the same line still suppresses");
+}
+
+#[test]
+fn noqa_bare_all_on_opening_line_suppresses_any_code() {
+    let source = "{% set x = {# noqa #}\n    undefined_var %}";
+    let diag = make_diag(1, "JINJA-E101", "undefined-variable");
+    let (kept, _) = suppress_by_noqa(&[diag], source);
+    assert!(kept.is_empty(), "bare noqa on opening line suppresses all codes");
+}
+
+#[test]
+fn noqa_on_unrelated_earlier_line_does_not_suppress() {
+    // noqa on line 0, diagnostic on line 2 — line 0 is NOT the opening delimiter for line 2
+    let source = "{# noqa: JINJA-E101 #}\n{% for x in y %}\n    {{ z }}\n{% endfor %}";
+    let diag = make_diag(2, "JINJA-E101", "undefined-variable");
+    let (kept, _) = suppress_by_noqa(&[diag], source);
+    // Line 0 noqa is not on the opening-delimiter line of the for loop (line 1 is),
+    // and the for loop does close on the same line. So it must NOT suppress line 2.
+    assert_eq!(kept.len(), 1, "noqa on unrelated earlier line must not suppress");
+}
