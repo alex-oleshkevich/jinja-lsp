@@ -852,6 +852,53 @@ fn no_e103_for_from_imported_macro_call() {
         "from-imported macro call must not trigger E103");
 }
 
+// ─── REQ-EXTR-09: block-set variable extraction ──────────────────────────────
+
+#[test]
+fn block_set_variable_is_indexed() {
+    // {% set nav %}…{% endset %} must produce a VariableDefinition for `nav`.
+    let src = "{% set nav %}hello{% endset %}{{ nav }}";
+    let idx = extract(src);
+    assert!(
+        idx.variables.iter().any(|v| v.name == "nav"),
+        "block-set variable 'nav' must be indexed; got: {:?}",
+        idx.variables.iter().map(|v| &v.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn block_set_variable_no_e101() {
+    // {{ nav }} after {% set nav %}…{% endset %} must not trigger E101.
+    let src = "{% set nav %}hello{% endset %}{{ nav }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        "block-set variable must not trigger E101; diags: {diags:?}"
+    );
+}
+
+#[test]
+fn multiple_block_set_variables_are_indexed() {
+    let src = "{% set a %}x{% endset %}{% set b %}y{% endset %}{{ a }}{{ b }}";
+    let idx = extract(src);
+    assert!(idx.variables.iter().any(|v| v.name == "a"), "variable 'a' must be indexed");
+    assert!(idx.variables.iter().any(|v| v.name == "b"), "variable 'b' must be indexed");
+}
+
+#[test]
+fn block_set_with_whitespace_control_is_indexed() {
+    // {%- set name -%} must be recognized even with whitespace-control modifiers.
+    let src = "{%- set nav -%}hello{%- endset -%}{{ nav }}";
+    let idx = extract(src);
+    assert!(
+        idx.variables.iter().any(|v| v.name == "nav"),
+        "block-set with whitespace-control modifier must be indexed; got: {:?}",
+        idx.variables.iter().map(|v| &v.name).collect::<Vec<_>>()
+    );
+}
+
 // ─── Publish wiring contract ──────────────────────────────────────────────────
 
 #[test]

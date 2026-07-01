@@ -386,6 +386,7 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex)
 
     run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions, source_len);
     run_set(tree, bytes, idx, &seen_set, &scope_regions, source_len);
+    run_set_block(bytes, idx, &scope_regions, source_len);
     run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions, source_len);
     run_for(tree, bytes, idx, &seen_for, &scope_regions, source_len);
     run_with(tree, bytes, idx, &scope_regions);
@@ -469,6 +470,85 @@ fn run_set(
             push_var(idx, name, scope, name_span, byte_span(set_ctrl_end, valid_end));
         }
     }
+}
+
+// REQ-EXTR-09: block-set variables — {% set name %}…{% endset %}.
+//
+// tree-sitter parses the block-set opening tag as an ERROR node that absorbs
+// the rest of the source, so tree-sitter queries cannot find multiple block-set
+// tags in the same template.  We use a manual byte scanner instead.
+//
+// The scanner looks for the literal byte sequence `{%…set…NAME…%}` where
+// the only token between NAME and `%}` is optional whitespace — which is the
+// exact discriminator between block-set (no `=`) and regular set (has `=`).
+fn run_set_block(
+    bytes: &[u8],
+    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion], source_len: usize,
+) {
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] != b'{' || bytes[i + 1] != b'%' {
+            i += 1;
+            continue;
+        }
+        let tag_start = i;
+        let mut j = i + 2;
+        // Skip optional whitespace-control modifier (`-` or `+`) directly after `{%`.
+        if matches!(bytes.get(j), Some(&b'-') | Some(&b'+')) {
+            j += 1;
+        }
+        j = skip_ascii_ws(bytes, j);
+        // Require "set" keyword followed by whitespace.
+        if bytes.get(j..j + 3) != Some(b"set") {
+            i += 1;
+            continue;
+        }
+        let k_after_set = j + 3;
+        if !bytes.get(k_after_set).map(|b| b.is_ascii_whitespace()).unwrap_or(false) {
+            i += 1;
+            continue;
+        }
+        let mut k = skip_ascii_ws(bytes, k_after_set);
+        // Capture identifier: starts with letter or '_'.
+        if !bytes.get(k).map(|b| b.is_ascii_alphabetic() || *b == b'_').unwrap_or(false) {
+            i += 1;
+            continue;
+        }
+        let name_start = k;
+        while k < bytes.len() && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_') {
+            k += 1;
+        }
+        let name_end = k;
+        k = skip_ascii_ws(bytes, k);
+        // Skip optional whitespace-control modifier before `%}`.
+        if matches!(bytes.get(k), Some(&b'-') | Some(&b'+')) {
+            k += 1;
+        }
+        // Block-set: next token is `%}` (no `=` before the closing delimiter).
+        if bytes.get(k..k + 2) != Some(b"%}") {
+            i += 1;
+            continue;
+        }
+        let ctrl_end = k + 2;
+        let name = match std::str::from_utf8(&bytes[name_start..name_end]) {
+            Ok(s) if !s.is_empty() => s,
+            _ => { i += 1; continue; }
+        };
+        let (sl, sc) = bytes_to_line_col(bytes, name_start);
+        let (el, ec) = bytes_to_line_col(bytes, name_end);
+        let name_span = Span { start_byte: name_start, end_byte: name_end, start_line: sl, start_col: sc, end_line: el, end_col: ec };
+        let scope = scope_for_byte(scope_regions, tag_start);
+        let valid_end = enclosing_region(scope_regions, ctrl_end)
+            .map(|r| r.body_end)
+            .unwrap_or(source_len);
+        push_var(idx, name.to_owned(), scope, name_span, byte_span(ctrl_end, valid_end));
+        i += 1;
+    }
+}
+
+fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() { i += 1; }
+    i
 }
 
 fn run_for_unpacking(

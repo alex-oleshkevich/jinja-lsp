@@ -164,6 +164,12 @@ fn import_names_captures_names_and_aliases() {
 }
 
 #[test]
+fn set_block_captures_variable_name() {
+    let caps = captures("set_block", "{% set nav %}hello{% endset %}{{ nav }}");
+    assert!(caps.contains(&"nav".to_owned()), "block-set variable name not captured: {caps:?}");
+}
+
+#[test]
 fn caller_args_captures_caller_variable() {
     let caps = captures("caller_args", "{% call (c) render_dialog() %}{% endcall %}");
     assert!(caps.contains(&"c".to_owned()), "caller var not captured: {caps:?}");
