@@ -183,10 +183,7 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         let mut effective_registry = base_registry.clone();
         load_sidecar(std::path::Path::new(&idx.path), &mut effective_registry);
         let raw = run_checks(&source, &idx.path, idx, &effective_registry, &workspace);
-        let (kept, w107s) = suppress_by_noqa(&raw, &source);
-        all_diags.extend(kept);
-        // suppress_by_noqa produces W107s with file: "" — backfill the path here.
-        all_diags.extend(w107s.into_iter().map(|mut d| { d.file = idx.path.clone(); d }));
+        all_diags.extend(raw);
     }
     if verbose {
         eprintln!("info: checked {} template(s) in {:.2}s, {} raw finding(s)",
@@ -202,8 +199,27 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     let ign: Vec<&str> = effective_ignore.iter().map(|s| s.as_str()).collect();
     let filtered = filter_by_config(&all_diags, &sel, &ign);
 
+    // REQ-DIAG-05: noqa suppression is applied AFTER select/ignore (same order as LSP server).
+    // Collect sources for noqa scanning (one source read per template).
+    let mut post_noqa: Vec<Diagnostic> = Vec::new();
+    let mut w107_diags: Vec<Diagnostic> = Vec::new();
+    {
+        let mut per_file: std::collections::HashMap<&str, Vec<&Diagnostic>> = std::collections::HashMap::new();
+        for d in &filtered { per_file.entry(d.file.as_str()).or_default().push(d); }
+        for (file_path, file_diags) in per_file {
+            let source = std::fs::read_to_string(file_path).unwrap_or_default();
+            let file_vec: Vec<Diagnostic> = file_diags.iter().map(|d| (*d).clone()).collect();
+            let (kept, w107s) = suppress_by_noqa(&file_vec, &source);
+            post_noqa.extend(kept);
+            w107_diags.extend(w107s.into_iter().map(|mut d| { d.file = file_path.to_owned(); d }));
+        }
+    }
+    post_noqa.extend(w107_diags);
+    // Shadow `filtered` so the rest of the function uses the noqa-suppressed set.
+    let filtered = post_noqa;
+
     // REQ-LINT-07: order by file, line, col (sort on absolute paths for stable order)
-    let mut sorted: Vec<Diagnostic> = filtered.into_iter().cloned().collect();
+    let mut sorted: Vec<Diagnostic> = filtered.into_iter().collect();
     sorted.sort_by(|a, b| {
         a.file.cmp(&b.file)
             .then(a.line.cmp(&b.line))

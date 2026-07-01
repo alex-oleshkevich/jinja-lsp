@@ -20,7 +20,26 @@ fn ws_with(pairs: &[(&str, &str)]) -> WorkspaceIndex {
     ws
 }
 
-// ─── E001: syntax errors ──────────────────────────────────────────────────────
+// ─── E001: syntax errors + cascade guard (jinja-lsp-pta6) ────────────────────
+
+#[test]
+fn syntax_error_template_produces_only_e001_no_cascade() {
+    // F01 §10: half-typed expression → only E001 fires, no W201 cascade.
+    let src = "{% for item in items";  // unclosed — tree-sitter ERROR
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    // If the parser produced errors, all non-E001 diagnostics must be suppressed.
+    if !idx.syntax_errors.is_empty() {
+        let non_e001: Vec<_> = diags.iter().filter(|d| d.code != "JINJA-E001").collect();
+        assert!(
+            non_e001.is_empty(),
+            "syntax-error template must not emit secondary diagnostics: {:?}",
+            non_e001
+        );
+        assert!(diags.iter().any(|d| d.code == "JINJA-E001"), "E001 must still fire");
+    }
+}
 
 #[test]
 fn e001_emitted_for_syntax_error() {

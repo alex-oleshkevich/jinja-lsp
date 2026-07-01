@@ -24,6 +24,11 @@ pub fn run_checks(
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     check_e001(path, index, &mut out);
+    // F01 §10: when the parse has errors, only E001 fires — all other checks
+    // rely on a valid AST and would produce a false-positive cascade.
+    if !index.syntax_errors.is_empty() {
+        return out;
+    }
     check_w106(source, path, index, registry, &mut out);
     check_e101(path, index, registry, workspace, &mut out);
     check_e103(path, index, registry, workspace, &mut out);
