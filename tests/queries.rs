@@ -164,6 +164,20 @@ fn import_names_captures_names_and_aliases() {
 }
 
 #[test]
+fn set_unpacking_captures_both_names() {
+    let caps = captures("set_unpacking", "{% set x, y = (1, 2) %}");
+    assert!(caps.iter().any(|c| c == "x"), "first unpacked name not captured: {caps:?}");
+    assert!(caps.iter().any(|c| c == "y"), "second unpacked name not captured: {caps:?}");
+}
+
+#[test]
+fn for_unpacking_captures_both_names() {
+    let caps = captures("for_unpacking", "{% for key, value in items %}{% endfor %}");
+    assert!(caps.iter().any(|c| c == "key"), "first loop name not captured: {caps:?}");
+    assert!(caps.iter().any(|c| c == "value"), "second loop name not captured: {caps:?}");
+}
+
+#[test]
 fn set_block_captures_variable_name() {
     let caps = captures("set_block", "{% set nav %}hello{% endset %}{{ nav }}");
     assert!(caps.contains(&"nav".to_owned()), "block-set variable name not captured: {caps:?}");
