@@ -9,4 +9,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 zed_extension_api = "0.2"
-sha2 = { version = "0.10", default-features = false, features = ["std"] }
