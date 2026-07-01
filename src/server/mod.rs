@@ -139,7 +139,27 @@ impl Backend {
             return;
         };
         let registry = state.registry_for(key);
-        let raw = run_checks(source, key, index, registry, workspace);
+        let mut raw = run_checks(source, key, index, registry, workspace);
+
+        // REQ-INLN-03: also check each inline sub-region and translate positions to host coords.
+        let inline_keys: Vec<_> = workspace.inline_ranges_for(key)
+            .map(|(k, r)| (k.to_owned(), r.clone()))
+            .collect();
+        for (ikey, range) in &inline_keys {
+            let inline_source = source.get(range.host_offset..range.host_offset + range.content_len)
+                .unwrap_or("");
+            if let Some(iidx) = workspace.templates.get(ikey.as_str()) {
+                let mut inline_diags = run_checks(inline_source, &ikey, iidx, registry, workspace);
+                for d in &mut inline_diags {
+                    let (hl, hc) = range.to_host_position(d.line, d.col);
+                    d.line = hl;
+                    d.col = hc;
+                    d.file = key.to_owned();
+                }
+                raw.extend(inline_diags);
+            }
+        }
+
         let config = state.config_for(key);
         let select: Vec<&str> = config.lint.select.iter().map(|s| s.as_str()).collect();
         let ignore: Vec<&str> = config.lint.ignore.iter().map(|s| s.as_str()).collect();

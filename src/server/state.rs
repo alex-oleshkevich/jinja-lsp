@@ -4,7 +4,7 @@ use crate::{
     builtins::{hints::load_sidecar, registry::Registry},
     config::{ConfigError, ConfigOverlay, ConfigWarning, JinjaConfig},
     parsing::{extract, inline::detect_inline_regions},
-    workspace::{build_workspace, index::WorkspaceIndex},
+    workspace::{build_workspace, index::WorkspaceIndex, inline::InlineRange},
 };
 
 /// Per-folder state for additional workspace folders (folder 1..N).
@@ -243,9 +243,19 @@ impl ServerState {
         // For host files, detect embedded Jinja templates and index each one.
         if Self::is_host_file_for_config(key, config) {
             let patterns: Vec<&str> = config.inline_patterns.iter().map(|s| s.as_str()).collect();
+            // Clear stale inline range metadata alongside stale template entries.
+            workspace.inline_ranges.retain(|k, _| !k.starts_with(&inline_prefix));
             for region in detect_inline_regions(source, &patterns) {
                 let inline_key = format!("{key}::{}", region.host_offset);
                 workspace.index_inline(&inline_key, &region.content);
+                // REQ-INLN-03: store host-coordinate metadata for position translation.
+                workspace.register_inline_range(&inline_key, InlineRange {
+                    host_path: key.to_owned(),
+                    host_offset: region.host_offset,
+                    host_line: region.host_line,
+                    host_col: region.host_col,
+                    content_len: region.content.len(),
+                });
             }
         }
     }

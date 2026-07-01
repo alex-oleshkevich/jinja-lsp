@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use super::inline::InlineRange;
 use super::symbols::{
     BlockDefinition, EnclosingOwner, FromImport, ImportAlias, MacroCallSite, MacroDefinition,
     Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference,
@@ -163,6 +164,9 @@ pub struct WorkspaceIndex {
     /// statically references (extends/include/import/from, non-dynamic only).
     /// Populated by `relink()`; empty until first Pass 2 runs.
     pub import_graph: HashMap<String, Vec<String>>,
+    /// REQ-INLN-03: host-coordinate metadata for each inline template entry.
+    /// Keyed by the inline template key (e.g. `/path/view.py::47`).
+    pub inline_ranges: HashMap<String, InlineRange>,
 }
 
 impl WorkspaceIndex {
@@ -171,6 +175,39 @@ impl WorkspaceIndex {
         let mut idx = extract(source);
         idx.path = key.to_owned();
         self.templates.insert(key.to_owned(), idx);
+    }
+
+    /// REQ-INLN-03: register host-coordinate metadata for an inline region key.
+    pub fn register_inline_range(&mut self, key: &str, range: InlineRange) {
+        self.inline_ranges.insert(key.to_owned(), range);
+    }
+
+    /// REQ-INLN-03: iterate over all inline regions belonging to `host_key`.
+    pub fn inline_ranges_for<'a>(&'a self, host_key: &'a str)
+        -> impl Iterator<Item = (&'a str, &'a InlineRange)> + 'a
+    {
+        self.inline_ranges.iter()
+            .filter(move |(_, r)| r.host_path == host_key)
+            .map(|(k, r)| (k.as_str(), r))
+    }
+
+    /// REQ-INLN-03: find the inline region that contains `host_byte` in `host_key`,
+    /// and return `(inline_key, inline_line, inline_col)`.
+    pub fn resolve_inline_cursor<'a>(
+        &'a self,
+        host_key: &'a str,
+        host_line: u32,
+        host_col: u32,
+        host_byte: usize,
+    ) -> Option<(&'a str, u32, u32)> {
+        for (ikey, range) in self.inline_ranges_for(host_key) {
+            if range.contains_host_byte(host_byte) {
+                if let Some((il, ic)) = range.to_inline_position(host_line, host_col) {
+                    return Some((ikey, il, ic));
+                }
+            }
+        }
+        None
     }
 
     /// REQ-EXTR-06: rebuild the import graph from all `TemplateIndex` entries.

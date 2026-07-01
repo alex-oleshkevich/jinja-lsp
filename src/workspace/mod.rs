@@ -1,6 +1,7 @@
 // TemplateIndex, WorkspaceIndex, symbol types, and discovery (REQ-FOLD-03).
 // Reads parsing/; never reads features/ (REQ-FOLD-08).
 pub mod index;
+pub mod inline;
 pub mod symbols;
 
 mod builder;
