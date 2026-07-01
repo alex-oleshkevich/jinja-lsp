@@ -70,62 +70,6 @@ impl Backend {
         self.state.write().await.update_file(key, source);
     }
 
-    /// Pass 2 (REQ-ARCH-04 / REQ-EXTR-06): relink the workspace — build the
-    /// import graph and assemble template chains.  Generation-guarded: if Pass 1
-    /// runs while the blocking relink is in progress the stale result is discarded.
-    ///
-    /// REQ-EXTR-08: also relinks each extra workspace folder independently.
-    #[tracing::instrument(skip(self), name = "pass2_relink")]
-    async fn pass2(&self) {
-        // Relink the primary workspace.
-        let (gen_snapshot, workspace_snapshot) = {
-            let state = self.state.read().await;
-            (state.generation, state.workspace.clone())
-        };
-
-        let span = tracing::info_span!("pass2_blocking_relink");
-        let relinked = tokio::task::spawn_blocking(move || {
-            let _guard = span.enter();
-            let mut ws = workspace_snapshot;
-            ws.relink();
-            ws
-        })
-        .await
-        .ok();
-
-        if let Some(relinked) = relinked {
-            let mut state = self.state.write().await;
-            if state.generation == gen_snapshot {
-                state.workspace = relinked;
-            }
-        }
-
-        // REQ-EXTR-08: relink each extra folder's workspace independently.
-        let folder_count = self.state.read().await.extra_folders.len();
-        for i in 0..folder_count {
-            let (gen_snapshot, workspace_snapshot) = {
-                let state = self.state.read().await;
-                let f = &state.extra_folders[i];
-                (f.generation, f.workspace.clone())
-            };
-            let span = tracing::info_span!("pass2_blocking_relink_extra", folder = i);
-            let relinked = tokio::task::spawn_blocking(move || {
-                let _guard = span.enter();
-                let mut ws = workspace_snapshot;
-                ws.relink();
-                ws
-            })
-            .await
-            .ok();
-            if let Some(relinked) = relinked {
-                let mut state = self.state.write().await;
-                if state.extra_folders[i].generation == gen_snapshot {
-                    state.extra_folders[i].workspace = relinked;
-                }
-            }
-        }
-    }
-
     fn uri_to_key(uri: &Url) -> String {
         uri.path().to_owned()
     }
@@ -559,10 +503,7 @@ impl LanguageServer for Backend {
         }
     }
 
-    /// REQ-ARCH-05: save triggers Pass 2 (relink).
-    async fn did_save(&self, _params: DidSaveTextDocumentParams) {
-        self.pass2().await;
-    }
+    async fn did_save(&self, _params: DidSaveTextDocumentParams) {}
 
     /// REQ-ARCH-05: close keeps the file in the index; it may still be
     /// referenced by other templates.
@@ -570,8 +511,6 @@ impl LanguageServer for Backend {
 
     /// REQ-ARCH-06: watched-files dispatch — config and template file changes.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
-        let mut any_template_changed = false;
-
         for change in &params.changes {
             let key = Self::uri_to_key(&change.uri);
             // REQ-CFG-10: detect config file changes (jinja.toml or pyproject.toml).
@@ -603,7 +542,6 @@ impl LanguageServer for Backend {
                     // Use tokio::fs to avoid blocking the async executor on disk I/O.
                     if let Ok(source) = tokio::fs::read_to_string(change.uri.path()).await {
                         self.pass1(&key, &source).await;
-                        any_template_changed = true;
                     }
                 }
                 FileChangeType::DELETED => {
@@ -618,16 +556,11 @@ impl LanguageServer for Backend {
                     } else {
                         state.workspace.templates.remove(&key);
                     }
-                    any_template_changed = true;
                 }
                 _ => {}
             }
         }
 
-        // Run Pass 2 once for the entire batch rather than once per changed file.
-        if any_template_changed {
-            self.pass2().await;
-        }
     }
 
     // REQ-ARCH-07: feature handlers are pure reads — stubs for now; each

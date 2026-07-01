@@ -156,14 +156,10 @@ fn range_contains(range: &Span, span: &Span) -> bool {
     range.start_byte <= span.start_byte && span.end_byte <= range.end_byte
 }
 
-/// REQ-DATA-09: maps each template path to its per-file index; resolved in Pass 2.
+/// REQ-DATA-09: maps each template path to its per-file index.
 #[derive(Debug, Default, Clone)]
 pub struct WorkspaceIndex {
     pub templates: HashMap<String, TemplateIndex>,
-    /// REQ-EXTR-06: import graph — maps each template to the set of templates it
-    /// statically references (extends/include/import/from, non-dynamic only).
-    /// Populated by `relink()`; empty until first Pass 2 runs.
-    pub import_graph: HashMap<String, Vec<String>>,
     /// REQ-INLN-03: host-coordinate metadata for each inline template entry.
     /// Keyed by the inline template key (e.g. `/path/view.py::47`).
     pub inline_ranges: HashMap<String, InlineRange>,
@@ -208,50 +204,6 @@ impl WorkspaceIndex {
             }
         }
         None
-    }
-
-    /// REQ-EXTR-06: rebuild the import graph from all `TemplateIndex` entries.
-    /// Only static (non-dynamic) references are included.
-    pub fn relink(&mut self) {
-        let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        for (path, idx) in &self.templates {
-            let targets: Vec<String> = idx
-                .template_refs
-                .iter()
-                .filter(|r| !r.is_dynamic)
-                .map(|r| r.path.clone())
-                .collect();
-            graph.insert(path.clone(), targets);
-        }
-        self.import_graph = graph;
-    }
-
-    /// REQ-EXTR-06: return `true` if `start` can reach itself through the import graph.
-    pub fn has_import_cycle(&self, start: &str) -> bool {
-        let mut in_path: HashSet<String> = HashSet::new();
-        let mut done: HashSet<String> = HashSet::new();
-        self.dfs_has_cycle(start, &mut in_path, &mut done)
-    }
-
-    // DFS with two sets: `in_path` = currently on the recursion stack (true cycle if revisited),
-    // `done` = fully explored (safe to skip). A single-set approach false-positives on diamonds.
-    fn dfs_has_cycle(&self, node: &str, in_path: &mut HashSet<String>, done: &mut HashSet<String>) -> bool {
-        if in_path.contains(node) {
-            return true;
-        }
-        if done.contains(node) {
-            return false;
-        }
-        in_path.insert(node.to_owned());
-        let refs: Vec<String> = self.import_graph.get(node).cloned().unwrap_or_default();
-        for target in &refs {
-            if self.dfs_has_cycle(target, in_path, done) {
-                return true;
-            }
-        }
-        in_path.remove(node);
-        done.insert(node.to_owned());
-        false
     }
 
     /// REQ-DATA-10: ordered extends lineage from `path` up to the root template.

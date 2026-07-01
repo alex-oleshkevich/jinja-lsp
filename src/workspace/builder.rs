@@ -9,9 +9,7 @@ use crate::parsing::{discover_templates, extract};
 /// Discover all templates in `templates_dirs` matching `extensions`, extract
 /// each one, and return a populated `WorkspaceIndex` keyed by relative path
 /// from the owning templates directory (e.g. `"blog/post.html"`).
-///
-/// This is the relink step (REQ-EXTR-06): once every file is in the map,
-/// `WorkspaceIndex::template_chain()` resolves extends chains lazily.
+/// Extends chains are resolved lazily via `WorkspaceIndex::template_chain()`.
 pub fn build_workspace(templates_dirs: &[&Path], extensions: &[&str]) -> WorkspaceIndex {
     let paths = discover_templates(templates_dirs, extensions);
     let mut workspace = WorkspaceIndex::default();
