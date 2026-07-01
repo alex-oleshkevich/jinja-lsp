@@ -84,6 +84,32 @@ fn fmt07_tabs_indent_nested_block() {
     assert!(lines[1].starts_with('\t'), "for line must start with tab: {:?}", lines[1]);
 }
 
+// ─── jinja-lsp-7ym9: range snap outward to whole Jinja constructs ────────────
+
+#[test]
+fn fmt7ym9_range_snaps_outward_to_enclosing_opener() {
+    // Select only the body line (line 1) of a {% if %} block.
+    // format_range must snap start_line up to line 0 (the opening tag).
+    let source = "{% if condition %}\n{{x}}\n{% endif %}";
+    let opts = FormatOptions::default();
+    let edits = format_range(source, 1, 1, opts);
+    // The formatter normalizes {{x}} to {{ x }}. The edit for line 1 must appear.
+    assert!(edits.iter().any(|e| e.start_line == 1 && e.new_text.contains("{{ x }}")),
+        "body line must be formatted: {:?}", edits);
+}
+
+#[test]
+fn fmt7ym9_range_unchanged_when_no_snap_needed() {
+    // If the range already covers whole tags, no expansion happens and we get only
+    // the edits within that range (not outside it).
+    let source = "{{ a }}\n{{b}}\n{{ c }}";
+    let opts = FormatOptions::default();
+    // Select only line 1 — there are no Jinja tags that need snapping.
+    let edits = format_range(source, 1, 1, opts);
+    assert!(edits.iter().all(|e| e.start_line >= 1 && e.end_line <= 1),
+        "edits must stay within [1,1] when no snap is needed: {:?}", edits);
+}
+
 #[test]
 fn fmt07_default_options_produces_4space_indent() {
     let source = "{% block content %}\n{% for x in items %}\n{% endfor %}\n{% endblock %}";

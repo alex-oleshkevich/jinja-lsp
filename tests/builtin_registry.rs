@@ -1,6 +1,6 @@
 // F02 — Builtin Registry tests: REQ-BLTN-01 through REQ-BLTN-07.
 
-use jinja_lsp::builtins::registry::{Category, DocEntry, Registry, Source};
+use jinja_lsp::builtins::registry::{AttrDoc, Category, DocEntry, Registry, Source};
 
 // ---------- REQ-BLTN-01: Registry keyed by (category, name) -----------------
 
@@ -253,4 +253,46 @@ fn custom_builtins_malformed_skips_siblings_still_load() {
         reg.get(Category::Filter, "good_filter").is_some(),
         "sibling doc must load even if another is malformed"
     );
+}
+
+// ─── jinja-lsp-hai3: insert_attr priority merge ──────────────────────────────
+
+#[test]
+fn hai3_insert_attr_lower_priority_does_not_overwrite_higher() {
+    // A Pack-sourced attr (priority 2) must not be overwritten by a Custom-sourced
+    // attr (priority 1) that is inserted afterwards.
+    let mut reg = Registry::load_core();
+    reg.insert_attr(AttrDoc {
+        parent: "loop".to_owned(),
+        attr: "index".to_owned(),
+        ty: Some("pack-type".to_owned()),
+        source: Source::Pack("starlette".to_owned()),
+    });
+    reg.insert_attr(AttrDoc {
+        parent: "loop".to_owned(),
+        attr: "index".to_owned(),
+        ty: Some("custom-type".to_owned()),
+        source: Source::Custom,
+    });
+    let attr = reg.get_attr("loop", "index").expect("loop.index must exist");
+    assert_eq!(attr.ty.as_deref(), Some("pack-type"), "pack (priority 2) must beat custom (priority 1)");
+}
+
+#[test]
+fn hai3_insert_attr_higher_priority_overwrites_lower() {
+    let mut reg = Registry::load_core();
+    reg.insert_attr(AttrDoc {
+        parent: "loop".to_owned(),
+        attr: "index".to_owned(),
+        ty: Some("custom-type".to_owned()),
+        source: Source::Custom,
+    });
+    reg.insert_attr(AttrDoc {
+        parent: "loop".to_owned(),
+        attr: "index".to_owned(),
+        ty: Some("pack-type".to_owned()),
+        source: Source::Pack("starlette".to_owned()),
+    });
+    let attr = reg.get_attr("loop", "index").expect("loop.index must exist");
+    assert_eq!(attr.ty.as_deref(), Some("pack-type"), "pack (priority 2) must win even when inserted second");
 }

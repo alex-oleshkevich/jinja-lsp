@@ -24,12 +24,66 @@ pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
 }
 
 /// Format the document, returning only edits that fall within [start_line, end_line] (inclusive).
+///
+/// REQ-FMT-07: the range is snapped outward to whole Jinja constructs so partial-tag edits
+/// are never produced: if the selection begins inside a tag body, start_line is expanded to
+/// include the opening tag; if it ends inside a construct, end_line is expanded to the closer.
 pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOptions) -> Vec<TextEdit> {
+    let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_options(source, opts);
     if formatted == source {
         return vec![];
     }
-    line_edits(source, &formatted, start_line, end_line)
+    line_edits(source, &formatted, snapped_start, snapped_end)
+}
+
+/// Expand [start_line, end_line] outward so neither edge splits a Jinja tag.
+///
+/// Scans upward from start_line for the nearest line containing `{%` (without a matching
+/// closing `%}` before start_line), and downward from end_line for the nearest `%}`.
+fn snap_range_to_constructs(source: &str, start_line: u32, end_line: u32) -> (u32, u32) {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let total = lines.len() as u32;
+
+    // Snap start: walk backward from start_line; if any line has `{%` without `%}` on the
+    // same line (opener), and start_line is strictly after it (inside a construct), expand.
+    let snapped_start = {
+        let mut s = start_line;
+        // Scan upward for an unclosed `{%` tag.
+        let mut depth: i32 = 0;
+        for i in (0..start_line.min(total)).rev() {
+            let line = lines[i as usize];
+            if line.contains("{%") && !line.contains("%}") {
+                // An opening tag without its close on the same line.
+                depth += 1;
+                if depth > 0 {
+                    s = i;
+                    break;
+                }
+            }
+        }
+        s
+    };
+
+    // Snap end: walk forward from end_line; if any line has `%}` without `{%` on the
+    // same line (closer), expand to include it.
+    let snapped_end = {
+        let mut e = end_line;
+        let mut depth: i32 = 0;
+        for i in end_line.min(total - 1) + 1..total {
+            let line = lines[i as usize];
+            if line.contains("%}") && !line.contains("{%") {
+                depth += 1;
+                if depth > 0 {
+                    e = i;
+                    break;
+                }
+            }
+        }
+        e
+    };
+
+    (snapped_start, snapped_end)
 }
 
 /// Compute per-line TextEdits between `original` and `formatted` within [start_line, end_line].

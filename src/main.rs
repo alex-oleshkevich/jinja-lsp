@@ -308,13 +308,35 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
         paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
     };
 
+    // REQ-FMT-09: silently skip relative paths that escape the templates root via ../ .
+    // Absolute paths are always accepted — the user explicitly chose them.
+    let template_roots: Vec<std::path::PathBuf> = {
+        let config_roots = cfg.resolved_template_dirs(&cwd);
+        if config_roots.is_empty() { vec![cwd.clone()] } else { config_roots }
+    };
+    let is_relative_escape = |p: &std::path::Path| -> bool {
+        if p.is_absolute() {
+            return false;
+        }
+        // Canonicalize relative to cwd and check if still under a root.
+        let canon = cwd.join(p).canonicalize().unwrap_or_else(|_| cwd.join(p));
+        !template_roots.iter().any(|r| {
+            let r_canon = r.canonicalize().unwrap_or_else(|_| r.clone());
+            canon.starts_with(&r_canon)
+        })
+    };
+
     // Collect all template files from roots.
     // For explicitly-given file paths the extension filter is skipped — the user
     // chose the file.  For directories we recurse and apply the template extension
     // filter so random non-template files are not accidentally reformatted.
+    // Relative paths that escape the templates root via ../ are silently skipped.
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     for root in &roots {
         if root.is_file() {
+            if !paths.is_empty() && is_relative_escape(root) {
+                continue; // silently skip ../-escape paths
+            }
             files.push(root.clone());
         } else if root.is_dir() {
             collect_template_files(root, template_exts, &mut files);

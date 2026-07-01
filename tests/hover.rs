@@ -117,6 +117,30 @@ fn hov08_inside_jinja_comment_returns_none() {
 }
 
 #[test]
+fn hov08_raw_body_returns_none() {
+    // REQ-HOV-08 (jinja-lsp-kz25): hover inside {% raw %} body must be silent.
+    let src = "{% raw %}{{ loop }}{% endraw %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None inside raw body; got: {:?}", result.map(|r| r.markdown));
+}
+
+#[test]
+fn hov08_string_literal_inside_expr_returns_none() {
+    // REQ-HOV-08 (jinja-lsp-kz25): hover inside a string literal must be silent.
+    // "loop" inside a string — not a Jinja keyword at that position.
+    let src = r#"{{ "loop this" | upper }}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    // Col of "loop" is inside the string literal.
+    let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None inside string literal");
+}
+
+#[test]
 fn hov08_unrecognized_filter_returns_none() {
     // A filter not in the registry — hover returns None (no fallback for filters
     // the registry doesn't know).

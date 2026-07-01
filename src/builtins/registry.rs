@@ -65,6 +65,7 @@ pub struct AttrDoc {
     pub parent: String,
     pub attr: String,
     pub ty: Option<String>,
+    pub source: Source,
 }
 
 // ── Serde helpers for parsing YAML frontmatter ───────────────────────────────
@@ -128,6 +129,7 @@ pub fn parse_doc_str(src: &str, source: Source) -> Option<(DocEntry, Vec<AttrDoc
             parent: fm.name.clone(),
             attr: a.name,
             ty: a.ty,
+            source: source.clone(),
         })
         .collect();
 
@@ -188,7 +190,13 @@ impl Registry {
         self.attributes
             .entry(attr.parent.clone())
             .or_default()
-            .insert(attr.attr.clone(), attr);
+            .entry(attr.attr.clone())
+            .and_modify(|existing| {
+                if attr.source.priority() >= existing.source.priority() {
+                    *existing = attr.clone();
+                }
+            })
+            .or_insert(attr);
     }
 
     /// REQ-BLTN-01: exact lookup by (category, name) — zero allocation.

@@ -137,6 +137,10 @@ pub fn hover(
 
     // ── Word-level fallback: check text at cursor for special objects,
     //    imported names, keyword args, and statement keywords ──────────────────
+    // REQ-HOV-08: suppress hover inside {% raw %} bodies and plain string literals.
+    if is_in_raw_body(source, byte) || is_in_string_literal(source, byte) {
+        return None;
+    }
     if let Some((word, wb_start, wb_end)) = word_at_byte_range(source, byte) {
         // REQ-HOV-12: special objects not captured as references (e.g. loop as
         // an attribute parent) — look them up in the variable registry.
@@ -669,6 +673,51 @@ fn is_keyword_arg_name(source: &str, end_byte: usize) -> bool {
 }
 
 /// True when `byte` is inside a `{% ... %}` statement tag.
+/// REQ-HOV-08: true when `byte` is inside a `{% raw %}...{% endraw %}` body.
+fn is_in_raw_body(source: &str, byte: usize) -> bool {
+    let before = &source[..byte.min(source.len())];
+    // Find the last {% raw %} before cursor.
+    let Some(raw_start) = before.rfind("{%") else { return false };
+    let tag = source[raw_start..].split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+    // The tag must be "{% raw %}" and not yet closed.
+    if !tag.starts_with("{%") { return false; }
+    let tag_close = source[raw_start..].find("%}").map(|p| raw_start + p + 2);
+    let Some(close) = tag_close else { return false };
+    // Extract the tag keyword.
+    let inner = &source[raw_start + 2..close - 2];
+    let kw = inner.split_whitespace().next().unwrap_or("");
+    if kw != "raw" { return false; }
+    // Cursor must be after tag close and before {% endraw %}.
+    if byte < close { return false; }
+    let after = &source[close..];
+    let endraw_pos = after.find("endraw").map(|p| close + p);
+    match endraw_pos {
+        Some(ep) => byte < ep,
+        None => true, // unclosed raw — cursor is in the body
+    }
+}
+
+/// REQ-HOV-08: true when `byte` is inside a quoted string literal in the Jinja source.
+/// Only considers single- and double-quoted literals that appear inside {{ }} or {% %} delimiters.
+fn is_in_string_literal(source: &str, byte: usize) -> bool {
+    // Walk from the nearest Jinja delimiter open to the cursor, tracking quote state.
+    let before = &source[..byte.min(source.len())];
+    let delim_start = before.rfind("{{")
+        .or_else(|| before.rfind("{%"))
+        .unwrap_or(0);
+    let slice = &source[delim_start..byte.min(source.len())];
+    let mut in_single = false;
+    let mut in_double = false;
+    for ch in slice.chars() {
+        match ch {
+            '\'' if !in_double => in_single = !in_single,
+            '"'  if !in_single => in_double = !in_double,
+            _ => {}
+        }
+    }
+    in_single || in_double
+}
+
 fn is_inside_statement_tag(source: &str, byte: usize) -> bool {
     let byte = super::clamp_to_char_boundary(source, byte);
     if byte >= source.len() {
