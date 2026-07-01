@@ -235,6 +235,60 @@ fn server_state_refresh_sidecar_evicts_stale_entry() {
     );
 }
 
+// ---------- REQ-HINT-08 / frvv: sidecar live-reload via refresh_sidecar -------
+
+#[test]
+fn sidecar_live_reload_updates_registry() {
+    use std::fs;
+    use tempfile::TempDir;
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::builtins::registry::Category;
+
+    let dir = TempDir::new().unwrap();
+    let template = dir.path().join("view.html");
+    let sidecar = dir.path().join("view.html.hints.md");
+    fs::write(&template, "{{ ctx_var }}").unwrap();
+    // Write initial sidecar — declares ctx_var.
+    fs::write(&sidecar, "---\nname: ctx_var\ncategory: context_variable\n---\nA context var.").unwrap();
+
+    let key = template.to_str().unwrap();
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file(key, "{{ ctx_var }}");
+    assert!(
+        state.registry_for(key).get(Category::ContextVariable, "ctx_var").is_some(),
+        "initial sidecar hint must be in registry"
+    );
+
+    // Simulate editing the sidecar: add a second variable.
+    fs::write(&sidecar, "---\nname: new_var\ncategory: context_variable\n---\nAdded by live-reload.").unwrap();
+    let base = state.base_registry_for(key).clone();
+    state.refresh_sidecar(key, base);
+
+    let reg = state.registry_for(key);
+    assert!(
+        reg.get(Category::ContextVariable, "new_var").is_some(),
+        "live-reload must add new_var after sidecar edit"
+    );
+}
+
+#[test]
+fn server_registers_hints_md_watcher() {
+    let src = include_str!("../src/server/mod.rs");
+    assert!(
+        src.contains("*.hints.md"),
+        "server must register a *.hints.md filesystem watcher for live-reload (REQ-HINT-08)"
+    );
+}
+
+#[test]
+fn server_dispatches_sidecar_on_hints_md_change() {
+    let src = include_str!("../src/server/mod.rs");
+    assert!(
+        src.contains(".hints.md") && src.contains("refresh_sidecar"),
+        "server did_change_watched_files must call refresh_sidecar when a .hints.md file changes"
+    );
+}
+
 // ---------- REQ-HINT-08: malformed hint is skipped, siblings load -------------
 
 #[test]

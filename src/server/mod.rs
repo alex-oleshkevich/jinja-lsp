@@ -457,6 +457,7 @@ impl LanguageServer for Backend {
             .await;
         // REQ-CFG-10 / REQ-ARCH-06: register config file watchers so the client
         // notifies us when jinja.toml or pyproject.toml changes on disk.
+        // REQ-HINT-08: also watch *.hints.md so live-editing a sidecar rebuilds the registry.
         let watchers = vec![
             FileSystemWatcher {
                 glob_pattern: GlobPattern::String("**/jinja.toml".to_owned()),
@@ -464,6 +465,10 @@ impl LanguageServer for Backend {
             },
             FileSystemWatcher {
                 glob_pattern: GlobPattern::String("**/pyproject.toml".to_owned()),
+                kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
+            },
+            FileSystemWatcher {
+                glob_pattern: GlobPattern::String("**/*.hints.md".to_owned()),
                 kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
             },
         ];
@@ -542,6 +547,19 @@ impl LanguageServer for Backend {
             };
             if is_config_file {
                 self.reload_config_file(change.uri.path()).await;
+                continue;
+            }
+            // REQ-HINT-08: sidecar hint file changed — rebuild the per-template registry overlay
+            // and republish diagnostics so the editor sees the updated hint-driven warnings.
+            if key.ends_with(".hints.md") {
+                if let Some(template_key) = key.strip_suffix(".hints.md") {
+                    let base = {
+                        let state = self.state.read().await;
+                        state.base_registry_for(template_key).clone()
+                    };
+                    self.state.write().await.refresh_sidecar(template_key, base);
+                    self.publish_file_diagnostics(template_key).await;
+                }
                 continue;
             }
             match change.typ {
