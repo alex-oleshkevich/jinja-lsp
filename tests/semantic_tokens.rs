@@ -33,7 +33,8 @@ fn sem01_token_type_legend_order() {
     assert_eq!(TOKEN_TYPES[4], "function");
     assert_eq!(TOKEN_TYPES[5], "test");
     assert_eq!(TOKEN_TYPES[6], "block");
-    assert_eq!(TOKEN_TYPES.len(), 7, "exactly 7 types; index 7 tombstoned (REQ-SEM-06)");
+    assert_eq!(TOKEN_TYPES[7], "", "index 7 must be materialized as a tombstone slot");
+    assert_eq!(TOKEN_TYPES.len(), 8, "8 entries: 7 live (0-6) + 1 tombstone at index 7 (REQ-SEM-06)");
 }
 
 #[test]
@@ -66,8 +67,9 @@ fn sem06_type_indices_are_stable() {
     assert_eq!(TT_FUNCTION, 4);
     assert_eq!(TT_TEST, 5);
     assert_eq!(TT_BLOCK, 6);
-    // Index 7 is tombstoned — no constant defined there.
-    assert_eq!(TOKEN_TYPES.len(), 7, "legend has exactly 7 live types; index 7 is the tombstone");
+    // Index 7 is tombstoned — no constant defined there; slot held as "" to prevent reuse.
+    assert_eq!(TOKEN_TYPES[7], "", "tombstone slot must be materialized, not just a comment");
+    assert_eq!(TOKEN_TYPES.len(), 8, "8 slots: 7 live (0-6) + 1 tombstone (7) (REQ-SEM-06)");
 }
 
 // ─── REQ-SEM-04: block definition → block token, zero modifiers ─────────────
@@ -271,8 +273,8 @@ fn sem03_range_excludes_out_of_range_tokens() {
 
 #[test]
 fn sem05_legend_has_exactly_7_types_full_delta_deferred() {
-    // The legend has 7 types — nothing extra for delta.
-    assert_eq!(TOKEN_TYPES.len(), 7);
+    // 8 slots: 7 live types + 1 tombstone at index 7 (REQ-SEM-06).
+    assert_eq!(TOKEN_TYPES.len(), 8);
 }
 
 // ─── REQ-SEM-04: statement keywords emit no semantic token ───────────────────

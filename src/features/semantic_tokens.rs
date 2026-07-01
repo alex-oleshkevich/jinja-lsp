@@ -30,7 +30,7 @@ pub const TOKEN_TYPES: &[&str] = &[
     "function",  // 4
     "test",      // 5
     "block",     // 6
-    // 7 — tombstoned (retired keyword)
+    "",          // 7 — tombstone (retired keyword; slot held to keep higher indices stable)
 ];
 
 /// Token-modifier legend in bit-position order (REQ-SEM-02).
