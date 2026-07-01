@@ -22,7 +22,7 @@ enum Commands {
         #[arg(long, short)]
         verbose: bool,
         /// Path to config file (overrides discovery)
-        #[arg(long)]
+        #[arg(long, short = 'c')]
         config: Option<String>,
         /// Enable only these diagnostic codes/prefixes
         #[arg(long, value_delimiter = ',')]
@@ -396,7 +396,7 @@ mod cli_tests {
         // proper @@ hunk coordinates — NOT cascade every subsequent line as changed.
         let original = "line1\nline2\nline3\n";
         let formatted = "line1\nnew_line\nline2\nline3\n";
-        let out = capture_unified_diff(Path::new("t.html"), original, formatted);
+        let out = build_unified_diff(Path::new("t.html"), original, formatted);
         assert!(out.contains("@@ -1,"), "must have hunk header");
         assert!(out.contains("+new_line"), "inserted line must appear with +");
         assert!(out.contains(" line2"), "unchanged line2 must appear as context");
@@ -409,7 +409,7 @@ mod cli_tests {
     fn vn6f_deletion_shows_correct_hunk() {
         let original = "line1\nline2\nline3\n";
         let formatted = "line1\nline3\n";
-        let out = capture_unified_diff(Path::new("t.html"), original, formatted);
+        let out = build_unified_diff(Path::new("t.html"), original, formatted);
         assert!(out.contains("-line2"), "deleted line must appear with -");
         assert!(out.contains(" line3"), "unchanged line3 must appear as context, not as changed");
     }
@@ -417,7 +417,7 @@ mod cli_tests {
     #[test]
     fn vn6f_identical_files_produce_no_hunks() {
         let src = "a\nb\nc\n";
-        let out = capture_unified_diff(Path::new("t.html"), src, src);
+        let out = build_unified_diff(Path::new("t.html"), src, src);
         assert!(!out.contains("@@"), "identical files must produce no hunks");
     }
 
@@ -466,7 +466,7 @@ mod cli_tests {
 
     #[test]
     fn vn6f_diff_header_matches_spec() {
-        let out = capture_unified_diff(
+        let out = build_unified_diff(
             Path::new("templates/blog/post.html"),
             "{%if%}\n",
             "{% if %}\n",
@@ -599,8 +599,8 @@ fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<st
     }
 }
 
-#[cfg(test)]
-fn capture_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -> String {
+/// Build a unified-diff string for path.  Both tests and the print path share this logic.
+fn build_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -> String {
     use similar::{ChangeTag, TextDiff};
     let diff = TextDiff::from_lines(original, formatted);
     let display = path.display();
@@ -632,32 +632,5 @@ fn capture_unified_diff(path: &std::path::Path, original: &str, formatted: &str)
 }
 
 fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
-    use similar::{ChangeTag, TextDiff};
-
-    let diff = TextDiff::from_lines(original, formatted);
-    let display = path.display();
-    println!("--- {display}");
-    println!("+++ {display} (formatted)");
-    for group in diff.grouped_ops(3) {
-        let first = group.first().unwrap();
-        let last = group.last().unwrap();
-        let old_range = first.old_range().start..last.old_range().end;
-        let new_range = first.new_range().start..last.new_range().end;
-        println!(
-            "@@ -{},{} +{},{} @@",
-            old_range.start + 1, old_range.len(),
-            new_range.start + 1, new_range.len(),
-        );
-        for op in &group {
-            for change in diff.iter_changes(op) {
-                let prefix = match change.tag() {
-                    ChangeTag::Delete => '-',
-                    ChangeTag::Insert => '+',
-                    ChangeTag::Equal  => ' ',
-                };
-                print!("{prefix}{change}");
-                if !change.missing_newline() { } else { println!(); }
-            }
-        }
-    }
+    print!("{}", build_unified_diff(path, original, formatted));
 }
