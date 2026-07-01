@@ -359,5 +359,5 @@ fn word_at_byte(source: &str, byte: usize) -> &str {
 
 /// Returns true when the identifier starting at `byte` is immediately preceded by `self.`.
 fn is_preceded_by_self_dot(source: &str, byte: usize) -> bool {
-    source.get(..byte).map_or(false, |before| before.ends_with("self."))
+    source.get(..byte).is_some_and(|before| before.ends_with("self."))
 }

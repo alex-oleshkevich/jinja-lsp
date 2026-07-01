@@ -596,7 +596,7 @@ pub fn complete(
             let before = &source[..byte];
             let stmt_start = before.rfind("{%").unwrap_or(0);
             let inner_raw = before.get(stmt_start + 2..).unwrap_or("")
-                .trim_start_matches(|c| c == '-' || c == '+' || c == ' ' || c == '\t');
+                .trim_start_matches(['-', '+', ' ', '\t']);
             if inner_raw.starts_with("end") {
                 // Block-aware: offer only the innermost unclosed block's end-tag.
                 if let Some(open_kw) = find_innermost_open_block(before) {

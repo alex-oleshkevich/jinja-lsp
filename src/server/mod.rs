@@ -93,7 +93,7 @@ impl Backend {
             let inline_source = source.get(range.host_offset..range.host_offset + range.content_len)
                 .unwrap_or("");
             if let Some(iidx) = workspace.templates.get(ikey.as_str()) {
-                let mut inline_diags = run_checks(inline_source, &ikey, iidx, registry, workspace);
+                let mut inline_diags = run_checks(inline_source, ikey, iidx, registry, workspace);
                 for d in &mut inline_diags {
                     let (hl, hc) = range.to_host_position(d.line, d.col);
                     d.line = hl;
@@ -388,8 +388,8 @@ impl LanguageServer for Backend {
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
                             legend: SemanticTokensLegend {
-                                token_types: TOKEN_TYPES.iter().map(|s| SemanticTokenType::new(*s)).collect(),
-                                token_modifiers: TOKEN_MODIFIERS.iter().map(|s| SemanticTokenModifier::new(*s)).collect(),
+                                token_types: TOKEN_TYPES.iter().map(|s| SemanticTokenType::new(s)).collect(),
+                                token_modifiers: TOKEN_MODIFIERS.iter().map(|s| SemanticTokenModifier::new(s)).collect(),
                             },
                             full: Some(SemanticTokensFullOptions::Bool(true)),
                             range: Some(true),
@@ -586,7 +586,6 @@ impl LanguageServer for Backend {
             Ok(Some(CompletionResponse::List(CompletionList {
                 is_incomplete: true,
                 items: lsp_items,
-                ..Default::default()
             })))
         } else {
             Ok(Some(CompletionResponse::Array(lsp_items)))

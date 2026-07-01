@@ -161,7 +161,7 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let mut macro_vec: Vec<(usize, String, Span, usize)> = vec![];
     {
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&mq, tree.root_node(), bytes);
+        let mut ms = cur.matches(mq, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             for cap in m.captures {
                 if mq.capture_names()[cap.index as usize] == "name" {
@@ -185,7 +185,7 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let mut param_map: HashMap<usize, Vec<Parameter>> = HashMap::new();
     {
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&pq, tree.root_node(), bytes);
+        let mut ms = cur.matches(pq, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             let mut name = None;
             let mut default = None;
@@ -271,7 +271,7 @@ fn macro_body_span(root: Node, ctrl_end: usize, bytes: &[u8]) -> Span {
 fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let bq = &*Q_BLOCKS;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&bq, tree.root_node(), bytes);
+    let mut ms = cur.matches(bq, tree.root_node(), bytes);
 
     // blocks.scm has two patterns; required blocks match both — deduplicate by start_byte.
     // Value: (block_idx_in_idx, ctrl_end_byte) where ctrl_end is end of {% block name %} tag.
@@ -333,7 +333,7 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     // {% endblock %} (no trailing name) → normal control node, handled by scope regions.
     // {% endblock name %} (trailing name)  → ERROR node in tree-sitter; handled below.
     let scope_regions = build_scope_regions(tree.root_node(), bytes);
-    for (_, (i, ctrl_end)) in &seen {
+    for (i, ctrl_end) in seen.values() {
         if let Some(region) = scope_regions.iter().find(|r| {
             r.scope == VariableScope::Block && r.body_start == *ctrl_end
         }) {
@@ -354,7 +354,7 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                 if let Some(ns) = endblock_trailing_name_span(bytes, tag_start) {
                     let trail_name = std::str::from_utf8(&bytes[ns.start_byte..ns.end_byte])
                         .unwrap_or("");
-                    for (_, (bi, ctrl_end)) in &seen {
+                    for (bi, ctrl_end) in seen.values() {
                         if idx.blocks[*bi].name == trail_name
                             && idx.blocks[*bi].body == Span::default()
                         {
@@ -425,7 +425,7 @@ fn run_set_unpacking(
 ) {
     let q = &*Q_SET_UNPACKING;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut names: Vec<(String, Span)> = vec![];
         let mut key = None;
@@ -467,7 +467,7 @@ fn run_set(
 ) {
     let q = &*Q_SET;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut name = String::new();
         let mut name_span = Span::default();
@@ -582,7 +582,7 @@ fn run_for_unpacking(
 ) {
     let q = &*Q_FOR_UNPACKING;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut names: Vec<(String, Span)> = vec![];
         let mut key = None;
@@ -625,7 +625,7 @@ fn run_for(
 ) {
     let q = &*Q_FOR;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut name = String::new();
         let mut name_span = Span::default();
@@ -660,7 +660,7 @@ fn run_with(
 ) {
     let q = &*Q_WITH;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
@@ -682,7 +682,7 @@ fn run_with(
 fn run_trans(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let q = &*Q_TRANS;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
@@ -695,7 +695,7 @@ fn run_trans(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
 fn run_caller_args(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let q = &*Q_CALLER_ARGS;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "caller_var" {
@@ -801,7 +801,7 @@ fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIn
     {
         let q = &*Q_EXTENDS;
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&q, tree.root_node(), bytes);
+        let mut ms = cur.matches(q, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             for cap in m.captures {
                 match q.capture_names()[cap.index as usize] {
@@ -834,7 +834,7 @@ fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIn
     {
         let q = &*Q_INCLUDES;
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&q, tree.root_node(), bytes);
+        let mut ms = cur.matches(q, tree.root_node(), bytes);
         // keyed by include_statement start_byte
         let mut inc_map: HashMap<usize, TemplateReference> = HashMap::new();
 
@@ -888,7 +888,7 @@ fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIn
 fn do_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let q = &*Q_IMPORTS;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         let mut source = String::new();
         let mut alias = String::new();
@@ -930,7 +930,7 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
     let mut source_map: HashMap<usize, (String, Span)> = HashMap::new();
     {
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&fq, tree.root_node(), bytes);
+        let mut ms = cur.matches(fq, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             for cap in m.captures {
                 if fq.capture_names()[cap.index as usize] == "source" {
@@ -950,7 +950,7 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
     let mut names_map: HashMap<usize, HashMap<String, (Option<String>, Span)>> = HashMap::new();
     {
         let mut cur = QueryCursor::new();
-        let mut ms = cur.matches(&nq, tree.root_node(), bytes);
+        let mut ms = cur.matches(nq, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             for cap in m.captures {
                 let cap_name = nq.capture_names()[cap.index as usize];
@@ -994,7 +994,7 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
             .into_iter()
             .map(|(name, (alias, name_span))| ImportedName { name, alias, name_span })
             .collect();
-        names.sort_unstable_by(|a, b| a.name_span.start_byte.cmp(&b.name_span.start_byte));
+        names.sort_unstable_by_key(|a| a.name_span.start_byte);
         idx.from_imports.push(FromImport { source: source.clone(), names, span: span.clone() });
         idx.template_refs.push(TemplateReference {
             kind: TemplateRefKind::From,
@@ -1011,7 +1011,7 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
 fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let q = &*Q_REFERENCES;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             let kind = match q.capture_names()[cap.index as usize] {
@@ -1036,7 +1036,7 @@ fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
 fn do_call_sites(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let q = &*Q_CALL_SITES;
     let mut cur = QueryCursor::new();
-    let mut ms = cur.matches(&q, tree.root_node(), bytes);
+    let mut ms = cur.matches(q, tree.root_node(), bytes);
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] != "callee" {

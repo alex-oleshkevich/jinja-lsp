@@ -306,7 +306,7 @@ fn find_param_in_macro_tag(
     for (j, c) in content.char_indices() {
         match c {
             '(' | '[' => depth2 += 1,
-            ')' | ']' => { if depth2 > 0 { depth2 -= 1; } }
+            ')' | ']' => { depth2 = depth2.saturating_sub(1); }
             ',' if depth2 == 0 => {
                 slots.push((slot_start, j));
                 slot_start = j + 1;

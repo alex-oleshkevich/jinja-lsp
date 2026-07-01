@@ -450,7 +450,7 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
         }
         // from-imports that source from the current template count as "exporting" the macro.
         for fi in &tmpl.from_imports {
-            if workspace.resolve_key(&fi.source).map_or(false, |k| k == path)
+            if (workspace.resolve_key(&fi.source) == Some(path))
                 || fi.source == path
             {
                 for n in &fi.names {

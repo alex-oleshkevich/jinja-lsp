@@ -212,11 +212,8 @@ impl WorkspaceIndex {
         let mut current = path.to_owned();
         let mut seen = HashSet::new();
 
-        loop {
-            let key = match self.resolve_key(&current) {
-                Some(k) => k.to_owned(),
-                None => break,
-            };
+        while let Some(k) = self.resolve_key(&current) {
+            let key = k.to_owned();
             if !seen.insert(key.clone()) {
                 break; // cycle guard
             }

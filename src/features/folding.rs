@@ -88,7 +88,7 @@ fn scan_events(source: &str) -> Vec<Event> {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
                 let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
-                let keyword = inner.trim_matches('-').trim().split_whitespace().next().unwrap_or("");
+                let keyword = inner.trim_matches('-').split_whitespace().next().unwrap_or("");
                 if in_raw {
                     // Inside raw body: only endraw exits raw mode; other tags are literal text.
                     if keyword == "endraw" {
