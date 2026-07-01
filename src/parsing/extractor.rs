@@ -74,6 +74,30 @@ jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
 
 // ── public API ───────────────────────────────────────────────────────────────
 
+/// Return the pattern-count of each named query static (touches LazyLock::force on first call).
+/// Used by tests to verify queries are pre-compiled and non-empty.
+pub fn query_pattern_counts() -> Vec<(&'static str, usize)> {
+    vec![
+        ("Q_MACROS",        Q_MACROS.pattern_count()),
+        ("Q_PARAMS",        Q_PARAMS.pattern_count()),
+        ("Q_BLOCKS",        Q_BLOCKS.pattern_count()),
+        ("Q_SET_UNPACKING", Q_SET_UNPACKING.pattern_count()),
+        ("Q_SET",           Q_SET.pattern_count()),
+        ("Q_FOR_UNPACKING", Q_FOR_UNPACKING.pattern_count()),
+        ("Q_FOR",           Q_FOR.pattern_count()),
+        ("Q_WITH",          Q_WITH.pattern_count()),
+        ("Q_TRANS",         Q_TRANS.pattern_count()),
+        ("Q_CALLER_ARGS",   Q_CALLER_ARGS.pattern_count()),
+        ("Q_EXTENDS",       Q_EXTENDS.pattern_count()),
+        ("Q_INCLUDES",      Q_INCLUDES.pattern_count()),
+        ("Q_IMPORTS",       Q_IMPORTS.pattern_count()),
+        ("Q_FROM_IMPORTS",  Q_FROM_IMPORTS.pattern_count()),
+        ("Q_IMPORT_NAMES",  Q_IMPORT_NAMES.pattern_count()),
+        ("Q_REFERENCES",    Q_REFERENCES.pattern_count()),
+        ("Q_CALL_SITES",    Q_CALL_SITES.pattern_count()),
+    ]
+}
+
 /// Parse `source` once, run all 17 queries, merge captures into a fresh
 /// `TemplateIndex` (REQ-EXTR-03). Syntax errors (JINJA-E001) are recorded.
 pub fn extract(source: &str) -> TemplateIndex {

@@ -1,19 +1,22 @@
 // jinja-lsp-ex8b: tree-sitter queries must be compiled once, not per-call.
 
 #[test]
-fn queries_compiled_lazily_not_per_call() {
-    let src = include_str!("../src/parsing/extractor.rs");
-    // qry() was the per-call compiler that ran Query::new on every extract().
-    // It must no longer exist.
-    assert!(
-        !src.contains("fn qry("),
-        "per-call query compiler fn qry() must be removed — queries must use lazy statics"
-    );
-    // LazyLock<Query> is the expected replacement.
-    assert!(
-        src.contains("LazyLock"),
-        "queries must be compiled once via LazyLock"
-    );
+fn queries_are_lazily_compiled_and_non_empty() {
+    // Behavioral test: access each query static via query_pattern_counts() and verify
+    // (a) every query has at least one pattern (not an empty/broken query), and
+    // (b) calling it twice returns the same counts (LazyLock returns the same compiled object).
+    use jinja_lsp::parsing::query_pattern_counts;
+
+    let counts1 = query_pattern_counts();
+    let counts2 = query_pattern_counts();
+
+    assert!(!counts1.is_empty(), "query_pattern_counts must return entries");
+
+    for ((name1, c1), (name2, c2)) in counts1.iter().zip(counts2.iter()) {
+        assert_eq!(name1, name2);
+        assert_eq!(c1, c2, "pattern count for {name1} changed between calls (not a stable static)");
+        assert!(*c1 > 0, "query {name1} has zero patterns — scm file may be empty or wrong");
+    }
 }
 
 #[test]

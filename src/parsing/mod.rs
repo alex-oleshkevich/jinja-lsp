@@ -3,6 +3,7 @@
 
 mod extractor;
 pub use extractor::extract;
+pub use extractor::query_pattern_counts;
 
 mod path_resolver;
 pub use path_resolver::resolve_path;
