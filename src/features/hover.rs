@@ -675,7 +675,8 @@ fn is_keyword_arg_name(source: &str, end_byte: usize) -> bool {
 /// True when `byte` is inside a `{% ... %}` statement tag.
 /// REQ-HOV-08: true when `byte` is inside a `{% raw %}...{% endraw %}` body.
 fn is_in_raw_body(source: &str, byte: usize) -> bool {
-    let before = &source[..byte.min(source.len())];
+    let byte = super::clamp_to_char_boundary(source, byte);
+    let before = &source[..byte];
     // Find the last {% raw %} before cursor.
     let Some(raw_start) = before.rfind("{%") else { return false };
     let tag = source[raw_start..].split_whitespace().take(3).collect::<Vec<_>>().join(" ");
@@ -701,11 +702,12 @@ fn is_in_raw_body(source: &str, byte: usize) -> bool {
 /// Only considers single- and double-quoted literals that appear inside {{ }} or {% %} delimiters.
 fn is_in_string_literal(source: &str, byte: usize) -> bool {
     // Walk from the nearest Jinja delimiter open to the cursor, tracking quote state.
-    let before = &source[..byte.min(source.len())];
+    let byte = super::clamp_to_char_boundary(source, byte);
+    let before = &source[..byte];
     let delim_start = before.rfind("{{")
         .or_else(|| before.rfind("{%"))
         .unwrap_or(0);
-    let slice = &source[delim_start..byte.min(source.len())];
+    let slice = &source[delim_start..byte];
     let mut in_single = false;
     let mut in_double = false;
     for ch in slice.chars() {

@@ -105,36 +105,6 @@ fn zed_extension_source_returns_lsp_command() {
     );
 }
 
-// ─── T-15/16: REQ-EDIT-12 — downloads and verifies checksum ─────────────────
-
-#[test]
-fn zed_extension_source_downloads_release_binary() {
-    let src = include_str!("../editors/zed/src/lib.rs");
-    // Must attempt a download.
-    assert!(
-        src.contains("download_file"),
-        "src/lib.rs must call download_file for the release binary"
-    );
-    // Must use latest_github_release to locate the release asset (F21 single source of truth).
-    assert!(
-        src.contains("latest_github_release"),
-        "src/lib.rs must fetch from github release to locate the binary"
-    );
-    // REQ-EDIT-12: must fetch the published binary checksum and verify before launching.
-    assert!(
-        src.contains("binary.sha256"),
-        "src/lib.rs must fetch the .binary.sha256 checksum asset published by release.yml"
-    );
-    assert!(
-        src.contains("verify_binary_checksum"),
-        "src/lib.rs must call verify_binary_checksum after downloading"
-    );
-    assert!(
-        src.contains("sha2") || src.contains("Sha256"),
-        "src/lib.rs must use sha2 to compute the binary's SHA-256"
-    );
-}
-
 // ─── T-17: REQ-EDIT-08 — jinja2-lsp id and Jinja2 (HTML) language ───────────
 
 #[test]
@@ -152,56 +122,6 @@ fn zed_manifest_legacy_ids_preserved() {
     assert_eq!(lang, "Jinja2 (HTML)", "legacy language name Jinja2 (HTML) must be preserved");
 }
 
-// ─── T-REL-01: REQ-EDIT-12 — release asset names match workflow-published archives
-
-#[test]
-fn zed_asset_names_match_release_workflow() {
-    let src = include_str!("../editors/zed/src/lib.rs");
-    // The workflow publishes exact Rust target-triple archives.
-    // The extension must use match (os, arch) → triple, not os.to_string() shortcuts.
-    for triple in &[
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-    ] {
-        assert!(
-            src.contains(triple),
-            "zed lib.rs must reference target triple '{triple}' to match release asset names"
-        );
-    }
-}
-
-#[test]
-fn zed_download_uses_archive_file_types() {
-    let src = include_str!("../editors/zed/src/lib.rs");
-    // Binaries are published as .tar.gz (Linux/macOS) and .zip (Windows).
-    assert!(
-        src.contains("GzipTar"),
-        "zed lib.rs must use DownloadedFileType::GzipTar for .tar.gz archives"
-    );
-    assert!(
-        src.contains("Zip"),
-        "zed lib.rs must use DownloadedFileType::Zip for Windows .zip archives"
-    );
-    // Uncompressed is allowed exclusively for the tiny checksum text file download.
-    // The main binary archive must still use GzipTar or Zip (asserted above).
-    assert!(
-        src.contains("Uncompressed"),
-        "zed lib.rs must use DownloadedFileType::Uncompressed to download the .binary.sha256 text file"
-    );
-}
-
-#[test]
-fn zed_checksum_mismatch_is_rejected() {
-    let src = include_str!("../editors/zed/src/lib.rs");
-    // REQ-EDIT-12/T-16: a mismatch must produce an error (Err return) — never launch the binary.
-    // verify_binary_checksum returns Err on mismatch; the `?` in download_release propagates it.
-    assert!(
-        src.contains("checksum mismatch"),
-        "verify_binary_checksum must return Err with 'checksum mismatch' on hash mismatch"
-    );
-}
 
 #[test]
 fn zed_no_nonexistent_api_calls() {

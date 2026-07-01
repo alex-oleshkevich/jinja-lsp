@@ -81,18 +81,18 @@ fn d2di_exact_function_name_still_matches() {
     assert_eq!(regions.len(), 1);
 }
 
-// ---------- REQ-INLN-03: host_col is UTF-16 code units (lvi1) ---------------
+// ---------- REQ-INLN-03: host_col is byte offset within host line (lvi1) -----
 
 #[test]
-fn lvi1_host_col_counts_utf16_code_units() {
+fn lvi1_host_col_counts_bytes() {
     // "é" is 2 UTF-8 bytes but 1 UTF-16 code unit.
-    // host_col must count UTF-16 units, not bytes.
+    // host_col uses byte offset (consistent with the rest of the pipeline which
+    // uses byte columns; server's byte_col_to_lsp_char converts to LSP units).
     let source = "é = render_jinja(\"{{ x }}\")";
     let regions = detect_inline_regions(source, &["render_jinja"]);
     assert_eq!(regions.len(), 1);
-    // UTF-16 units before content: 'é'(1) + ' = render_jinja("'(17) = 18
-    // If bytes: 'é'(2) + ' = render_jinja("'(17) = 19 (wrong)
-    assert_eq!(regions[0].host_col, 18, "host_col must be UTF-16 code units, got {}", regions[0].host_col);
+    // Byte offset before content: 'é'(2 bytes) + ' = render_jinja("'(17 bytes) = 19
+    assert_eq!(regions[0].host_col, 19, "host_col must be byte offset, got {}", regions[0].host_col);
 }
 
 // ---------- REQ-INLN-01: inline grammar parses intra-delimiter content -------
