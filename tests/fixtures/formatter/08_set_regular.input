@@ -1,0 +1,4 @@
+{%set x=42%}
+{%set url='https://example.com'%}
+{%set data={'key': 'value'}%}
+{{x}} {{url}}

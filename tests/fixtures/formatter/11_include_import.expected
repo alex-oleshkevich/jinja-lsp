@@ -1,0 +1,5 @@
+{% include "header.html" %}
+{% include "footer.html" ignore missing %}
+{% import "macros.html" as m %}
+{% from "utils.html" import render_tag, truncate_text as trunc %}
+{{ m.render_post(post) }}

@@ -195,3 +195,70 @@ fn fmt08_diff_prints_summary_line() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("1 file would be reformatted."), "--diff must print summary: {stdout}");
 }
+
+// ─── T-08: --output - writes formatted content to stdout ─────────────────────
+
+#[test]
+fn fmt08_t08_output_stdout() {
+    let dir = scratchpad().join("t08");
+    fs::create_dir_all(&dir).ok();
+    let path = dir.join("tpl.html");
+    fs::write(&path, "{{x}}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .args(["format", "--output", "-"])
+        .arg(&path)
+        .output()
+        .expect("run format --output -");
+
+    assert_eq!(out.status.code().unwrap(), 1, "exit 1 when file would change");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "{{ x }}\n");
+    // original file must be untouched
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{{x}}\n");
+}
+
+// ─── T-09: --output FILE writes to named path, not in-place ──────────────────
+
+#[test]
+fn fmt08_t09_output_named_file() {
+    let dir = scratchpad().join("t09");
+    fs::create_dir_all(&dir).ok();
+    let src = dir.join("tpl.html");
+    let dst = dir.join("out.html");
+    fs::write(&src, "{{x}}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .args(["format", "--output"])
+        .arg(&dst)
+        .arg(&src)
+        .output()
+        .expect("run format --output FILE");
+
+    assert_eq!(out.status.code().unwrap(), 1);
+    assert_eq!(fs::read_to_string(&dst).unwrap(), "{{ x }}\n");
+    // source must be untouched
+    assert_eq!(fs::read_to_string(&src).unwrap(), "{{x}}\n");
+}
+
+// ─── T-10: --output FILE with multiple inputs is an error ────────────────────
+
+#[test]
+fn fmt08_t10_output_file_multiple_inputs_is_error() {
+    let dir = scratchpad().join("t10");
+    fs::create_dir_all(&dir).ok();
+    let a = dir.join("a.html");
+    let b = dir.join("b.html");
+    fs::write(&a, "{{x}}\n").unwrap();
+    fs::write(&b, "{{y}}\n").unwrap();
+
+    let out = jinja_lsp_bin()
+        .args(["format", "--output", "out.html"])
+        .arg(&a)
+        .arg(&b)
+        .output()
+        .expect("run format");
+
+    assert_eq!(out.status.code().unwrap(), 2, "exit 2 for --output FILE with multiple inputs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--output FILE requires a single input file"), "{stderr}");
+}

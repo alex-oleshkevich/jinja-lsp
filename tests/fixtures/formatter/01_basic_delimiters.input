@@ -1,0 +1,5 @@
+{{x}}
+{%if x%}hello{%endif%}
+{#note#}
+{{  x  }}
+<p>{{name}}</p>

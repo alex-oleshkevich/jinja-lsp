@@ -1,0 +1,5 @@
+{%-if x-%}hello{%-endif-%}
+{{-name-}}
+{#-note-#}
+{%- if x %}body{% endif %}
+{% if x -%}body{%- endif %}

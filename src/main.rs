@@ -44,6 +44,9 @@ enum Commands {
         /// Print unified diff — do not write, exit 1 if any file would change
         #[arg(long)]
         diff: bool,
+        /// Write formatted output to PATH instead of editing in place; use '-' for stdout
+        #[arg(long, value_name = "PATH")]
+        output: Option<String>,
     },
 }
 
@@ -58,8 +61,8 @@ async fn main() {
         Commands::Check { paths, format, verbose, config, select, ignore } => {
             run_check(paths, &format, verbose, config.as_deref(), &select, &ignore)
         }
-        Commands::Format { paths, config, check, diff } => {
-            run_format(paths, config.as_deref(), check, diff)
+        Commands::Format { paths, config, check, diff, output } => {
+            run_format(paths, config.as_deref(), check, diff, output.as_deref())
         }
     };
     std::process::exit(code);
@@ -265,7 +268,7 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
 
 /// REQ-FMT-08 / REQ-FMT-09: format command.
 /// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
-fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: bool) -> i32 {
+fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: bool, output: Option<&str>) -> i32 {
     use std::path::Path;
     use jinja_lsp::config::JinjaConfig;
 
@@ -290,20 +293,23 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
     };
 
     // Collect all template files from roots.
+    // For explicitly-given file paths the extension filter is skipped — the user
+    // chose the file.  For directories we recurse and apply the template extension
+    // filter so random non-template files are not accidentally reformatted.
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     for root in &roots {
         if root.is_file() {
-            if let Some(ext) = root.extension().and_then(|e| e.to_str()) {
-                if template_exts.contains(&ext) {
-                    files.push(root.clone());
-                } else {
-                    // Single file with non-template ext is a no-op.
-                }
-            } else {
-                files.push(root.clone());
-            }
+            files.push(root.clone());
         } else if root.is_dir() {
             collect_template_files(root, template_exts, &mut files);
+        }
+    }
+
+    // --output with a non-stdout path only makes sense for a single file.
+    if let Some(out) = output {
+        if out != "-" && files.len() > 1 {
+            eprintln!("error: --output FILE requires a single input file when not '-'");
+            return 2;
         }
     }
 
@@ -320,6 +326,22 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
         };
 
         let formatted = jinja_lsp::format::format(&source);
+
+        // --output mode: write to stdout or a named file, then stop (no in-place, no check/diff).
+        if let Some(out) = output {
+            if out == "-" {
+                print!("{formatted}");
+            } else {
+                if let Err(e) = std::fs::write(out, formatted.as_bytes()) {
+                    eprintln!("error: {out}: {e}");
+                    return 2;
+                }
+            }
+            if formatted != source { changed_count += 1; }
+            else { unchanged_count += 1; }
+            continue;
+        }
+
         if formatted == source {
             unchanged_count += 1;
             continue;
@@ -342,6 +364,11 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
                 return 2;
             }
         }
+    }
+
+    // --output mode exits without summary.
+    if output.is_some() {
+        return if changed_count > 0 { 1 } else { 0 };
     }
 
     // REQ-FMT-08: summary line for --check and --diff modes.

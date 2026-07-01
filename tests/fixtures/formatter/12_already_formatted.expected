@@ -1,0 +1,9 @@
+{{ x }}
+{% if y %}
+hello
+{% endif %}
+{# comment #}
+{{ a | upper | trim }}
+{% for item in items %}
+  {{ item.name }}
+{% endfor %}

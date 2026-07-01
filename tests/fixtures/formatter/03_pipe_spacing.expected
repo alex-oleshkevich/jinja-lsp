@@ -1,0 +1,6 @@
+{{ x | e }}
+{{ name | upper | trim }}
+{{ post is defined }}
+{{ x | truncate(20, true) }}
+{{ name | upper }}
+{{- name | trim -}}

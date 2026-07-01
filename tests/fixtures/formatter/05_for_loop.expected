@@ -1,0 +1,6 @@
+{% for item in items %}
+{{ item.name }}
+{% else %}
+no items
+{% endfor %}
+{% for k,v in pairs %}{{ k }}:{{ v }}{% endfor %}

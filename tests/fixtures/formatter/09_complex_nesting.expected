@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+  {% for post in posts %}
+    {% if post.published %}
+      <h2>{{ post.title | upper }}</h2>
+      {% if post.tags %}
+        {% for tag in post.tags %}
+          <span>{{ tag }}</span>
+        {% endfor %}
+      {% endif %}
+    {% elif post.draft %}
+      <p>Draft: {{ post.title }}</p>
+    {% else %}
+      {# skip hidden posts #}
+    {% endif %}
+  {% endfor %}
+{% endblock %}

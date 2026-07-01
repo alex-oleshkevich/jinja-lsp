@@ -1,0 +1,7 @@
+{% macro render_post(post, show_meta=true) %}
+<article>
+  <h2>{{ post.title | upper }}</h2>
+  {% if show_meta %}<time>{{ post.date }}</time>{% endif %}
+</article>
+{% endmacro %}
+{{ render_post(post) }}
