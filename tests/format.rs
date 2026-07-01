@@ -1,6 +1,6 @@
 // F18 — Formatter engine tests: REQ-FMT-01/03/04 delimiter spacing, marker spacing, pipe spacing.
 
-use jinja_lsp::format::{format, normalize_delimiter};
+use jinja_lsp::format::{format, format_with_config, normalize_delimiter, FormatterConfig};
 
 // ─── REQ-FMT-01: T-01 — Expression delimiter spacing ─────────────────────────
 
@@ -122,26 +122,52 @@ fn fmt01_idempotent() {
     }
 }
 
-// ─── REQ-FMT-04: T-15 — Single pipe spacing ──────────────────────────────────
+// ─── REQ-FMT-04: T-15 — Pipe spacing (default: compact) ─────────────────────
 
 #[test]
-fn fmt04_t15_single_pipe_spacing() {
-    assert_eq!(format("{{ x|e }}"), "{{ x | e }}");
+fn fmt04_t15_compact_pipe_default() {
+    // Default: space_around_pipe=false → compact notation `x|filter`.
+    assert_eq!(format("{{ x|e }}"), "{{ x|e }}");
+    assert_eq!(format("{{ x | e }}"), "{{ x|e }}");
+}
+
+#[test]
+fn fmt04_t15_spaced_pipe_with_config() {
+    // Opt-in: space_around_pipe=true → spaced notation `x | filter`.
+    let cfg = FormatterConfig { space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    assert_eq!(format_with_config("{{ x|e }}", &cfg), "{{ x | e }}");
 }
 
 #[test]
 fn fmt04_t16_chained_pipes() {
-    assert_eq!(format("{{ name|upper|trim }}"), "{{ name | upper | trim }}");
+    assert_eq!(format("{{ name|upper|trim }}"), "{{ name|upper|trim }}");
+    assert_eq!(format("{{ name | upper | trim }}"), "{{ name|upper|trim }}");
 }
 
 #[test]
 fn fmt04_t17_is_test_spacing() {
+    // `is` is a keyword operator — always normalized to single space on each side.
     assert_eq!(format("{{ post is  defined }}"), "{{ post is defined }}");
 }
 
 #[test]
 fn fmt04_t18_filter_call_arg_commas() {
-    assert_eq!(format("{{ x | truncate( 20,true ) }}"), "{{ x | truncate(20, true) }}");
+    // space_after_comma=true (default): filter call args get a space after comma.
+    let cfg = FormatterConfig { space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    assert_eq!(format_with_config("{{ x | truncate( 20,true ) }}", &cfg), "{{ x | truncate(20, true) }}");
+}
+
+#[test]
+fn fmt04_t18_compact_filter_call_arg_commas() {
+    // With default (compact pipes): filter args still get spaces, pipe stays compact.
+    assert_eq!(format("{{ x | truncate( 20,true ) }}"), "{{ x|truncate(20, true) }}");
+}
+
+#[test]
+fn fmt04_space_after_comma_false() {
+    // space_after_comma=false: args joined without space.
+    let cfg = FormatterConfig { space_after_comma: false, space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    assert_eq!(format_with_config("{{ x | truncate( 20,true ) }}", &cfg), "{{ x | truncate(20,true) }}");
 }
 
 #[test]
@@ -168,14 +194,14 @@ fn fmt04_t44_non_filter_call_commas_untouched() {
 
 #[test]
 fn fmt04_combined_pipe_and_delimiter() {
-    // Both FMT-01 (tight delimiter) and FMT-04 (pipe spacing) applied together
-    assert_eq!(format("{{name|upper}}"), "{{ name | upper }}");
+    // FMT-01 (tight delimiter) + FMT-04 compact pipe (default).
+    assert_eq!(format("{{name|upper}}"), "{{ name|upper }}");
 }
 
 #[test]
 fn fmt04_marker_plus_pipe() {
-    // Marker spacing (FMT-03) + pipe spacing (FMT-04)
-    assert_eq!(format("{{- name|trim -}}"), "{{- name | trim -}}");
+    // Marker spacing (FMT-03) + compact pipe (default).
+    assert_eq!(format("{{- name|trim -}}"), "{{- name|trim -}}");
 }
 
 // ─── REQ-FMT-04: Idempotence extension ───────────────────────────────────────
@@ -202,31 +228,31 @@ fn fmt04_idempotent() {
 
 #[test]
 fn fmt02_t01_block_body_indented() {
-    // A single block: body Jinja-tag lines get +2 spaces; endblock aligns with opener.
+    // A single block: body Jinja-tag lines get +4 spaces (default indent_size=4).
     let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t02_nested_blocks_compound() {
-    // Nested blocks: depth 1 gets 2 spaces, depth 2 gets 4 spaces.
+    // Nested blocks: depth 1 = 4 spaces, depth 2 = 8 spaces.
     let src = "{% block outer %}\n{% block inner %}\nhello\n{% endblock %}\n{% endblock %}";
-    let want = "{% block outer %}\n  {% block inner %}\nhello\n  {% endblock %}\n{% endblock %}";
+    let want = "{% block outer %}\n    {% block inner %}\nhello\n    {% endblock %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t03_for_loop_body_indented() {
     let src = "{% for item in list %}\n{% if item %}\nx\n{% endif %}\n{% endfor %}";
-    let want = "{% for item in list %}\n  {% if item %}\nx\n  {% endif %}\n{% endfor %}";
+    let want = "{% for item in list %}\n    {% if item %}\nx\n    {% endif %}\n{% endfor %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t04_already_indented_is_noop() {
-    // Already formatted — must not double-indent.
-    let src = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    // Already formatted with 4 spaces — must not double-indent.
+    let src = "{% block content %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), src);
 }
 
@@ -240,7 +266,7 @@ fn fmt02_t05_host_lines_untouched() {
 #[test]
 fn fmt02_t06_macro_body_indented() {
     let src = "{% macro btn(label) %}\n{% if label %}\n<button>{{ label }}</button>\n{% endif %}\n{% endmacro %}";
-    let want = "{% macro btn(label) %}\n  {% if label %}\n<button>{{ label }}</button>\n  {% endif %}\n{% endmacro %}";
+    let want = "{% macro btn(label) %}\n    {% if label %}\n<button>{{ label }}</button>\n    {% endif %}\n{% endmacro %}";
     assert_eq!(format(src), want);
 }
 
@@ -248,7 +274,7 @@ fn fmt02_t06_macro_body_indented() {
 fn fmt02_t07_inline_set_not_opener() {
     // {% set x = value %} is an inline statement — must NOT increase depth.
     let src = "{% block content %}\n{% set x = 1 %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n  {% set x = 1 %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% set x = 1 %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -256,7 +282,7 @@ fn fmt02_t07_inline_set_not_opener() {
 fn fmt02_t08_elif_else_realign() {
     // elif/else re-align with the opener (depth stays consistent for blocks).
     let src = "{% block content %}\n{% if x %}\nhello\n{% elif y %}\nworld\n{% else %}\nfoo\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n  {% if x %}\nhello\n  {% elif y %}\nworld\n  {% else %}\nfoo\n  {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% if x %}\nhello\n    {% elif y %}\nworld\n    {% else %}\nfoo\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -282,7 +308,7 @@ fn fmt02_t11_single_line_in_outer_block() {
     // A single-line inner block inside a multi-line outer block must still
     // produce depth=1 indentation for subsequent siblings.
     let src = "{% block outer %}\n{% block inner %}x{% endblock %}\n{% set y = 1 %}\n{% endblock %}";
-    let want = "{% block outer %}\n  {% block inner %}x{% endblock %}\n  {% set y = 1 %}\n{% endblock %}";
+    let want = "{% block outer %}\n    {% block inner %}x{% endblock %}\n    {% set y = 1 %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -290,7 +316,7 @@ fn fmt02_t11_single_line_in_outer_block() {
 fn fmt02_t12_autoescape_indents_inner_tags() {
     // {% autoescape %} is an opener — inner {% if %} gets +1 depth.
     let src = "{% autoescape true %}\n{% if x %}\nok\n{% endif %}\n{% endautoescape %}";
-    let want = "{% autoescape true %}\n  {% if x %}\nok\n  {% endif %}\n{% endautoescape %}";
+    let want = "{% autoescape true %}\n    {% if x %}\nok\n    {% endif %}\n{% endautoescape %}";
     assert_eq!(format(src), want);
 }
 
@@ -298,7 +324,7 @@ fn fmt02_t12_autoescape_indents_inner_tags() {
 fn fmt02_t13_trans_indents_inner_tags() {
     // {% trans %} is an opener — inner {% if %} gets +1 depth.
     let src = "{% trans %}\n{% if x %}a{% endif %}\n{% endtrans %}";
-    let want = "{% trans %}\n  {% if x %}a{% endif %}\n{% endtrans %}";
+    let want = "{% trans %}\n    {% if x %}a{% endif %}\n{% endtrans %}";
     assert_eq!(format(src), want);
 }
 
@@ -375,6 +401,49 @@ fn fmt06_t27_syntax_error_passthrough() {
     // A file with a syntax error is returned byte-for-byte
     let bad = "{{ unclosed\n{% broken";
     assert_eq!(format(bad), bad);
+}
+
+// ─── FormatterConfig — newline_at_eof and trim_trailing_whitespace ────────────
+
+#[test]
+fn fmt_config_newline_at_eof_adds_newline() {
+    let cfg = FormatterConfig { newline_at_eof: true, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let result = format_with_config("{{ x }}", &cfg);
+    assert!(result.ends_with('\n'), "newline_at_eof=true must append newline");
+}
+
+#[test]
+fn fmt_config_newline_at_eof_idempotent() {
+    let cfg = FormatterConfig { newline_at_eof: true, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let once = format_with_config("{{ x }}", &cfg);
+    let twice = format_with_config(&once, &cfg);
+    assert_eq!(once, twice, "newline_at_eof must be idempotent");
+}
+
+#[test]
+fn fmt_config_trim_trailing_whitespace() {
+    let cfg = FormatterConfig { trim_trailing_whitespace: true, newline_at_eof: false, ..FormatterConfig::default() };
+    let src = "{% if x %}  \nhello   \n{% endif %}";
+    let result = format_with_config(src, &cfg);
+    for line in result.lines() {
+        assert!(!line.ends_with(' '), "trailing whitespace must be stripped: {line:?}");
+    }
+}
+
+#[test]
+fn fmt_config_indent_size_2() {
+    let cfg = FormatterConfig { indent_size: 2, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    assert_eq!(format_with_config(src, &cfg), want);
+}
+
+#[test]
+fn fmt_config_use_tabs() {
+    let cfg = FormatterConfig { use_tabs: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let result = format_with_config(src, &cfg);
+    assert!(result.contains('\t'), "use_tabs=true must use tabs for indentation");
 }
 
 #[test]

@@ -3,7 +3,7 @@
 hello
 {% endif %}
 {# comment #}
-{{ a | upper | trim }}
+{{ a|upper|trim }}
 {% for item in items %}
   {{ item.name }}
 {% endfor %}

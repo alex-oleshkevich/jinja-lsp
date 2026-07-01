@@ -341,7 +341,7 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
             }
         };
 
-        let formatted = jinja_lsp::format::format(&source);
+        let formatted = jinja_lsp::format::format_with_config(&source, &cfg.format);
 
         // --output mode: write to stdout or a named file, then stop (no in-place, no check/diff).
         if let Some(out) = output {

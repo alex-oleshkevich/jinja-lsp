@@ -6,11 +6,56 @@
 // REQ-FMT-04: normalize filter-pipe spacing, is-test spacing, filter-call arg commas.
 // REQ-FMT-07: honor FormattingOptions (tabSize / insertSpaces).
 
+use serde::Deserialize;
 use tree_sitter::{Node, Parser};
 
 pub fn layer_name() -> &'static str {
     "format"
 }
+
+// ── User-facing formatter config (jinja.toml [format]) ───────────────────────
+
+fn default_indent_size() -> u32 { 4 }
+fn default_true() -> bool { true }
+
+/// User-controlled formatting preferences, readable from `jinja.toml [format]`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct FormatterConfig {
+    /// Indent level in spaces (default 4; ignored when `use_tabs` is true).
+    #[serde(default = "default_indent_size")]
+    pub indent_size: u32,
+    /// Use hard tabs instead of spaces for indentation (default false).
+    #[serde(default)]
+    pub use_tabs: bool,
+    /// Add spaces around the `|` filter pipe operator: `x | filter` vs `x|filter` (default false).
+    /// The `is` test operator always has spaces regardless of this setting.
+    #[serde(default)]
+    pub space_around_pipe: bool,
+    /// Insert a space after each comma in argument lists: `f(a, b)` vs `f(a,b)` (default true).
+    #[serde(default = "default_true")]
+    pub space_after_comma: bool,
+    /// Ensure the file ends with a single newline (default true).
+    #[serde(default = "default_true")]
+    pub newline_at_eof: bool,
+    /// Strip trailing whitespace from every line (default true).
+    #[serde(default = "default_true")]
+    pub trim_trailing_whitespace: bool,
+}
+
+impl Default for FormatterConfig {
+    fn default() -> Self {
+        Self {
+            indent_size: 4,
+            use_tabs: false,
+            space_around_pipe: false,
+            space_after_comma: true,
+            newline_at_eof: true,
+            trim_trailing_whitespace: true,
+        }
+    }
+}
+
+// ── LSP compatibility shim ────────────────────────────────────────────────────
 
 /// REQ-FMT-07: Formatting options from the LSP client.
 #[derive(Debug, Clone, Copy)]
@@ -23,20 +68,49 @@ pub struct FormatOptions {
 
 impl Default for FormatOptions {
     fn default() -> Self {
-        Self { tab_size: 2, insert_spaces: true }
+        Self { tab_size: 4, insert_spaces: true }
     }
 }
 
-/// Format `source` with default options (2 spaces, no tabs).
-/// Kept for backward-compatibility with the CLI `format` command.
-pub fn format(source: &str) -> String {
-    format_with_options(source, FormatOptions::default())
+impl FormatOptions {
+    /// Merge LSP wire options into a `FormatterConfig`.
+    /// File-level concerns (newline_at_eof, trim_trailing_whitespace) are disabled for LSP —
+    /// editors handle those independently.
+    pub fn into_config(self) -> FormatterConfig {
+        FormatterConfig {
+            indent_size: self.tab_size,
+            use_tabs: !self.insert_spaces,
+            newline_at_eof: false,
+            trim_trailing_whitespace: false,
+            ..FormatterConfig::default()
+        }
+    }
 }
 
-/// Format `source` respecting the given LSP FormattingOptions.
-///
-/// Returns the source unchanged if the file has syntax errors (P3 round-trip safety).
+/// Pure formatting config: 4-space indent, compact pipes, no file-meta concerns.
+/// Used by `format()` and integration tests that care about normalization, not file-writing.
+const FORMAT_PURE: FormatterConfig = FormatterConfig {
+    indent_size: 4,
+    use_tabs: false,
+    space_around_pipe: false,
+    space_after_comma: true,
+    newline_at_eof: false,
+    trim_trailing_whitespace: false,
+};
+
+/// Format `source` with pure normalization — no file-level concerns (newline-at-eof, trailing-whitespace).
+/// The CLI uses `format_with_config` with the full loaded `FormatterConfig`.
+pub fn format(source: &str) -> String {
+    format_with_config(source, &FORMAT_PURE)
+}
+
+/// Format `source` respecting the given LSP FormattingOptions (jinja-specific fields use defaults).
 pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
+    format_with_config(source, &opts.into_config())
+}
+
+/// Format `source` with a full `FormatterConfig`.
+pub fn format_with_config(source: &str, config: &FormatterConfig) -> String {
     let lang = tree_sitter_jinja::language();
     let mut parser = Parser::new();
     if parser.set_language(&lang).is_err() {
@@ -56,7 +130,7 @@ pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
     let bytes = source.as_bytes();
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
 
-    collect_delimiter_normalizations(tree.root_node(), bytes, &mut replacements);
+    collect_delimiter_normalizations(tree.root_node(), bytes, config, &mut replacements);
 
     // Apply delimiter normalizations right-to-left so earlier byte offsets stay valid.
     let after_delimiters = if replacements.is_empty() {
@@ -70,18 +144,31 @@ pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
         result
     };
 
-    // REQ-FMT-02 / REQ-FMT-07: re-indent Jinja-tag lines with the client's indent unit.
-    let indent_unit: String = if opts.insert_spaces {
-        " ".repeat(opts.tab_size as usize)
-    } else {
+    // REQ-FMT-02 / REQ-FMT-07: re-indent Jinja-tag lines with the configured indent unit.
+    let indent_unit: String = if config.use_tabs {
         "\t".to_owned()
+    } else {
+        " ".repeat(config.indent_size as usize)
     };
     let after_reindent = reindent(&after_delimiters, &indent_unit);
 
-    if after_reindent == source {
-        source.to_owned()
+    // Post-processing: trailing-whitespace trim and newline-at-eof.
+    let after_trim = if config.trim_trailing_whitespace {
+        trim_trailing_whitespace(&after_reindent)
     } else {
         after_reindent
+    };
+
+    let result = if config.newline_at_eof {
+        ensure_newline_at_eof(after_trim)
+    } else {
+        after_trim
+    };
+
+    if result == source {
+        source.to_owned()
+    } else {
+        result
     }
 }
 
@@ -92,12 +179,13 @@ pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
 fn collect_delimiter_normalizations(
     node: Node,
     bytes: &[u8],
+    config: &FormatterConfig,
     out: &mut Vec<(usize, usize, String)>,
 ) {
     let kind = node.kind();
     if matches!(kind, "render_expression" | "control" | "comment") {
         let text = node.utf8_text(bytes).unwrap_or("");
-        let normalized = normalize_node(node, text, bytes);
+        let normalized = normalize_node(node, text, bytes, config);
         if normalized != text {
             out.push((node.start_byte(), node.end_byte(), normalized));
         }
@@ -108,7 +196,7 @@ fn collect_delimiter_normalizations(
     let mut cursor = node.walk();
     if cursor.goto_first_child() {
         loop {
-            collect_delimiter_normalizations(cursor.node(), bytes, out);
+            collect_delimiter_normalizations(cursor.node(), bytes, config, out);
             if !cursor.goto_next_sibling() {
                 break;
             }
@@ -236,12 +324,12 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
 /// Apply all active passes to a single delimiter node's text.
 ///
 /// Pipeline: FMT-04 sub-edits first (relative positions), then FMT-01 outer padding.
-fn normalize_node(node: Node, text: &str, bytes: &[u8]) -> String {
+fn normalize_node(node: Node, text: &str, bytes: &[u8], config: &FormatterConfig) -> String {
     let node_start = node.start_byte();
 
     // Collect FMT-04 edits: relative byte positions within `text`.
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    collect_fmt04_edits(node, bytes, node_start, &mut edits);
+    collect_fmt04_edits(node, bytes, node_start, config, &mut edits);
 
     // Apply FMT-04 edits right-to-left.
     let content = if edits.is_empty() {
@@ -267,11 +355,20 @@ fn collect_fmt04_edits(
     node: Node,
     bytes: &[u8],
     node_start: usize,
+    config: &FormatterConfig,
     out: &mut Vec<(usize, usize, String)>,
 ) {
     if node.kind() == "binary_operator" {
         let op = node.utf8_text(bytes).unwrap_or("");
-        if op == "|" || op == "is" {
+        if op == "|" {
+            // `space_around_pipe` controls `|`: compact (`x|filter`) vs spaced (`x | filter`).
+            let (ws_start, ws_end) = surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
+            let rel_start = ws_start.saturating_sub(node_start);
+            let rel_end = ws_end.saturating_sub(node_start);
+            let normalized = if config.space_around_pipe { format!(" {op} ") } else { op.to_owned() };
+            out.push((rel_start, rel_end, normalized));
+        } else if op == "is" {
+            // `is` is a keyword operator — spaces are always required to remain valid syntax.
             let (ws_start, ws_end) = surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
             let rel_start = ws_start.saturating_sub(node_start);
             let rel_end = ws_end.saturating_sub(node_start);
@@ -281,7 +378,7 @@ fn collect_fmt04_edits(
     }
 
     if node.kind() == "function_call" && is_filter_call(node, bytes) {
-        if let Some(normalized) = normalize_filter_call(node, bytes) {
+        if let Some(normalized) = normalize_filter_call(node, bytes, config) {
             let rel_start = node.start_byte().saturating_sub(node_start);
             let rel_end = node.end_byte().saturating_sub(node_start);
             out.push((rel_start, rel_end, normalized));
@@ -293,7 +390,7 @@ fn collect_fmt04_edits(
     let mut cursor = node.walk();
     if cursor.goto_first_child() {
         loop {
-            collect_fmt04_edits(cursor.node(), bytes, node_start, out);
+            collect_fmt04_edits(cursor.node(), bytes, node_start, config, out);
             if !cursor.goto_next_sibling() {
                 break;
             }
@@ -341,7 +438,7 @@ fn is_filter_call(func_call: Node, bytes: &[u8]) -> bool {
 /// Reconstruct a filter-call with normalized arg spacing: `name(arg1, arg2, ...)`.
 ///
 /// Returns `None` if the call has no arguments (nothing to normalize).
-fn normalize_filter_call(func_call: Node, bytes: &[u8]) -> Option<String> {
+fn normalize_filter_call(func_call: Node, bytes: &[u8], config: &FormatterConfig) -> Option<String> {
     // First named child is the identifier (function name).
     let name_node = func_call.named_child(0)?;
     let name = name_node.utf8_text(bytes).ok()?;
@@ -364,7 +461,8 @@ fn normalize_filter_call(func_call: Node, bytes: &[u8]) -> Option<String> {
         return None;
     }
 
-    let reconstructed = format!("{}({})", name, args.join(", "));
+    let sep = if config.space_after_comma { ", " } else { "," };
+    let reconstructed = format!("{}({})", name, args.join(sep));
     let original = func_call.utf8_text(bytes).ok()?;
     if reconstructed == original {
         None
@@ -401,4 +499,24 @@ pub fn normalize_delimiter(text: &str) -> String {
     // Trim only horizontal whitespace at boundaries (preserves multi-line interiors).
     let trimmed = content.trim_matches([' ', '\t']);
     format!("{open} {trimmed} {close}")
+}
+
+// ── Post-processing helpers ───────────────────────────────────────────────────
+
+/// Strip trailing horizontal whitespace from every line.
+fn trim_trailing_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for (i, line) in s.split('\n').enumerate() {
+        if i > 0 { out.push('\n'); }
+        out.push_str(line.trim_end_matches([' ', '\t']));
+    }
+    out
+}
+
+/// Ensure `s` ends with exactly one `\n`.
+fn ensure_newline_at_eof(mut s: String) -> String {
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
 }

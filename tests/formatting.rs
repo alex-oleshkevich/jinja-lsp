@@ -3,7 +3,7 @@
 use jinja_lsp::features::formatting::{format_document, format_range, FormatOptions};
 
 fn default_opts() -> FormatOptions {
-    FormatOptions::default() // 2 spaces
+    FormatOptions::default() // 4 spaces (default indent_size)
 }
 
 // ─── T-01: whole-document format returns single edit when source changes ──────
@@ -85,11 +85,10 @@ fn fmt07_tabs_indent_nested_block() {
 }
 
 #[test]
-fn fmt07_default_options_produces_2space_indent() {
+fn fmt07_default_options_produces_4space_indent() {
     let source = "{% block content %}\n{% for x in items %}\n{% endfor %}\n{% endblock %}";
     let opts = FormatOptions::default();
     let formatted = jinja_lsp::format::format_with_options(source, opts);
     let lines: Vec<&str> = formatted.split('\n').collect();
-    assert!(lines[1].starts_with("  "), "default must produce 2-space indent: {:?}", lines[1]);
-    assert!(!lines[1].starts_with("    "), "default must NOT produce 4-space indent: {:?}", lines[1]);
+    assert!(lines[1].starts_with("    "), "default must produce 4-space indent: {:?}", lines[1]);
 }

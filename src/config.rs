@@ -7,6 +7,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::format::FormatterConfig;
+
 const KNOWN_EXTRAS: &[&str] = &["flask", "starlette", "starlette-babel", "starlette-flash"];
 
 /// The full resolved config, built from defaults + file + overlay.
@@ -20,6 +22,8 @@ pub struct JinjaConfig {
     pub hints: Vec<String>,
     pub inline_patterns: Vec<String>,
     pub lint: LintConfig,
+    /// Formatter behaviour (jinja.toml `[format]` section).
+    pub format: FormatterConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -43,6 +47,7 @@ impl Default for JinjaConfig {
             hints: vec![],
             inline_patterns: vec!["render_template_string".to_owned()],
             lint: LintConfig::default(),
+            format: FormatterConfig::default(),
         }
     }
 }
@@ -238,6 +243,8 @@ struct TomlConfig {
     inline_patterns: Option<Vec<String>>,
     #[serde(default)]
     lint: Option<TomlLint>,
+    #[serde(default)]
+    format: Option<FormatterConfig>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -265,6 +272,7 @@ impl TomlConfig {
                     ignore: l.ignore.unwrap_or_default(),
                 },
             },
+            format: self.format.unwrap_or_default(),
         }
     }
 }

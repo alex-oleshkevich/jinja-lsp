@@ -3,6 +3,7 @@
 use std::fs;
 
 use jinja_lsp::config::{ConfigOverlay, JinjaConfig};
+use jinja_lsp::format::FormatterConfig;
 
 fn tmpdir(suffix: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("jinja_lsp_cfg_{suffix}"));
@@ -475,4 +476,37 @@ fn reload_config_selective_rebuilds_registry_when_extras_change() {
         "sentinel must be gone after registry rebuild"
     );
     assert_eq!(state.config.extras, vec!["starlette"], "extras must be updated");
+}
+
+// ─── [format] section ────────────────────────────────────────────────────────
+
+#[test]
+fn config_format_section_defaults_when_absent() {
+    let cfg = JinjaConfig::default();
+    assert_eq!(cfg.format, FormatterConfig::default());
+    assert_eq!(cfg.format.indent_size, 4);
+    assert!(!cfg.format.space_around_pipe);
+    assert!(cfg.format.space_after_comma);
+    assert!(cfg.format.newline_at_eof);
+    assert!(cfg.format.trim_trailing_whitespace);
+}
+
+#[test]
+fn config_format_section_parsed_from_toml() {
+    let toml = r#"
+[format]
+indent_size = 2
+space_around_pipe = true
+space_after_comma = false
+newline_at_eof = false
+"#;
+    let dir = tmpdir("format_section");
+    let cfg_path = dir.join("jinja.toml");
+    fs::write(&cfg_path, toml).unwrap();
+    let cfg = JinjaConfig::from_file(&cfg_path).unwrap();
+    assert_eq!(cfg.format.indent_size, 2);
+    assert!(cfg.format.space_around_pipe);
+    assert!(!cfg.format.space_after_comma);
+    assert!(!cfg.format.newline_at_eof);
+    assert!(cfg.format.trim_trailing_whitespace, "unset keys use default");
 }
