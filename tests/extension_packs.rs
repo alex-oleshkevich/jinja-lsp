@@ -154,3 +154,30 @@ fn hint_overrides_pack_for_same_symbol() {
     let entry = reg.get(Category::Function, "url_for").unwrap();
     assert_eq!(entry.source, Source::Hint, "Hint must override Pack");
 }
+
+// ---------- jinja-lsp-l6mr: last-loaded pack wins at equal priority ----------
+
+#[test]
+fn last_loaded_pack_wins_for_equal_priority() {
+    // flask and starlette both define url_for at Pack priority.
+    // Loading starlette after flask must give starlette's url_for.
+    let mut reg = Registry::load_core();
+    reg.load_packs(&["flask", "starlette"]);
+    let entry = reg.get(Category::Function, "url_for").unwrap();
+    assert!(
+        matches!(&entry.source, Source::Pack(name) if name == "starlette"),
+        "starlette (loaded second) must win over flask for url_for; got: {:?}", entry.source
+    );
+}
+
+#[test]
+fn first_loaded_pack_wins_when_loaded_in_opposite_order() {
+    // Load starlette first, then flask — flask should win.
+    let mut reg = Registry::load_core();
+    reg.load_packs(&["starlette", "flask"]);
+    let entry = reg.get(Category::Function, "url_for").unwrap();
+    assert!(
+        matches!(&entry.source, Source::Pack(name) if name == "flask"),
+        "flask (loaded second) must win over starlette for url_for; got: {:?}", entry.source
+    );
+}

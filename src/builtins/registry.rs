@@ -172,12 +172,13 @@ impl Registry {
         }
     }
 
-    /// REQ-BLTN-02: insert with priority merge — higher-priority source wins.
+    /// REQ-BLTN-02: insert with priority merge — higher-priority source wins;
+    /// at equal priority the last-loaded entry wins (F03 §5.3 / §10).
     pub fn insert(&mut self, entry: DocEntry) {
         let inner = self.entries.entry(entry.category).or_default();
         if let Some(existing) = inner.get(&entry.name) {
-            if existing.source.priority() >= entry.source.priority() {
-                return; // existing wins
+            if existing.source.priority() > entry.source.priority() {
+                return; // strictly higher priority existing wins
             }
         }
         inner.insert(entry.name.clone(), entry);
