@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use jinja_lsp::server::state::{FolderState, ServerState};
+use jinja_lsp::server::state::{key_under_root, FolderState, ServerState};
 use jinja_lsp::workspace::build_workspace;
 
 fn fixture_dir(name: &str) -> std::path::PathBuf {
@@ -123,4 +123,67 @@ fn each_folder_has_independent_chain() {
     // Each workspace is isolated — templates from the other don't appear
     assert!(!ws_a.templates.contains_key("layout.html"), "B's template must not be in A");
     assert!(!ws_b.templates.contains_key("base.html"), "A's template must not be in B");
+}
+
+// ─── jinja-lsp-mauu: path-boundary-safe folder routing ───────────────────────
+
+#[test]
+fn key_under_root_rejects_prefix_overlap() {
+    // /a/proj must NOT match /a/project/x.html
+    assert!(!key_under_root("/a/project/x.html", "/a/proj"));
+}
+
+#[test]
+fn key_under_root_accepts_exact_child() {
+    // /a/proj/x.html IS under /a/proj
+    assert!(key_under_root("/a/proj/x.html", "/a/proj"));
+}
+
+#[test]
+fn key_under_root_accepts_exact_match() {
+    assert!(key_under_root("/a/proj", "/a/proj"));
+}
+
+#[test]
+fn key_under_root_rejects_empty_root() {
+    assert!(!key_under_root("/any/path", ""));
+}
+
+#[test]
+fn server_state_prefix_overlap_routes_correctly() {
+    // Create two roots where one is a prefix of the other:
+    // /tmp/.../proj and /tmp/.../project
+    // A file under /project must NOT be routed to /proj.
+    let base = std::env::temp_dir().join("jinja_lsp_mauu");
+    let proj = base.join("proj");
+    let project = base.join("project");
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&proj).unwrap();
+    fs::create_dir_all(&project).unwrap();
+
+    let cfg_extra = jinja_lsp::config::JinjaConfig::default();
+    let registry_extra = ServerState::build_registry(&cfg_extra);
+
+    let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
+    state.workspace_root = Some(proj.to_string_lossy().into_owned());
+    state.extra_folders.push(FolderState {
+        root: project.clone(),
+        workspace: jinja_lsp::workspace::index::WorkspaceIndex::default(),
+        config: cfg_extra,
+        registry: registry_extra,
+        config_file_path: None,
+        generation: 0,
+    });
+
+    let key_proj = format!("{}/t.html", proj.display());
+    let key_project = format!("{}/t.html", project.display());
+
+    state.update_file(&key_proj, "{{ x }}");
+    state.update_file(&key_project, "{{ y }}");
+
+    // key_project must NOT land in primary workspace (which is rooted at /proj)
+    assert!(!state.workspace.templates.contains_key(&key_project),
+        "file under /project must not be routed to /proj workspace");
+    assert!(state.extra_folders[0].workspace.templates.contains_key(&key_project),
+        "file under /project must be in extra folder workspace");
 }

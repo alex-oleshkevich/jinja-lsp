@@ -594,7 +594,7 @@ impl LanguageServer for Backend {
                     let mut state = self.state.write().await;
                     // REQ-EXTR-08: remove from the correct folder's workspace.
                     let extra_idx = state.extra_folders.iter().enumerate()
-                        .filter(|(_, f)| key.starts_with(f.root.to_str().unwrap_or("")))
+                        .filter(|(_, f)| crate::server::state::key_under_root(&key, f.root.to_str().unwrap_or("")))
                         .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
                         .map(|(i, _)| i);
                     if let Some(ei) = extra_idx {

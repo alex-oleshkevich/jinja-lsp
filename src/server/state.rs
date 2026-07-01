@@ -147,7 +147,7 @@ impl ServerState {
     /// Uses longest-prefix match on folder roots. Falls back to the primary workspace.
     pub fn workspace_for<'a>(&'a self, key: &str) -> &'a WorkspaceIndex {
         self.extra_folders.iter()
-            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.workspace)
             .unwrap_or(&self.workspace)
@@ -157,7 +157,7 @@ impl ServerState {
     /// Returns `None` if the file belongs to the primary folder.
     fn extra_folder_for_mut(&mut self, key: &str) -> Option<&mut FolderState> {
         let idx = self.extra_folders.iter().enumerate()
-            .filter(|(_, f)| key.starts_with(f.root.to_str().unwrap_or("")))
+            .filter(|(_, f)| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|(i, _)| i)?;
         Some(&mut self.extra_folders[idx])
@@ -176,7 +176,7 @@ impl ServerState {
     /// Folder/global registry without sidecar overlay — used to build sidecars.
     pub fn base_registry_for<'a>(&'a self, key: &str) -> &'a Registry {
         self.extra_folders.iter()
-            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.registry)
             .unwrap_or(&self.registry)
@@ -185,7 +185,7 @@ impl ServerState {
     /// REQ-EXTR-08: Return the JinjaConfig for the folder that owns `key`.
     pub fn config_for<'a>(&'a self, key: &str) -> &'a JinjaConfig {
         self.extra_folders.iter()
-            .filter(|f| key.starts_with(f.root.to_str().unwrap_or("")))
+            .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.config)
             .unwrap_or(&self.config)
@@ -267,4 +267,20 @@ impl ServerState {
             .unwrap_or("");
         !ext.is_empty() && !config.extensions.iter().any(|e| e == ext)
     }
+}
+
+/// REQ-EXTR-08 / mauu: path-boundary-safe starts_with check for folder roots.
+///
+/// `starts_with` alone lets `/a/proj` match `/a/project/x.html`.
+/// This function requires that the prefix is followed by `'/'` or equals `key` exactly,
+/// so folder roots with overlapping name prefixes are routed correctly.
+pub fn key_under_root(key: &str, root: &str) -> bool {
+    if root.is_empty() {
+        return false;
+    }
+    if !key.starts_with(root) {
+        return false;
+    }
+    // Either key IS root, or the next byte is a path separator.
+    key.len() == root.len() || key.as_bytes().get(root.len()) == Some(&b'/')
 }
