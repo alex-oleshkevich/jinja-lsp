@@ -97,6 +97,29 @@ fn vscode_language_ids_are_canonical() {
     assert!(ids.contains(&"jinja-html"), "VS Code must contribute 'jinja-html' language");
 }
 
+// ─── jinja-lsp-ltdq: jinja-html must not steal the default .html association ─
+
+#[test]
+fn jinja_html_does_not_claim_bare_html_extension() {
+    // Registering plain ".html" makes jinja-html the default language for
+    // every HTML file in every workspace, stealing VS Code's built-in HTML
+    // IntelliSense/Emmet/formatting even in projects with no Jinja at all.
+    let pkg = pkg();
+    let languages = pkg["contributes"]["languages"].as_array().expect("languages must be array");
+    let jinja_html = languages
+        .iter()
+        .find(|l| l["id"].as_str() == Some("jinja-html"))
+        .expect("jinja-html language entry must exist");
+    let extensions: Vec<&str> = jinja_html["extensions"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    assert!(
+        !extensions.contains(&".html"),
+        "jinja-html must not register bare '.html' as a default extension; got: {extensions:?}"
+    );
+}
+
 // ─── T-01: REQ-EDIT-01 — extension.ts uses jinja-lsp lsp command ─────────────
 
 #[test]

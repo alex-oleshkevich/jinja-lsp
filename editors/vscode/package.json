@@ -27,7 +27,7 @@
       {
         "id": "jinja-html",
         "aliases": ["Jinja HTML", "jinja-html"],
-        "extensions": [".html"],
+        "filenamePatterns": ["*.html.j2", "*.html.jinja", "*.html.jinja2"],
         "configuration": "./language-configuration.json"
       }
     ],
