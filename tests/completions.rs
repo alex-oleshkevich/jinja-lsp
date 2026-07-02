@@ -354,6 +354,24 @@ fn cmp04_from_import_after_comma_offers_remaining_macros() {
 }
 
 #[test]
+fn cmp04_from_import_resolves_absolute_workspace_key() {
+    // On the real server, workspace.templates is keyed by absolute URI paths
+    // (uri_to_key), while `source_path` is always the relative path typed in
+    // `from "macros.html" import` — the lookup must resolve through get_by_ref.
+    let src = r#"{% from "macros.html" import "#;
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert(
+        "/abs/project/macros.html".to_owned(),
+        extract("{% macro post_url(post) %}{% endmacro %}{% macro card() %}{% endmacro %}"),
+    );
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &reg(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"post_url"), "post_url must be offered; got: {labels:?}");
+    assert!(labels.contains(&"card"), "card must be offered; got: {labels:?}");
+}
+
+#[test]
 fn cmp04_from_import_unknown_source_returns_empty() {
     let src = r#"{% from "nonexistent.html" import "#;
     let ws = WorkspaceIndex::default(); // no templates

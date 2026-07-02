@@ -640,8 +640,7 @@ pub fn complete(
 
         // REQ-CMP-04: import-name context → macro names from the source template.
         CursorContext::ImportName { source_path } => workspace
-            .templates
-            .get(&source_path)
+            .get_by_ref(&source_path)
             .map(|src_idx| {
                 src_idx.macros.iter().map(|m| macro_name_item(&m.name)).collect()
             })
