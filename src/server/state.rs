@@ -254,6 +254,10 @@ impl ServerState {
     fn index_file_into(key: &str, source: &str, workspace: &mut WorkspaceIndex, config: &JinjaConfig) {
         let mut idx = extract(source);
         idx.path = key.to_owned();
+        // relative_path is a property of the file's location, not its content — carry it
+        // over from the previous entry so re-indexing on every edit doesn't lose the
+        // templates-root-relative path computed at discovery time (jinja-lsp-chw9).
+        idx.relative_path = workspace.templates.get(key).and_then(|old| old.relative_path.clone());
         workspace.templates.insert(key.to_owned(), idx);
 
         // Remove stale inline entries from a previous version of this file.

@@ -24,6 +24,11 @@ pub enum ResolvedBinding<'a> {
 #[derive(Debug, Clone)]
 pub struct TemplateIndex {
     pub path: String,
+    /// Path relative to the discovering templates-root directory (e.g. `"blog/post.html"`),
+    /// as written in `{% extends %}`/`{% include %}`. `None` when the workspace is keyed
+    /// by relative paths already (`path` doubles as the relative form in that case) or the
+    /// template was indexed outside `build_workspace`/`build_workspace_abs` (e.g. inline).
+    pub relative_path: Option<String>,
     pub macros: Vec<MacroDefinition>,
     pub blocks: Vec<BlockDefinition>,
     pub variables: Vec<VariableDefinition>,
@@ -39,6 +44,7 @@ impl TemplateIndex {
     pub fn empty() -> Self {
         Self {
             path: String::new(),
+            relative_path: None,
             macros: vec![],
             blocks: vec![],
             variables: vec![],

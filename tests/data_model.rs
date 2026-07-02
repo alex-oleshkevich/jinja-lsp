@@ -146,6 +146,7 @@ fn variable_scope_has_nine_variants() {
 fn template_index_holds_one_files_symbols_and_errors() {
     let idx = TemplateIndex {
         path: "blog/post.html".into(),
+        relative_path: None,
         macros: vec![],
         blocks: vec![BlockDefinition { name: "content".into(), scoped: false, required: false, body: span(), span: span(), end_name_span: None }],
         variables: vec![],
@@ -176,6 +177,7 @@ fn workspace_index_maps_paths_to_template_indexes() {
         "blog/post.html".into(),
         TemplateIndex {
             path: "blog/post.html".into(),
+            relative_path: None,
             macros: vec![],
             blocks: vec![],
             variables: vec![],
@@ -196,6 +198,7 @@ fn workspace_index_maps_paths_to_template_indexes() {
 fn workspace_index_can_compute_template_chain() {
     let base = TemplateIndex {
         path: "base.html".into(),
+        relative_path: None,
         macros: vec![],
         blocks: vec![],
         variables: vec![],
@@ -208,6 +211,7 @@ fn workspace_index_can_compute_template_chain() {
     };
     let post = TemplateIndex {
         path: "blog/post.html".into(),
+        relative_path: None,
         macros: vec![],
         blocks: vec![],
         variables: vec![],

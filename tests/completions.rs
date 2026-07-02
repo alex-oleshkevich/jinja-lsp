@@ -554,3 +554,73 @@ fn n6su_attr_item_data_key_is_resolvable() {
         }
     }
 }
+
+// ─── jinja-lsp-chw9: template-path completion for absolute-key workspaces ────
+
+#[test]
+fn cmp12_absolute_key_workspace_offers_relative_template_paths() {
+    // build_workspace_abs is what the real server uses — keys are absolute
+    // filesystem paths, not the relative paths users type in extends/include.
+    use jinja_lsp::workspace::build_workspace_abs;
+    use std::fs;
+
+    let tmp = std::env::temp_dir().join("jinja_lsp_cmp12_abs_keys");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("blog")).unwrap();
+    fs::write(tmp.join("blog").join("post.html"), "").unwrap();
+    fs::write(tmp.join("base.html"), "").unwrap();
+
+    let ws = build_workspace_abs(&[&tmp], &["html"]);
+
+    // Typing nothing yet: must offer "blog/" as a folder and "base.html" as a file,
+    // not a bogus "/" entry from matching every absolute-path key.
+    let src = r#"{% extends ""#;
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &Registry::load_core(), &ws);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"blog/"), "blog/ must be offered as a folder: {labels:?}");
+    assert!(labels.contains(&"base.html"), "base.html must be offered as a file: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with('/')), "no bogus absolute-path entries: {labels:?}");
+
+    // Typing a real relative prefix must descend correctly.
+    let src2 = r#"{% extends "blog/"#;
+    let idx2 = extract(src2);
+    let (items2, _) = complete(src2, 0, src2.len() as u32, &idx2, &Registry::load_core(), &ws);
+    let labels2: Vec<&str> = items2.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels2.contains(&"blog/post.html"), "blog/post.html must appear after typing 'blog/': {labels2:?}");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn cmp12_relative_path_survives_a_file_edit() {
+    // relative_path is computed once at discovery time; a real editing session
+    // re-indexes the edited file on every keystroke (ServerState::update_file),
+    // which must not silently drop it and regress into the same bug.
+    use jinja_lsp::server::state::ServerState;
+    use jinja_lsp::workspace::build_workspace_abs;
+    use std::fs;
+
+    let tmp = std::env::temp_dir().join("jinja_lsp_cmp12_relpath_survives_edit");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("blog")).unwrap();
+    fs::write(tmp.join("blog").join("post.html"), "").unwrap();
+
+    let mut state = ServerState::with_config(Default::default());
+    state.workspace = build_workspace_abs(&[tmp.as_path()], &["html"]);
+    let abs_key = tmp.join("blog").join("post.html").to_string_lossy().into_owned();
+
+    // Simulate an edit to the file — must not lose relative_path.
+    state.update_file(&abs_key, "{% block content %}{% endblock %}");
+
+    let src = r#"{% extends "blog/"#;
+    let idx = extract(src);
+    let (items, _) = complete(src, 0, src.len() as u32, &idx, &Registry::load_core(), &state.workspace);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(
+        labels.contains(&"blog/post.html"),
+        "relative_path must survive update_file re-indexing: {labels:?}"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}

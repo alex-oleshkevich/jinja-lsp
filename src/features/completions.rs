@@ -724,8 +724,12 @@ fn complete_template_path(typed: &str, workspace: &WorkspaceIndex) -> (Vec<Compl
     let mut dirs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut files: Vec<CompletionItem> = Vec::new();
 
-    for path in workspace.templates.keys() {
-        let candidate = path.as_str();
+    for (path, idx) in &workspace.templates {
+        // On the real server, `path` (the map key) is an absolute filesystem path;
+        // `relative_path` is the templates-root-relative form users actually type
+        // in extends/include. Fall back to the key itself for workspaces already
+        // keyed by relative paths (e.g. build_workspace, inline templates).
+        let candidate = idx.relative_path.as_deref().unwrap_or(path.as_str());
         if !candidate.starts_with(prefix) {
             continue;
         }

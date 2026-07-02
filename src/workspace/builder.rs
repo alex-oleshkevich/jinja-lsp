@@ -19,6 +19,7 @@ pub fn build_workspace(templates_dirs: &[&Path], extensions: &[&str]) -> Workspa
             let source = fs::read_to_string(&abs_path).unwrap_or_default();
             let mut idx = extract(&source);
             idx.path = abs_path.to_string_lossy().to_string();
+            idx.relative_path = Some(key.clone());
             workspace.templates.insert(key, idx);
         }
     }
@@ -46,6 +47,7 @@ pub fn build_workspace_abs(templates_dirs: &[&Path], extensions: &[&str]) -> Wor
         let source = fs::read_to_string(&abs_path).unwrap_or_default();
         let mut idx = extract(&source);
         idx.path = key.clone();
+        idx.relative_path = relative_key(&abs_path, templates_dirs);
         workspace.templates.insert(key, idx);
     }
     workspace
