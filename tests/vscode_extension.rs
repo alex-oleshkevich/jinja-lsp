@@ -120,6 +120,45 @@ fn jinja_html_does_not_claim_bare_html_extension() {
     );
 }
 
+// ─── jinja-lsp-viok: language-configuration.json must exist and be valid ────
+
+#[test]
+fn language_configuration_json_exists_and_is_valid() {
+    // Both language contributions point at ./language-configuration.json —
+    // it must actually exist, or comment toggling, bracket matching, and
+    // auto-closing pairs break, and vsce package flags the dangling reference.
+    let raw = include_str!("../editors/vscode/language-configuration.json");
+    let cfg: serde_json::Value = serde_json::from_str(raw).expect("must be valid JSON");
+
+    let comments = &cfg["comments"];
+    let block = comments["blockComment"].as_array().expect("comments.blockComment must be an array");
+    let block: Vec<&str> = block.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(block, vec!["{#", "#}"], "blockComment must be Jinja's {{# #}} pair");
+
+    let brackets = cfg["brackets"].as_array().expect("brackets must be an array");
+    assert!(!brackets.is_empty(), "brackets must declare at least one pair");
+
+    let auto_closing = cfg["autoClosingPairs"].as_array().expect("autoClosingPairs must be an array");
+    assert!(!auto_closing.is_empty(), "autoClosingPairs must declare at least one pair");
+}
+
+#[test]
+fn package_json_configuration_path_matches_file_on_disk() {
+    let pkg = pkg();
+    let languages = pkg["contributes"]["languages"].as_array().expect("languages must be array");
+    for lang in languages {
+        assert_eq!(
+            lang["configuration"].as_str(),
+            Some("./language-configuration.json"),
+            "language {:?} must reference ./language-configuration.json",
+            lang["id"]
+        );
+    }
+    // Referenced path must resolve to a real file (would fail to compile otherwise,
+    // but this documents the dependency explicitly for future refactors).
+    let _ = include_str!("../editors/vscode/language-configuration.json");
+}
+
 // ─── T-01: REQ-EDIT-01 — extension.ts uses jinja-lsp lsp command ─────────────
 
 #[test]
