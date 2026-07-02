@@ -86,6 +86,27 @@ fn zed_language_config_exists_with_correct_name() {
     );
 }
 
+// ─── jinja-lsp-pxs5: {# #} is a block comment, not a line-comment prefix ─────
+
+#[test]
+fn zed_language_config_uses_block_comment_not_line_comments() {
+    let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
+    let cfg: toml::Value = toml::from_str(cfg_raw).expect("config.toml must be valid TOML");
+
+    // line_comments treats each string as an independent line-comment prefix,
+    // so toggling a comment would prepend "{# " without ever closing it.
+    assert!(
+        cfg.get("line_comments").is_none(),
+        "line_comments must not be set for Jinja — {{# #}} is a block comment, not a line prefix"
+    );
+
+    let block_comment = cfg["block_comment"]
+        .as_array()
+        .expect("block_comment must be set as a [start, end] pair");
+    let pair: Vec<&str> = block_comment.iter().map(|v| v.as_str().unwrap_or("")).collect();
+    assert_eq!(pair, vec!["{# ", " #}"], "block_comment must be [\"{{# \", \" #}}\"]");
+}
+
 // ─── T-14: REQ-EDIT-07 — language_server_command returns jinja-lsp lsp ───────
 
 #[test]
