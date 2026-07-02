@@ -424,6 +424,34 @@ fn hov10_from_import_alias_shows_aliased_name() {
 }
 
 #[test]
+fn hov10_from_import_resolves_absolute_workspace_key() {
+    // On the real server, workspace.templates is keyed by absolute URI paths,
+    // while fi.source is always the relative path typed in the from-import.
+    // End-to-end this specific case is also covered by the workspace-wide
+    // macro fallback a few lines above the from-import branch, but the
+    // from-import lookup itself must still resolve through get_by_ref (not a
+    // raw HashMap::get keyed on the unresolved relative fi.source), since that
+    // broader fallback is a separate, coarser mechanism (see jinja-lsp-izfw).
+    let src = r#"{% from "macros.html" import render_post %}"#;
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert(
+        "/abs/project/macros.html".to_owned(),
+        extract("{% macro render_post(post) %}{% endmacro %}"),
+    );
+    let col = col_of(src, "render_post");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(result.is_some(), "expected hover for imported name");
+    let r = result.unwrap();
+    assert!(
+        r.markdown.contains("render_post("),
+        "must show the macro signature card, not the generic 'Imported from' fallback: {}",
+        r.markdown
+    );
+}
+
+#[test]
 fn hov10_import_alias_shows_source() {
     // {% import "macros.html" as macros %}
     // Hovering on "macros" (the namespace alias) should show source info.

@@ -177,8 +177,7 @@ pub fn hover(
                 if imported.name == word {
                     let span = byte_range_to_span(source, wb_start, wb_end);
                     let macro_card = workspace
-                        .templates
-                        .get(&fi.source)
+                        .get_by_ref(&fi.source)
                         .and_then(|ti| ti.macros.iter().find(|m| m.name == word))
                         .map(format_macro_card);
                     if let Some(r) = macro_card {
