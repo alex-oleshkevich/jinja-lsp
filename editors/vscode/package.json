@@ -102,7 +102,9 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "pretest": "tsc -p ./",
+    "test": "node --test out/*.test.js"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

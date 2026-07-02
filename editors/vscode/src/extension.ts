@@ -8,6 +8,7 @@ import {
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
+import { buildInitOptions } from './init-options';
 
 let client: LanguageClient | undefined;
 
@@ -71,30 +72,3 @@ export function deactivate(): Thenable<void> | undefined {
   return client?.stop();
 }
 
-// Build the InitializationOptions object that mirrors jinja.toml keys (REQ-EDIT-05).
-function buildInitOptions(config: vscode.WorkspaceConfiguration): Record<string, unknown> {
-  const opts: Record<string, unknown> = {};
-
-  const templates = config.get<string[]>('templates');
-  if (templates && templates.length > 0) opts['templates'] = templates;
-
-  const extensions = config.get<string[]>('extensions');
-  if (extensions && extensions.length > 0) opts['extensions'] = extensions;
-
-  const extras = config.get<string[]>('extras');
-  if (extras && extras.length > 0) opts['extras'] = extras;
-
-  const customBuiltins = config.get<string[]>('customBuiltins');
-  if (customBuiltins && customBuiltins.length > 0) opts['custom_builtins'] = customBuiltins;
-
-  const hints = config.get<string[]>('hints');
-  if (hints && hints.length > 0) opts['hints'] = hints;
-
-  const select = config.get<string[]>('lint.select');
-  const ignore = config.get<string[]>('lint.ignore');
-  if ((select && select.length > 0) || (ignore && ignore.length > 0)) {
-    opts['lint'] = { select: select ?? [], ignore: ignore ?? [] };
-  }
-
-  return opts;
-}
