@@ -299,6 +299,29 @@ fn act11_collision_outside_scope_is_allowed() {
     assert!(r.is_none(), "renaming item→total must be allowed; 'total' is outside the for-loop scope");
 }
 
+// ─── T-09: macro call sites (Function-kind refs) are rewritten (jinja-lsp-ux4u) ──
+
+#[test]
+fn act11_t09_macro_call_site_is_renamed() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    let source = r#"{% macro greet(name) %}Hello {{ name }}{% endmacro %}{{ greet("World") }}"#;
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    assert!(edit.is_some(), "expected a WorkspaceEdit");
+    let we = edit.unwrap();
+    let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
+
+    // The call site `greet("World")` starts after the macro definition (col > 40).
+    let has_call_site_edit = file_edits.iter().any(|e| e.new_text == "say_hi" && e.start_col > 40);
+    assert!(
+        has_call_site_edit,
+        "expected the macro call site greet(...) to be renamed; edits: {file_edits:?}"
+    );
+}
+
 #[test]
 #[ignore]
 fn debug_spans() {

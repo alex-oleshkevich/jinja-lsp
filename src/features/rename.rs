@@ -208,7 +208,7 @@ fn line_col_to_byte(source: &str, line: u32, col: u32) -> Option<usize> {
     if byte <= source.len() { Some(byte) } else { None }
 }
 
-/// Scoped version: only renames identifier references whose start_byte falls within `scope`.
+/// Scoped version: only renames identifier/function references whose start_byte falls within `scope`.
 /// Macro/block definitions and from-import names are always included (scope does not apply to them
 /// because local-rename callers only match local variables, which appear as identifier references).
 fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex, scope: Option<&Span>) -> Vec<TextEdit> {
@@ -223,7 +223,10 @@ fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex,
 
     // For identifier references, apply the scope filter.
     for r in &index.references {
-        if r.name == old_name && r.kind == ReferenceKind::Identifier && in_scope(&r.span) {
+        if r.name == old_name
+            && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
+            && in_scope(&r.span)
+        {
             edits.push(TextEdit {
                 start_line: r.span.start_line,
                 start_col: r.span.start_col,
@@ -239,7 +242,7 @@ fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex,
     edits
 }
 
-/// Collect TextEdits for all occurrences of `old_name` as an identifier in `index`.
+/// Collect TextEdits for all occurrences of `old_name` as an identifier or macro call in `index`.
 fn rename_in_index(old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec<TextEdit> {
     let mut edits: Vec<TextEdit> = Vec::new();
 
@@ -278,9 +281,9 @@ fn rename_in_index(old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec
         }
     }
 
-    // All identifier references.
+    // All identifier and macro-call (Function-kind) references.
     for r in &index.references {
-        if r.name == old_name && r.kind == ReferenceKind::Identifier {
+        if r.name == old_name && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function) {
             edits.push(TextEdit {
                 start_line: r.span.start_line,
                 start_col: r.span.start_col,
