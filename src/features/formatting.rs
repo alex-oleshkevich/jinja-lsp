@@ -31,10 +31,24 @@ pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
 pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOptions) -> Vec<TextEdit> {
     let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_options(source, opts);
-    if formatted == source {
+    range_edits(source, &formatted, snapped_start, snapped_end)
+}
+
+/// Compute range-formatting edits from an already-formatted document.
+///
+/// Unlike `format_document`, this must never fall back to a whole-document
+/// replace: rangeFormatting's contract is to only touch the requested range.
+/// Per-line diffing (`line_edits`) is only correct when the line count is
+/// unchanged, so if it differs, return no edits rather than rewrite the file
+/// (jinja-lsp-7vjx).
+fn range_edits(original: &str, formatted: &str, start_line: u32, end_line: u32) -> Vec<TextEdit> {
+    if formatted == original {
         return vec![];
     }
-    line_edits(source, &formatted, snapped_start, snapped_end)
+    if original.split('\n').count() != formatted.split('\n').count() {
+        return vec![];
+    }
+    line_edits(original, formatted, start_line, end_line)
 }
 
 /// Expand [start_line, end_line] outward so neither edge splits a Jinja tag.
@@ -124,4 +138,38 @@ fn line_edits(original: &str, formatted: &str, start_line: u32, end_line: u32) -
     }
 
     edits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_edits_no_op_when_already_formatted() {
+        let src = "{{ x }}\n{{ y }}";
+        assert_eq!(range_edits(src, src, 0, 1), vec![]);
+    }
+
+    #[test]
+    fn range_edits_diffs_per_line_when_line_count_unchanged() {
+        let orig = "{{x}}\n{{y}}";
+        let fmt = "{{ x }}\n{{ y }}";
+        let edits = range_edits(orig, fmt, 0, 1);
+        assert_eq!(edits.len(), 2, "both lines changed within range");
+    }
+
+    #[test]
+    fn range_edits_returns_none_when_line_count_differs() {
+        // jinja-lsp-7vjx: a line-count change anywhere must never fall back to a
+        // whole-document replace for range formatting — even though line_edits
+        // (used by format_document) would otherwise rewrite the entire file.
+        let orig = "{{ x }}\n{{ y }}\n{{ z }}";
+        let fmt = "{{ x }}\n{{ y }}"; // one line removed somewhere in the document
+        let edits = range_edits(orig, fmt, 0, 1);
+        assert_eq!(
+            edits,
+            vec![],
+            "line-count mismatch must produce no edits, never a whole-document replace"
+        );
+    }
 }
