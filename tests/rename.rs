@@ -347,16 +347,47 @@ fn act11_t11_macro_definition_edit_anchors_at_name_not_keyword() {
     );
 }
 
+// ─── jinja-lsp-z7i8: unrelated templates sharing a block name are untouched ──
+
+#[test]
+fn act11_workspace_block_rename_excludes_unrelated_template_sharing_the_name() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // "other.html" defines its own {% block content %} with no extends
+    // relationship to "a.html" at all — a coincidental name collision.
+    // Renaming a.html's block must not touch it.
+    let a_src = "{% block content %}a{% endblock %}";
+    let other_src = "{% block content %}unrelated{% endblock %}";
+
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("a.html".to_owned(), extract(a_src));
+    ws.templates.insert("other.html".to_owned(), extract(other_src));
+    let index = ws.templates.get("a.html").unwrap().clone();
+
+    let sources = std::collections::HashMap::from([
+        ("a.html".to_owned(), a_src.to_owned()),
+        ("other.html".to_owned(), other_src.to_owned()),
+    ]);
+
+    let edit = compute_rename(&sources, "a.html", "content", "body", RenameTarget::Workspace, &index, &ws);
+    let we = edit.expect("expected a WorkspaceEdit");
+
+    assert!(
+        we.changes.get("other.html").is_none(),
+        "unrelated other.html must not be touched by a.html's block rename: {:?}",
+        we.changes.get("other.html")
+    );
+}
+
 #[test]
 fn act11_t12_cross_file_block_definition_edit_anchors_at_name() {
     use jinja_lsp::features::rename::compute_rename;
 
-    // Two templates each define their own {% block content %} (e.g. a child
-    // template overriding a parent's block). A workspace-wide block rename
-    // initiated from "a.html" must also locate the name inside "b.html",
-    // using b.html's own source — not a's.
+    // b.html extends a.html and overrides its {% block content %}. A workspace-wide
+    // block rename initiated from "a.html" must also locate the name inside
+    // "b.html", using b.html's own source — not a's.
     let a_src = "{% block content %}a{% endblock %}";
-    let b_src = "{% block content %}b{% endblock %}";
+    let b_src = r#"{% extends "a.html" %}{% block content %}b{% endblock %}"#;
 
     let mut ws = WorkspaceIndex::default();
     ws.templates.insert("a.html".to_owned(), extract(a_src));

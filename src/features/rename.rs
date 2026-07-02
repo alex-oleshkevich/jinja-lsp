@@ -173,7 +173,7 @@ pub fn compute_rename(
         }
         RenameTarget::Workspace => {
             if let Some(source) = sources.get(file) {
-                let def_edits = rename_in_index(source, old_name, new_name, index);
+                let def_edits = rename_in_index(source, old_name, new_name, index, true);
                 if !def_edits.is_empty() {
                     changes.insert(file.to_owned(), def_edits);
                 }
@@ -188,7 +188,10 @@ pub fn compute_rename(
                     continue;
                 }
                 let Some(tpl_source) = sources.get(path) else { continue };
-                let edits = rename_in_index(tpl_source, old_name, new_name, tpl);
+                // Block names are scoped to the extends chain — only rename a block
+                // definition in a template that is an ancestor or descendant of `file`.
+                let allow_block_edits = is_in_block_family(workspace, file, path);
+                let edits = rename_in_index(tpl_source, old_name, new_name, tpl, allow_block_edits);
                 if !edits.is_empty() {
                     changes.insert(path.clone(), edits);
                 }
@@ -201,6 +204,15 @@ pub fn compute_rename(
     } else {
         Some(WorkspaceEdit { changes, create_files: vec![] })
     }
+}
+
+/// True when `other` is an ancestor or descendant of `file` in the extends chain
+/// (or is `file` itself). Used to scope block-definition renames to a template's
+/// own inheritance family, matching code_lens's has_ancestor_block/count_descendant_overrides.
+fn is_in_block_family(workspace: &WorkspaceIndex, file: &str, other: &str) -> bool {
+    other == file
+        || workspace.template_chain(file).iter().any(|p| p == other)
+        || workspace.template_chain(other).iter().any(|p| p == file)
 }
 
 /// Convert (line, col) to a byte offset in `source`.
@@ -289,7 +301,18 @@ fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex,
 ///
 /// `source` is `index`'s own full text — needed to locate macro/block definition names,
 /// whose spans start at the enclosing keyword (`{% macro …`, `{% block …`), not the name.
-fn rename_in_index(source: &str, old_name: &str, new_name: &str, index: &TemplateIndex) -> Vec<TextEdit> {
+///
+/// `allow_block_edits` gates block-definition renaming: block names are scoped to a
+/// template's own extends chain, so a block with the same name in an unrelated
+/// template (no ancestor/descendant relationship) must not be touched even though
+/// macros of the same name elsewhere already are excluded via shadow-checking.
+fn rename_in_index(
+    source: &str,
+    old_name: &str,
+    new_name: &str,
+    index: &TemplateIndex,
+    allow_block_edits: bool,
+) -> Vec<TextEdit> {
     let mut edits: Vec<TextEdit> = Vec::new();
 
     // Macro definition names.
@@ -302,19 +325,21 @@ fn rename_in_index(source: &str, old_name: &str, new_name: &str, index: &Templat
     }
 
     // Block definition names (opening tag + optional trailing endblock name).
-    for b in &index.blocks {
-        if b.name == old_name {
-            if let Some(edit) = definition_name_edit(source, b.span.start_byte, old_name, new_name) {
-                edits.push(edit);
-            }
-            if let Some(ref ens) = b.end_name_span {
-                edits.push(TextEdit {
-                    start_line: ens.start_line,
-                    start_col: ens.start_col,
-                    end_line: ens.start_line,
-                    end_col: ens.start_col + old_name.len() as u32,
-                    new_text: new_name.to_owned(),
-                });
+    if allow_block_edits {
+        for b in &index.blocks {
+            if b.name == old_name {
+                if let Some(edit) = definition_name_edit(source, b.span.start_byte, old_name, new_name) {
+                    edits.push(edit);
+                }
+                if let Some(ref ens) = b.end_name_span {
+                    edits.push(TextEdit {
+                        start_line: ens.start_line,
+                        start_col: ens.start_col,
+                        end_line: ens.start_line,
+                        end_col: ens.start_col + old_name.len() as u32,
+                        new_text: new_name.to_owned(),
+                    });
+                }
             }
         }
     }
