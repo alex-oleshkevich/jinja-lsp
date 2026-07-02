@@ -70,8 +70,16 @@ impl Backend {
         self.state.write().await.update_file(key, source);
     }
 
-    fn uri_to_key(uri: &Url) -> String {
-        uri.path().to_owned()
+    /// Convert an inbound URI to a workspace key.
+    ///
+    /// `Url::path()` is percent-encoded (`/my dir/t.html` -> `/my%20dir/t.html`),
+    /// which never matches keys built from real filesystem paths. Use
+    /// `to_file_path()` to decode it; fall back to the raw (encoded) path for
+    /// non-`file://` URIs, which have no meaningful filesystem path.
+    pub fn uri_to_key(uri: &Url) -> String {
+        uri.to_file_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| uri.path().to_owned())
     }
 
     /// Run checks on one file and push findings to the client (REQ-DIAG / F01).
@@ -517,11 +525,11 @@ impl LanguageServer for Backend {
             let is_config_file = {
                 let state = self.state.read().await;
                 state.config_file_path.as_deref() == Some(&key)
-                    || change.uri.path().ends_with("jinja.toml")
-                    || change.uri.path().ends_with("pyproject.toml")
+                    || key.ends_with("jinja.toml")
+                    || key.ends_with("pyproject.toml")
             };
             if is_config_file {
-                self.reload_config_file(change.uri.path()).await;
+                self.reload_config_file(&key).await;
                 continue;
             }
             // REQ-HINT-08: sidecar hint file changed — rebuild the per-template registry overlay
@@ -540,7 +548,7 @@ impl LanguageServer for Backend {
             match change.typ {
                 FileChangeType::CREATED | FileChangeType::CHANGED => {
                     // Use tokio::fs to avoid blocking the async executor on disk I/O.
-                    if let Ok(source) = tokio::fs::read_to_string(change.uri.path()).await {
+                    if let Ok(source) = tokio::fs::read_to_string(&key).await {
                         self.pass1(&key, &source).await;
                     }
                 }
@@ -1223,12 +1231,19 @@ fn source_line(source: &str, line: u32) -> &str {
     source.split('\n').nth(line as usize).unwrap_or("")
 }
 
-fn path_to_uri(path: &str) -> Url {
-    if path.starts_with('/') {
-        Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
-    } else {
-        Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
-    }
+/// Convert a workspace key back to a URI for the client.
+///
+/// Prefers `Url::from_file_path`, which percent-encodes spaces/`#`/`?`/non-ASCII
+/// correctly. Falls back to the hand-rolled form for keys that aren't real
+/// absolute filesystem paths (e.g. inline-template keys like `view.py::47`).
+pub fn path_to_uri(path: &str) -> Url {
+    Url::from_file_path(path).unwrap_or_else(|_| {
+        if path.starts_with('/') {
+            Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
+        } else {
+            Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
+        }
+    })
 }
 
 fn internal_workspace_edit_to_lsp(
