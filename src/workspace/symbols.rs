@@ -28,7 +28,11 @@ pub struct MacroDefinition {
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub body: Span,
+    /// Span of the whole `{% macro … %}` header, starting at the `macro` keyword.
     pub span: Span,
+    /// Span of just the macro's name identifier — use this (not `span`) for anything
+    /// that must anchor at or highlight the name itself, e.g. LSP selection ranges.
+    pub name_span: Span,
     /// REQ-HOV-03: first `{# ... #}` comment inside the macro body, stripped of delimiters.
     pub doc: Option<String>,
 }

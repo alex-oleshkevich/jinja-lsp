@@ -230,12 +230,7 @@ fn macro_item(m: &MacroDefinition, path: &str) -> CallHierarchyItem {
         detail: path.to_owned(),
         uri: path.to_owned(),
         range: span_to_range(&m.span),
-        selection_range: HierarchyRange {
-            start_line: m.span.start_line,
-            start_col: m.span.start_col,
-            end_line: m.span.start_line,
-            end_col: m.span.start_col + m.name.len() as u32,
-        },
+        selection_range: span_to_range(&m.name_span),
     }
 }
 

@@ -39,6 +39,23 @@ fn call01_prepare_at_definition_returns_item() {
     assert_eq!(items[0].uri, "t.html");
 }
 
+// ─── jinja-lsp-jls2: selection_range must anchor at the name, not the keyword ─
+
+#[test]
+fn call01_prepare_selection_range_anchors_at_macro_name_not_keyword() {
+    let src = "{% macro greet(name) %}hello{% endmacro %}";
+    let idx = extract(src);
+    let w = ws(&[("t.html", src)]);
+    let items = prepare_call_hierarchy(src, 0, col_of(src, "greet"), "t.html", &idx, &w, &reg());
+    let item = &items[0];
+    let name_col = col_of(src, "greet");
+    assert_eq!(
+        item.selection_range.start_col, name_col,
+        "selection_range must start at 'greet', not the 'macro' keyword"
+    );
+    assert_eq!(item.selection_range.end_col, name_col + "greet".len() as u32);
+}
+
 #[test]
 fn call01_prepare_at_call_site_anchors_to_definition() {
     let macro_src = "{% macro greet(name) %}hello{% endmacro %}";

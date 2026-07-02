@@ -157,8 +157,8 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     let mq = &*Q_MACROS;
     let pq = &*Q_PARAMS;
 
-    // (key=macro_stmt.start_byte, name, header_span, ctrl_end_byte)
-    let mut macro_vec: Vec<(usize, String, Span, usize)> = vec![];
+    // (key=macro_stmt.start_byte, name, header_span, name_span, ctrl_end_byte)
+    let mut macro_vec: Vec<(usize, String, Span, Span, usize)> = vec![];
     {
         let mut cur = QueryCursor::new();
         let mut ms = cur.matches(mq, tree.root_node(), bytes);
@@ -174,6 +174,7 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                             stmt.start_byte(),
                             txt(cap.node, bytes).to_owned(),
                             node_span(stmt),
+                            node_span(cap.node),
                             ctrl_end,
                         ));
                     }
@@ -206,11 +207,11 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         }
     }
 
-    for (key, name, span, ctrl_end) in macro_vec {
+    for (key, name, span, name_span, ctrl_end) in macro_vec {
         let parameters = param_map.remove(&key).unwrap_or_default();
         let body = macro_body_span(tree.root_node(), ctrl_end, bytes);
         let doc = extract_first_comment(bytes, body.start_byte, body.end_byte);
-        idx.macros.push(MacroDefinition { name, parameters, body, span, doc });
+        idx.macros.push(MacroDefinition { name, parameters, body, span, name_span, doc });
     }
 }
 
