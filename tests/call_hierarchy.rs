@@ -422,3 +422,33 @@ fn call6cbt_global_function_detail_and_uri_use_pack_prefix() {
     assert_eq!(url_for_edge.to.detail, "global - starlette pack", "detail must name the pack");
     assert_eq!(url_for_edge.to.uri, "jinja-builtin:starlette/url_for", "URI must include pack prefix");
 }
+
+// ─── jinja-lsp-1dzt: incoming_calls must respect macro shadowing ────────────
+
+#[test]
+fn call02_incoming_calls_excludes_shadowing_template_local_macro() {
+    // shadow.html defines its OWN local "greet" macro and calls it — those
+    // calls belong to the local macro, not the one defined in macro.html.
+    let macro_src = "{% macro greet() %}{% endmacro %}";
+    let caller_src = "{{ greet() }}";
+    let shadow_src = "{% macro greet() %}{% endmacro %}{{ greet() }}";
+    let w = ws(&[
+        ("macro.html", macro_src),
+        ("caller.html", caller_src),
+        ("shadow.html", shadow_src),
+    ]);
+    let macro_idx = extract(macro_src);
+    let mut items = prepare_call_hierarchy(
+        macro_src, 0, col_of(macro_src, "greet"), "macro.html", &macro_idx, &w, &reg(),
+    );
+    let item = items.remove(0);
+    let calls = incoming_calls(&item, &w);
+
+    let uris: Vec<&str> = calls.iter().map(|c| c.from.uri.as_str()).collect();
+    assert!(uris.contains(&"caller.html"), "caller.html must call the real macro.html greet: {uris:?}");
+    assert!(
+        !uris.contains(&"shadow.html"),
+        "shadow.html's own local greet() call must NOT be attributed to macro.html's greet: {uris:?}"
+    );
+}
+

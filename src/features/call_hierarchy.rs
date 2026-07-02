@@ -104,6 +104,12 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
         HashMap::new();
 
     for (tpl_path, tmpl_idx) in &workspace.templates {
+        // Skip templates that define their own local macro with this name — those
+        // calls resolve to the local definition, not the queried macro (matches
+        // code_lens's count_references so the lens count and hierarchy agree).
+        if tpl_path.as_str() != item.uri && !super::template_does_not_shadow_macro(tmpl_idx, macro_name) {
+            continue;
+        }
         for r in &tmpl_idx.references {
             if r.name != *macro_name {
                 continue;
