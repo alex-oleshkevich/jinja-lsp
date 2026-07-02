@@ -256,17 +256,18 @@ fn classify_reference(
     // From-imported macro (including `import foo as bar` aliases).
     for fi in &index.from_imports {
         if let Some(imported) = fi.names.iter().find(|n| n.name == name || n.alias.as_deref() == Some(name)) {
-            // Look up the real macro span in the target template.
+            // Resolve fi.source (always relative) against the workspace's absolute keys.
             let original_name = &imported.name;
+            let src_key = workspace.resolve_key(&fi.source).unwrap_or(&fi.source);
             let def_span = workspace
                 .templates
-                .get(fi.source.as_str())
+                .get(src_key)
                 .and_then(|tmpl| tmpl.macros.iter().find(|m| &m.name == original_name))
                 .map(|m| m.span.clone())
                 .unwrap_or_default();
             return Some(Symbol::Macro {
                 name: name.to_owned(),
-                def_path: fi.source.clone(),
+                def_path: src_key.to_owned(),
                 def_span,
             });
         }

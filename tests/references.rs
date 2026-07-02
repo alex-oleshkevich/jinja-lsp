@@ -324,3 +324,44 @@ fn ref03_from_imported_macro_declaration_has_correct_span() {
         );
     }
 }
+
+// ─── jinja-lsp-wtnp: workspace keyed by absolute paths, fi.source is relative ──
+
+#[test]
+fn ref_from_import_resolves_relative_source_against_absolute_workspace_keys() {
+    // The server keys workspace.templates by absolute path, but `from "macros.html"
+    // import greet` always records a relative fi.source. classify_reference must
+    // resolve that relative source through workspace.resolve_key, not a raw HashMap::get.
+    let macro_src = "{% macro greet(name) %}hello{{ name }}{% endmacro %}";
+    let caller_src = r#"{% from "macros.html" import greet %}{{ greet( }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("/abs/project/macros.html".to_owned(), extract(macro_src));
+    ws.templates.insert("/abs/project/caller.html".to_owned(), extract(caller_src));
+
+    let caller_idx = extract(caller_src);
+    let reg = Registry::load_core();
+    let col = caller_src.rfind("greet").unwrap() as u32;
+    let results = find_references(
+        caller_src, 0, col, "/abs/project/caller.html", true, &caller_idx, &reg, &ws,
+    );
+
+    // The declaration must be reported under the ABSOLUTE key, not the relative "macros.html".
+    let decl: Vec<_> = results.iter().filter(|r| r.path == "/abs/project/macros.html").collect();
+    assert!(
+        !decl.is_empty(),
+        "declaration must be reported under the absolute workspace key: {results:?}"
+    );
+    for d in &decl {
+        assert!(
+            d.start_col > 0 || d.start_line > 0,
+            "declaration must not be at 0:0 (bogus default span): {d:?}"
+        );
+    }
+
+    // No result should carry the bare relative path "macros.html" — that produces a
+    // bogus file:///macros.html URI once path_to_uri runs on it.
+    assert!(
+        results.iter().all(|r| r.path != "macros.html"),
+        "no reference should use the unresolved relative path: {results:?}"
+    );
+}
