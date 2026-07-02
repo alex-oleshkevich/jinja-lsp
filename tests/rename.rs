@@ -4,6 +4,10 @@ use jinja_lsp::features::rename::{rename_at_cursor, RenameTarget};
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
 
+fn sources_map(path: &str, source: &str) -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([(path.to_owned(), source.to_owned())])
+}
+
 // ─── T-01: cursor on a local variable offers a local rename ──────────────────
 
 #[test]
@@ -44,7 +48,7 @@ fn act11_t03_compute_rename_replaces_all_occurrences() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "count", "total", RenameTarget::Local { scope: None }, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "count", "total", RenameTarget::Local { scope: None }, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
@@ -112,7 +116,7 @@ fn act11_t05_from_import_name_is_renamed() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
@@ -130,7 +134,7 @@ fn act11_t06_from_import_with_alias_renames_name_not_alias() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
@@ -152,7 +156,7 @@ fn act11_t08_endblock_trailing_name_is_renamed() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit for block rename with trailing endblock name");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("expected edits for /tpl.html");
@@ -177,7 +181,7 @@ fn act11_t08b_endblock_without_trailing_name_still_renames() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit for block rename without trailing endblock name");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("expected edits for /tpl.html");
@@ -204,7 +208,7 @@ fn act11_local_rename_scope_bounded_by_valid_range() {
     let scope = for_binding.valid_range.clone();
 
     let edit = compute_rename(
-        source, "t.html", "item", "x",
+        &sources_map("t.html", source), "t.html", "item", "x",
         RenameTarget::Local { scope: Some(scope) },
         &idx, &ws,
     );
@@ -228,7 +232,7 @@ fn act11_local_rename_whole_file_when_no_scope() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "t.html", "count", "total",
+    let edit = compute_rename(&sources_map("t.html", source), "t.html", "count", "total",
         RenameTarget::Local { scope: None }, &idx, &ws);
     let we = edit.expect("expected edit");
     let edits = we.changes.get("t.html").expect("expected file edits");
@@ -299,6 +303,84 @@ fn act11_collision_outside_scope_is_allowed() {
     assert!(r.is_none(), "renaming item→total must be allowed; 'total' is outside the for-loop scope");
 }
 
+// ─── T-10: block/macro definition edits anchor at the name, not the keyword (jinja-lsp-3bdk) ──
+
+#[test]
+fn act11_t10_block_definition_edit_anchors_at_name_not_keyword() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    let source = "{% block content %}hello{% endblock %}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "content", "body", RenameTarget::Workspace, &idx, &ws);
+    let we = edit.expect("expected a WorkspaceEdit");
+    let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
+
+    let name_col = source.find("content").unwrap() as u32;
+    let opening_edit = file_edits.iter().find(|e| e.new_text == "body" && e.start_line == 0);
+    assert_eq!(
+        opening_edit.map(|e| e.start_col),
+        Some(name_col),
+        "opening block-name edit must anchor at 'content', not the 'block' keyword; edits: {file_edits:?}"
+    );
+}
+
+#[test]
+fn act11_t11_macro_definition_edit_anchors_at_name_not_keyword() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    let source = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
+    let idx = extract(source);
+    let ws = WorkspaceIndex::default();
+
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    let we = edit.expect("expected a WorkspaceEdit");
+    let file_edits = we.changes.get("/tpl.html").expect("edits for the file");
+
+    let name_col = source.find("greet").unwrap() as u32;
+    let def_edit = file_edits.iter().find(|e| e.new_text == "say_hi" && e.start_col < 20);
+    assert_eq!(
+        def_edit.map(|e| e.start_col),
+        Some(name_col),
+        "macro definition edit must anchor at 'greet', not the 'macro' keyword; edits: {file_edits:?}"
+    );
+}
+
+#[test]
+fn act11_t12_cross_file_block_definition_edit_anchors_at_name() {
+    use jinja_lsp::features::rename::compute_rename;
+
+    // Two templates each define their own {% block content %} (e.g. a child
+    // template overriding a parent's block). A workspace-wide block rename
+    // initiated from "a.html" must also locate the name inside "b.html",
+    // using b.html's own source — not a's.
+    let a_src = "{% block content %}a{% endblock %}";
+    let b_src = "{% block content %}b{% endblock %}";
+
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("a.html".to_owned(), extract(a_src));
+    ws.templates.insert("b.html".to_owned(), extract(b_src));
+    let index = ws.templates.get("a.html").unwrap().clone();
+
+    let sources = std::collections::HashMap::from([
+        ("a.html".to_owned(), a_src.to_owned()),
+        ("b.html".to_owned(), b_src.to_owned()),
+    ]);
+
+    let edit = compute_rename(&sources, "a.html", "content", "body", RenameTarget::Workspace, &index, &ws);
+    let we = edit.expect("expected a WorkspaceEdit");
+    let b_edits = we.changes.get("b.html").expect("expected edits in b.html");
+
+    let name_col = b_src.find("content").unwrap() as u32;
+    let def_edit = b_edits.iter().find(|e| e.new_text == "body");
+    assert_eq!(
+        def_edit.map(|e| e.start_col),
+        Some(name_col),
+        "cross-file block definition edit must anchor at 'content' using b.html's own source; edits: {b_edits:?}"
+    );
+}
+
 // ─── T-09: macro call sites (Function-kind refs) are rewritten (jinja-lsp-ux4u) ──
 
 #[test]
@@ -309,7 +391,7 @@ fn act11_t09_macro_call_site_is_renamed() {
     let idx = extract(source);
     let ws = WorkspaceIndex::default();
 
-    let edit = compute_rename(source, "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
+    let edit = compute_rename(&sources_map("/tpl.html", source), "/tpl.html", "greet", "say_hi", RenameTarget::Workspace, &idx, &ws);
     assert!(edit.is_some(), "expected a WorkspaceEdit");
     let we = edit.unwrap();
     let file_edits = we.changes.get("/tpl.html").expect("edits for the file");

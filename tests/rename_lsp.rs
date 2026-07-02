@@ -42,7 +42,7 @@ fn rename_local_variable_via_state() {
     assert_eq!(name, "count");
     assert!(matches!(target, RenameTarget::Local { .. }));
 
-    let edit = compute_rename(source, "t.html", "count", "total", target, index, &state.workspace);
+    let edit = compute_rename(&state.sources, "t.html", "count", "total", target, index, &state.workspace);
     assert!(edit.is_some(), "compute_rename must return edits");
     let edits = edit.unwrap().changes.get("t.html").cloned().unwrap_or_default();
     assert!(!edits.is_empty(), "must produce at least one rename edit");

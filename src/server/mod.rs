@@ -1033,7 +1033,7 @@ impl LanguageServer for Backend {
                     self.client.show_message(MessageType::WARNING, reason).await;
                     return Ok(None);
                 }
-                let Some(workspace_edit) = compute_rename(source, path, &old_name, new_name, target, index, workspace) else {
+                let Some(workspace_edit) = compute_rename(&state.sources, path, &old_name, new_name, target, index, workspace) else {
                     return Ok(None);
                 };
                 let utf8 = state.position_encoding_utf8;
