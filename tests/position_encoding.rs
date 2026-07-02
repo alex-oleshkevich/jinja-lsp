@@ -66,6 +66,15 @@ fn utf8_mode_is_identity() {
 }
 
 #[test]
+fn byte_to_utf16_mid_char_byte_offset_does_not_panic() {
+    // jinja-lsp-jzxf: "café" — é starts at byte 3 and spans bytes 3..5.
+    // Byte col 4 lands mid-character; must clamp to the previous char
+    // boundary (3) instead of panicking on a non-boundary slice.
+    let line = "café";
+    assert_eq!(byte_col_to_lsp_char(line, 4, false), 3);
+}
+
+#[test]
 fn roundtrip_byte_utf16_byte() {
     let line = "{{ äü | upper }}";
     // Byte 10 = start of "upper" ({{ = 2, space=1, ä=2, ü=2, space+|+space = 3)

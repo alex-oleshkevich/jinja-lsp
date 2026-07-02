@@ -1211,7 +1211,10 @@ pub fn byte_col_to_lsp_char(line_str: &str, byte_col: u32, utf8: bool) -> u32 {
     if utf8 {
         return byte_col;
     }
-    let safe = byte_col.min(line_str.len() as u32) as usize;
+    let mut safe = (byte_col as usize).min(line_str.len());
+    while safe > 0 && !line_str.is_char_boundary(safe) {
+        safe -= 1;
+    }
     line_str[..safe].chars().map(|c| c.len_utf16() as u32).sum()
 }
 
