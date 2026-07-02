@@ -2,10 +2,10 @@
 # Language-server id is jinja2-lsp and language is Jinja2 (HTML),
 # ported verbatim from the legacy .zed/settings.json so existing configs keep working.
 
-[extension]
 id = "jinja-plus"
 name = "Jinja Plus"
 version = "0.1.0"
+schema_version = 1
 description = "Jinja2 template language support for Zed"
 authors = ["alex-oleshkevich"]
 repository = "https://github.com/alex-oleshkevich/jinja-lsp"
