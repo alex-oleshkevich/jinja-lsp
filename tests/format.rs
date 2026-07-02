@@ -338,6 +338,32 @@ fn fmt02_t14_block_set_indents_via_reindent() {
 }
 
 #[test]
+fn fmt02_t15_raw_block_content_untouched() {
+    // Jinja-looking lines inside {% raw %} are literal output — must not be
+    // re-indented, and must not corrupt depth tracking for what follows.
+    let src = "{% raw %}\n{% if x %}\n{% endraw %}\n{% if y %}\nz\n{% endif %}";
+    let want = "{% raw %}\n{% if x %}\n{% endraw %}\n{% if y %}\nz\n{% endif %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t16_raw_inside_block_reindents_only_the_tags() {
+    // The raw/endraw tags themselves are normal paired tags and follow the
+    // surrounding block's depth; the literal body between them is untouched.
+    let src = "{% block content %}\n{% raw %}\n{% if x %}literal{% endif %}\n{% endraw %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% raw %}\n{% if x %}literal{% endif %}\n    {% endraw %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t17_raw_block_delimiter_spacing_untouched() {
+    // Tight-delimiter Jinja-looking text inside {% raw %} is literal output —
+    // the FMT-01 delimiter-spacing pass must not "fix" it either.
+    let src = "{% raw %}\n{%if x%}\n{% endraw %}";
+    assert_eq!(format(src), src);
+}
+
+#[test]
 fn fmt02_idempotent() {
     let inputs = [
         "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}",

@@ -210,13 +210,13 @@ fn collect_delimiter_normalizations(
 const OPENERS: &[&str] = &[
     "block", "for", "if", "elif", "else",
     "macro", "call", "with", "filter",
-    "autoescape", "trans",
+    "autoescape", "trans", "raw",
 ];
 /// Tags that close (or re-align at) an indentation level.
 const CLOSERS: &[&str] = &[
     "endblock", "endfor", "endif", "endmacro", "endcall", "endwith", "endfilter",
     "elif", "else",
-    "endset", "endautoescape", "endtrans",
+    "endset", "endautoescape", "endtrans", "endraw",
 ];
 
 /// Return true if `line` is a Jinja-tag line: first non-whitespace content is `{%`.
@@ -260,10 +260,27 @@ fn is_opener(kw: &str, inner: &str) -> bool {
 pub fn reindent(source: &str, indent_unit: &str) -> String {
     let mut depth: usize = 0;
     let mut out = String::with_capacity(source.len());
+    // Inside {% raw %}…{% endraw %}, content is literal output, not Jinja — it
+    // must never be re-indented or counted toward depth, even if it looks like
+    // a Jinja tag. Only the matching `endraw` line is still processed normally.
+    let mut in_raw = false;
 
     for (i, line) in source.split('\n').enumerate() {
         if i > 0 {
             out.push('\n');
+        }
+
+        if in_raw {
+            let is_endraw = is_jinja_tag_line(line)
+                && jinja_tag_keywords_on_line(line)
+                    .first()
+                    .map(|(kw, _)| kw.as_str())
+                    == Some("endraw");
+            if !is_endraw {
+                out.push_str(line);
+                continue;
+            }
+            in_raw = false;
         }
 
         if !is_jinja_tag_line(line) {
@@ -315,6 +332,11 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
             depth = depth.saturating_add(delta as usize);
         } else if delta < 0 {
             depth = depth.saturating_sub((-delta) as usize);
+        }
+
+        // Enter raw mode unless this same line also closes it (e.g. `{% raw %}{% endraw %}`).
+        if first_kw == "raw" && !keywords.iter().skip(1).any(|(kw, _)| kw == "endraw") {
+            in_raw = true;
         }
     }
 
