@@ -989,6 +989,10 @@ impl LanguageServer for Backend {
                 };
                 let utf8 = state.position_encoding_utf8;
                 let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
+                // Drop the read guard before the client round-trip: apply_edit triggers a
+                // didChange that needs state.write(), and tokio's write-preferring RwLock
+                // would otherwise stall behind this still-held read guard (jinja-lsp-1sjt).
+                drop(state);
                 let _ = self.client.apply_edit(lsp_edit).await;
                 Ok(None)
             }
@@ -1010,6 +1014,8 @@ impl LanguageServer for Backend {
                 };
                 let utf8 = state.position_encoding_utf8;
                 let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
+                // Drop the read guard before the client round-trip (jinja-lsp-1sjt).
+                drop(state);
                 let _ = self.client.apply_edit(lsp_edit).await;
                 Ok(None)
             }
@@ -1038,6 +1044,8 @@ impl LanguageServer for Backend {
                 };
                 let utf8 = state.position_encoding_utf8;
                 let lsp_edit = internal_workspace_edit_to_lsp(workspace_edit, &state.sources, utf8);
+                // Drop the read guard before the client round-trip (jinja-lsp-1sjt).
+                drop(state);
                 let _ = self.client.apply_edit(lsp_edit).await;
                 Ok(None)
             }

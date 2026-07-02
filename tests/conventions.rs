@@ -131,3 +131,19 @@ fn conv04_init_tracing_does_not_panic() {
     // init_tracing uses try_init so double-registration in tests is safe.
     jinja_lsp::server::init_tracing();
 }
+
+// jinja-lsp-1sjt: execute_command must drop the state read guard before the
+// client.apply_edit round-trip. apply_edit triggers a client-side didChange
+// that needs state.write(), and tokio's write-preferring RwLock would stall
+// behind a still-held read guard — a stall or deadlock depending on ordering.
+#[test]
+fn execute_command_drops_state_guard_before_apply_edit() {
+    let src = include_str!("../src/server/mod.rs");
+    let pattern = "drop(state);\n                let _ = self.client.apply_edit(lsp_edit).await;";
+    let occurrences = src.matches(pattern).count();
+    assert_eq!(
+        occurrences, 3,
+        "expected all 3 execute_command branches (extract-macro, wrap-block, rename) \
+         to drop the state guard immediately before client.apply_edit; found {occurrences}"
+    );
+}
