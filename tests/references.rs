@@ -214,6 +214,30 @@ fn ref01b_aliased_import_usage_classified_as_symbol() {
     assert!(!results.is_empty(), "aliased macro usage must be classified as a symbol and yield references");
 }
 
+// ─── jinja-lsp-hv0b: alias text-scan must skip string literals ──────────────
+
+#[test]
+fn ref01b_alias_text_scan_skips_name_inside_import_path_string() {
+    // The alias name "macros" also happens to appear inside the import path
+    // string "macros.html" — that occurrence must never be reported, even
+    // with include_declaration=true (it isn't the declaration site either).
+    let src = r#"{% import "macros.html" as macros %}{{ macros.post_url() }}"#;
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    ws.index_inline("macros.html", "{% macro post_url() %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let col = src.find("macros.post_url").unwrap() as u32;
+    let results = find_references(src, 0, col, "test.html", true, &idx, &reg, &ws);
+
+    let string_literal_col = src.find(r#""macros.html""#).unwrap() as u32 + 1;
+    let touches_path_string = results.iter().any(|r| r.start_col == string_literal_col);
+    assert!(
+        !touches_path_string,
+        "the alias name inside the import path string must never be reported: {results:?}"
+    );
+}
+
 // ─── REQ-REF-01: block references across workspace ───────────────────────────
 
 #[test]

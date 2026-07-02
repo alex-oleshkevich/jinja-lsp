@@ -121,7 +121,9 @@ pub fn find_references(
                     let after_ok = after >= src_bytes.len() || !(src_bytes[after].is_ascii_alphanumeric() || src_bytes[after] == b'_');
                     // Skip the declaration site when include_declaration=false (REQ-REF-03).
                     let is_decl = decl_byte == Some(pos);
-                    if before_ok && after_ok && inside_jinja(source, pos) && (include_declaration || !is_decl) {
+                    if before_ok && after_ok && inside_jinja(source, pos) && !pos_in_string_literal(source, pos)
+                        && (include_declaration || !is_decl)
+                    {
                         let (sl, sc) = byte_to_line_col(source, pos);
                         let (el, ec) = byte_to_line_col(source, after);
                         results.insert(ReferenceLocation { path: current_path.to_owned(), start_line: sl, start_col: sc, end_line: el, end_col: ec });
@@ -249,6 +251,33 @@ fn symbol_at(
     }
 
     None
+}
+
+/// True when `pos` sits inside an (unescaped) quoted string literal within its
+/// enclosing Jinja delimiter — used to reject alias text-scan matches inside
+/// paths like `{% import "macros.html" as macros %}`.
+fn pos_in_string_literal(source: &str, pos: usize) -> bool {
+    let before = &source[..pos];
+    let tag_start = [before.rfind("{{"), before.rfind("{%"), before.rfind("{#")]
+        .into_iter()
+        .flatten()
+        .max();
+    let Some(start) = tag_start else { return false };
+
+    let mut in_string = false;
+    let mut string_char = '"';
+    let mut escaped = false;
+    for c in source[start..pos].chars() {
+        if in_string {
+            if escaped { escaped = false; continue; }
+            if c == '\\' { escaped = true; continue; }
+            if c == string_char { in_string = false; }
+        } else if c == '"' || c == '\'' {
+            in_string = true;
+            string_char = c;
+        }
+    }
+    in_string
 }
 
 /// Find the narrowest (smallest valid_range) VariableDefinition binding
