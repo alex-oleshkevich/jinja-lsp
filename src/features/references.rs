@@ -131,18 +131,29 @@ pub fn find_references(
             }
         }
 
-        Symbol::ScopeLocal { name } => {
-            // File-local references only (REQ-REF-05).
+        Symbol::ScopeLocal { name, scope } => {
+            // File-local references, scoped to the binding's valid_range (REQ-REF-05):
+            // two unrelated bindings sharing a name (e.g. two separate for-loops) must
+            // not be merged into one reference set.
+            let in_scope = |span: &Span| match &scope {
+                None => true,
+                Some(vr) => span.start_byte >= vr.start_byte && span.start_byte <= vr.end_byte,
+            };
             for r in &index.references {
                 if r.name == name
                     && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
+                    && in_scope(&r.span)
                 {
                     results.insert(span_to_ref(current_path, &r.span));
                 }
             }
-            // Optionally include the declaration (variable binding).
+            // Optionally include the declaration (variable binding) matching this scope.
             if include_declaration {
-                if let Some(var) = index.variables.iter().find(|v| v.name == name) {
+                let var = index.variables.iter().find(|v| {
+                    v.name == name
+                        && scope.as_ref().is_none_or(|vr| v.valid_range == *vr)
+                });
+                if let Some(var) = var {
                     if var.span.start_byte < var.span.end_byte {
                         results.insert(span_to_ref(current_path, &var.span));
                     }
@@ -169,7 +180,7 @@ enum Symbol {
     Macro { name: String, def_path: String, def_span: Span },
     Block { name: String },
     Alias { name: String },
-    ScopeLocal { name: String },
+    ScopeLocal { name: String, scope: Option<Span> },
     HostOwned,
 }
 
@@ -189,7 +200,7 @@ fn symbol_at(
         .max_by_key(|r| kind_priority(r.kind));
 
     if let Some(r) = candidate {
-        return classify_reference(&r.name, current_path, index, registry, workspace);
+        return classify_reference(&r.name, byte, current_path, index, registry, workspace);
     }
 
     // Check macro definition spans (cursor ON the definition itself).
@@ -229,7 +240,10 @@ fn symbol_at(
                 return Some(Symbol::Alias { name: word.to_owned() });
             }
             if index.variables.iter().any(|v| v.name == word) {
-                return Some(Symbol::ScopeLocal { name: word.to_owned() });
+                return Some(Symbol::ScopeLocal {
+                    name: word.to_owned(),
+                    scope: tightest_binding_scope(word, byte, index),
+                });
             }
         }
     }
@@ -237,8 +251,23 @@ fn symbol_at(
     None
 }
 
+/// Find the narrowest (smallest valid_range) VariableDefinition binding
+/// whose name == `name` and whose valid_range contains `byte`.
+fn tightest_binding_scope(name: &str, byte: usize, index: &TemplateIndex) -> Option<Span> {
+    index.variables.iter()
+        .filter(|v| {
+            v.name == name
+                && v.valid_range.start_byte < v.valid_range.end_byte
+                && v.valid_range.start_byte <= byte
+                && byte <= v.valid_range.end_byte
+        })
+        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+        .map(|v| v.valid_range.clone())
+}
+
 fn classify_reference(
     name: &str,
+    byte: usize,
     current_path: &str,
     index: &TemplateIndex,
     registry: &Registry,
@@ -280,7 +309,10 @@ fn classify_reference(
 
     // Scope-local variable.
     if index.variables.iter().any(|v| v.name == name) {
-        return Some(Symbol::ScopeLocal { name: name.to_owned() });
+        return Some(Symbol::ScopeLocal {
+            name: name.to_owned(),
+            scope: tightest_binding_scope(name, byte, index),
+        });
     }
 
     // Host-owned (built-in registry symbol) → REQ-REF-04.

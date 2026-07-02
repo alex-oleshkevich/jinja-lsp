@@ -156,6 +156,32 @@ fn ref05_for_loop_variable_refs_in_same_file() {
     assert!(all_same_file, "scope-local refs must be file-local");
 }
 
+// ─── jinja-lsp-orh5: scope-local refs are bound to the binding's valid_range ──
+
+#[test]
+fn ref05_two_unrelated_for_loops_do_not_merge_references() {
+    // Two separate {% for item in ... %} loops, each with its own "item" binding.
+    // find-references from the first loop's binding must only return refs from
+    // that loop, not the unrelated second loop.
+    let src = "{% for item in a %}{{ item }}{% endfor %}{% for item in b %}{{ item }}{% endfor %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    let idx = extract(src);
+    let reg = Registry::load_core();
+
+    // Cursor on the first loop's "item" usage inside {{ item }}.
+    let col = src.find("{{ item").unwrap() as u32 + 3;
+    let results = find_references(src, 0, col, "test.html", true, &idx, &reg, &ws);
+
+    let second_loop_ref_col = src.rfind("{{ item").unwrap() as u32 + 3;
+    let touches_second_loop = results.iter().any(|r| r.start_col == second_loop_ref_col);
+    assert!(
+        !touches_second_loop,
+        "references from the unrelated second for-loop must not be included: {results:?}"
+    );
+    assert!(!results.is_empty(), "the first loop's own usage must still be found");
+}
+
 #[test]
 fn ref05_html_text_matching_variable_name_is_not_a_reference() {
     // Cursor on "item" in the HTML class, NOT inside Jinja — must return empty.
