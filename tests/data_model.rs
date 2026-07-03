@@ -489,6 +489,30 @@ fn jinja_lsp_6jx0_endblock_with_name_does_not_corrupt_enclosing_for_scope() {
 }
 
 #[test]
+fn jinja_lsp_z0d8_stray_endblock_name_before_block_does_not_invert_body_span() {
+    // A stray `{% endblock b %}` (ERROR node) appears BEFORE the real, still-open
+    // `{% block b %}` in document order. The old code assigned
+    // body = byte_span(*ctrl_end, tag_start) to every block sharing the name with a
+    // still-default body, with no check that ctrl_end < tag_start — here ctrl_end
+    // (30, end of the real block's own open tag) is AFTER tag_start (0, the stray
+    // tag), so the span inverted (start_byte=30 > end_byte=0).
+    use jinja_lsp::parsing::extract;
+    let src = "{% endblock b %}\n{% block b %}unclosed content";
+    let idx = extract(src);
+    let b = idx.blocks.iter().find(|b| b.name == "b").expect("block 'b' must be extracted");
+    assert!(
+        b.body.start_byte <= b.body.end_byte,
+        "block body span must never be inverted: {:?}",
+        b.body
+    );
+    assert!(
+        b.end_name_span.is_none(),
+        "the stray leading endblock must not be mistaken for this block's own closing tag: {:?}",
+        b.end_name_span
+    );
+}
+
+#[test]
 fn resolve_set_variable_at_top_level_binds_correctly() {
     use jinja_lsp::parsing::extract;
     let src = "{% set title = 'Hello' %}{{ title }}";

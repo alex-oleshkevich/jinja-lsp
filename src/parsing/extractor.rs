@@ -355,13 +355,22 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                 if let Some(ns) = endblock_trailing_name_span(bytes, tag_start) {
                     let trail_name = std::str::from_utf8(&bytes[ns.start_byte..ns.end_byte])
                         .unwrap_or("");
-                    for (bi, ctrl_end) in seen.values() {
-                        if idx.blocks[*bi].name == trail_name
-                            && idx.blocks[*bi].body == Span::default()
-                        {
-                            idx.blocks[*bi].body = byte_span(*ctrl_end, tag_start);
-                            idx.blocks[*bi].end_name_span = Some(ns.clone());
-                        }
+                    // seen.values() iterates a HashMap (nondeterministic order). When a
+                    // same-named block appears after this endblock tag (duplicate block
+                    // names, or a stray `{% endblock name %}`), `ctrl_end < tag_start`
+                    // would be false and the body span would invert; pick only the
+                    // nearest PRECEDING block (largest ctrl_end still < tag_start) so the
+                    // result is deterministic and never inverted.
+                    let nearest = seen.values()
+                        .filter(|(bi, ctrl_end)| {
+                            idx.blocks[*bi].name == trail_name
+                                && idx.blocks[*bi].body == Span::default()
+                                && *ctrl_end < tag_start
+                        })
+                        .max_by_key(|(_, ctrl_end)| *ctrl_end);
+                    if let Some((bi, ctrl_end)) = nearest {
+                        idx.blocks[*bi].body = byte_span(*ctrl_end, tag_start);
+                        idx.blocks[*bi].end_name_span = Some(ns.clone());
                     }
                 }
             }
