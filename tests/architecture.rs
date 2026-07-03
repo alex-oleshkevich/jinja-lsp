@@ -370,6 +370,23 @@ fn jinja_lsp_duuc_seen_sets_use_hashset_not_unit_hashmap() {
 }
 
 #[test]
+fn jinja_lsp_4jc4_is_jinja_file_wrapper_and_noop_drop_removed() {
+    // jinja-lsp-4jc4: Backend::is_jinja_file was an async method with an unused
+    // _uri parameter that just forwarded to the free fn is_jinja_language_id — call
+    // the free function directly. Separately, code_lens_resolve had a drop(path)
+    // one line before `path` would go out of scope anyway.
+    let src = include_str!("../src/server/mod.rs");
+    assert!(
+        !src.contains("async fn is_jinja_file("),
+        "Backend::is_jinja_file must be removed — call is_jinja_language_id directly"
+    );
+    assert!(
+        !src.contains("drop(path)"),
+        "the no-op drop(path) in code_lens_resolve must be removed"
+    );
+}
+
+#[test]
 fn jinja_lsp_qved_empty_root_queries_dir_removed() {
     // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
     // tree-sitter query files live in src/parsing/queries/ (included via

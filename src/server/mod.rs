@@ -239,11 +239,6 @@ impl Backend {
         tracing::info!("jinja-lsp: config reloaded from {file_path}");
         self.republish_all_diagnostics().await;
     }
-
-    /// Return true when `lang` identifies a Jinja template file (REQ-EDIT-11).
-    async fn is_jinja_file(&self, lang: &str, _uri: &tower_lsp::lsp_types::Url) -> bool {
-        is_jinja_language_id(lang)
-    }
 }
 
 /// REQ-EDIT-11: the two canonical languageIds the server accepts.
@@ -507,7 +502,7 @@ impl LanguageServer for Backend {
 
     /// REQ-ARCH-05 / REQ-EDIT-11: open triggers Pass 1 only for "jinja"/"jinja-html" files.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        if !self.is_jinja_file(&params.text_document.language_id, &params.text_document.uri).await {
+        if !is_jinja_language_id(&params.text_document.language_id) {
             return;
         }
         let key = Self::uri_to_key(&params.text_document.uri);
@@ -959,7 +954,6 @@ impl LanguageServer for Backend {
                 params.command = Some(Command { title, command: String::new(), arguments: None });
             }
         }
-        drop(path);
         Ok(params)
     }
 
