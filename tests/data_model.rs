@@ -10,6 +10,25 @@ fn span() -> Span {
     Span::default()
 }
 
+// jinja-lsp-zcc7: Span::contains is the single containment implementation.
+#[test]
+fn span_contains_true_for_nested_range() {
+    let outer = Span { start_byte: 0, end_byte: 10, ..Span::default() };
+    let inner = Span { start_byte: 2, end_byte: 8, ..Span::default() };
+    assert!(outer.contains(&inner));
+}
+
+#[test]
+fn span_contains_false_when_outer_is_empty() {
+    // A degenerate (empty) span must never claim to contain anything — including
+    // an equally-empty span at the same offset, which previously false-positived
+    // in call_hierarchy's span_contains but not in index.rs's body_contains/
+    // range_contains before they were unified onto Span::contains.
+    let empty_outer = Span { start_byte: 5, end_byte: 5, ..Span::default() };
+    let inner = Span { start_byte: 5, end_byte: 5, ..Span::default() };
+    assert!(!empty_outer.contains(&inner));
+}
+
 // REQ-DATA-01
 #[test]
 fn macro_definition_has_name_params_body_span() {

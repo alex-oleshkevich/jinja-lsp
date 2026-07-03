@@ -211,6 +211,24 @@ fn jinja_lsp_md8e_check_w202_early_returns_when_no_macros() {
 }
 
 #[test]
+fn jinja_lsp_zcc7_span_containment_is_not_duplicated() {
+    // jinja-lsp-zcc7: Span::contains had zero callers while the identical logic was
+    // reimplemented three times: body_contains/range_contains in index.rs and
+    // span_contains in call_hierarchy.rs. One implementation (Span::contains) must
+    // remain, and the call sites must use it.
+    let index_src = include_str!("../src/workspace/index.rs");
+    assert!(
+        !index_src.contains("fn body_contains") && !index_src.contains("fn range_contains"),
+        "index.rs must not re-implement span containment as free functions"
+    );
+    let call_hierarchy_src = include_str!("../src/features/call_hierarchy.rs");
+    assert!(
+        !call_hierarchy_src.contains("fn span_contains"),
+        "call_hierarchy.rs must not re-implement span containment as a free function"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");

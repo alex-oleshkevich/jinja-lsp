@@ -80,7 +80,7 @@ impl TemplateIndex {
                 self.variables
                     .iter()
                     .filter(|v| {
-                        v.name == reference.name && range_contains(&v.valid_range, &reference.span)
+                        v.name == reference.name && v.valid_range.contains(&reference.span)
                     })
                     .min_by_key(|v| {
                         v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte)
@@ -131,11 +131,11 @@ impl TemplateIndex {
     pub fn enclosing_owner<'a>(&'a self, span: &Span) -> EnclosingOwner<'a> {
         // Collect all candidates (macros and blocks whose body contains span).
         let best_macro = self.macros.iter()
-            .filter(|m| m.body.start_byte < m.body.end_byte && body_contains(&m.body, span))
+            .filter(|m| m.body.contains(span))
             .min_by_key(|m| m.body.end_byte.saturating_sub(m.body.start_byte));
 
         let best_block = self.blocks.iter()
-            .filter(|b| b.body.start_byte < b.body.end_byte && body_contains(&b.body, span))
+            .filter(|b| b.body.contains(span))
             .min_by_key(|b| b.body.end_byte.saturating_sub(b.body.start_byte));
 
         match (best_macro, best_block) {
@@ -150,14 +150,6 @@ impl TemplateIndex {
             }
         }
     }
-}
-
-fn body_contains(body: &Span, span: &Span) -> bool {
-    body.start_byte <= span.start_byte && span.end_byte <= body.end_byte
-}
-
-fn range_contains(range: &Span, span: &Span) -> bool {
-    range.start_byte <= span.start_byte && span.end_byte <= range.end_byte
 }
 
 /// REQ-DATA-09: maps each template path to its per-file index.

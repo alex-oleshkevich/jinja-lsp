@@ -10,9 +10,14 @@ pub struct Span {
 }
 
 impl Span {
-    /// True when `other` is contained within this span.
+    /// True when `other` is contained within this span. A degenerate (empty) span
+    /// never contains anything, even another empty span at the same offset —
+    /// jinja-lsp-zcc7: this guards against e.g. an uninitialized `Span::default()`
+    /// body spuriously "containing" an equally-uninitialized reference span.
     pub fn contains(&self, other: &Span) -> bool {
-        self.start_byte <= other.start_byte && other.end_byte <= self.end_byte
+        self.start_byte < self.end_byte
+            && self.start_byte <= other.start_byte
+            && other.end_byte <= self.end_byte
     }
 }
 

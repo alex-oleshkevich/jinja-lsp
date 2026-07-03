@@ -167,7 +167,7 @@ pub fn outgoing_calls(
         if !matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier) {
             continue;
         }
-        if !span_contains(body, &r.span) {
+        if !body.contains(&r.span) {
             continue;
         }
 
@@ -204,7 +204,7 @@ pub fn outgoing_calls(
         if tref.is_dynamic || tref.ignore_missing {
             continue;
         }
-        if !span_contains(body, &tref.span) {
+        if !body.contains(&tref.span) {
             continue;
         }
 
@@ -264,13 +264,6 @@ fn global_item(name: &str, pack: &str) -> CallHierarchyItem {
         range: zero.clone(),
         selection_range: zero,
     }
-}
-
-/// True when `outer` fully contains `inner` (by byte offsets).
-fn span_contains(outer: &Span, inner: &Span) -> bool {
-    outer.start_byte < outer.end_byte
-        && outer.start_byte <= inner.start_byte
-        && inner.end_byte <= outer.end_byte
 }
 
 fn span_to_range(s: &Span) -> HierarchyRange {
