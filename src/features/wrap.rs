@@ -3,10 +3,6 @@
 use crate::edit::{TextEdit, WorkspaceEdit};
 use std::collections::HashMap;
 
-pub fn layer_name() -> &'static str {
-    "wrap"
-}
-
 /// The kind of wrapper to insert around the selection.
 #[derive(Debug, Clone)]
 pub enum WrapKind {

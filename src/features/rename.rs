@@ -8,10 +8,6 @@ use crate::workspace::{
     symbols::{ReferenceKind, Span},
 };
 
-pub fn layer_name() -> &'static str {
-    "rename"
-}
-
 /// The scope of a rename operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenameTarget {

@@ -8,10 +8,6 @@ use crate::format::{format_with_config, format_with_options, FormatterConfig};
 
 pub use crate::format::FormatOptions;
 
-pub fn layer_name() -> &'static str {
-    "formatting"
-}
-
 /// Format the entire document. Returns a minimal Vec<TextEdit>:
 /// - Empty if the source is already formatted.
 /// - A single edit per changed line replacing it with the formatted version.

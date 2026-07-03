@@ -5,10 +5,6 @@ use std::collections::HashMap;
 use crate::edit::{TextEdit, WorkspaceEdit};
 use crate::features::wrap::selection_is_well_formed;
 
-pub fn layer_name() -> &'static str {
-    "extract_macro"
-}
-
 /// Compute a WorkspaceEdit that extracts lines [start_line, end_line] (inclusive) into a macro.
 ///
 /// The edit:

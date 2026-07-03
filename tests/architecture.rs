@@ -304,6 +304,17 @@ fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
 }
 
 #[test]
+fn jinja_lsp_v944_unused_submodule_layer_name_stubs_removed() {
+    // jinja-lsp-v944: layer_name() in rename.rs/formatting.rs/wrap.rs/extract_macro.rs
+    // had no callers anywhere — only the top-level module layer_names (features::,
+    // parsing::, etc.) are exercised by tests/fold.rs. Delete the four dead stubs.
+    assert!(!include_str!("../src/features/rename.rs").contains("fn layer_name"), "rename.rs must not define an unused layer_name() stub");
+    assert!(!include_str!("../src/features/formatting.rs").contains("fn layer_name"), "formatting.rs must not define an unused layer_name() stub");
+    assert!(!include_str!("../src/features/wrap.rs").contains("fn layer_name"), "wrap.rs must not define an unused layer_name() stub");
+    assert!(!include_str!("../src/features/extract_macro.rs").contains("fn layer_name"), "extract_macro.rs must not define an unused layer_name() stub");
+}
+
+#[test]
 fn jinja_lsp_qved_empty_root_queries_dir_removed() {
     // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
     // tree-sitter query files live in src/parsing/queries/ (included via
