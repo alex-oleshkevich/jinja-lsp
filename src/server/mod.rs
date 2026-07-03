@@ -510,14 +510,35 @@ impl LanguageServer for Backend {
     /// REQ-ARCH-05 / REQ-EDIT-11: change triggers Pass 1 (full-sync, newest content wins).
     /// Only for documents did_open already accepted (tracked in `state.sources`) — a
     /// document did_open rejected for languageId must not get indexed on its first edit.
+    ///
+    /// jinja-lsp-q0aw: tower-lsp dispatches notifications concurrently, so two rapid
+    /// edits can interleave as pass1(A), pass1(B), publish(B), publish(A) — leaving
+    /// stale diagnostics for the newest text. Record this edit's document version and
+    /// skip the publish if a newer version has already been recorded by the time
+    /// pass1 finishes (that newer call's own publish will show correct diagnostics).
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.into_iter().last() {
             let key = Self::uri_to_key(&params.text_document.uri);
-            let tracked = self.state.read().await.sources.contains_key(&key);
+            let version = params.text_document.version;
+            let tracked = {
+                let mut state = self.state.write().await;
+                if !state.sources.contains_key(&key) {
+                    false
+                } else {
+                    state.doc_versions.entry(key.clone())
+                        .and_modify(|v| *v = (*v).max(version))
+                        .or_insert(version);
+                    true
+                }
+            };
             if !tracked {
                 return;
             }
             self.pass1(&key, &change.text).await;
+            let is_latest = self.state.read().await.doc_versions.get(&key).copied() == Some(version);
+            if !is_latest {
+                return;
+            }
             self.publish_file_diagnostics(&key).await;
         }
     }

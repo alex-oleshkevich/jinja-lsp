@@ -52,6 +52,10 @@ pub struct ServerState {
     /// REQ-HINT-01: per-template registries that layer a sidecar `.hints.md` on top of
     /// the folder registry. Populated (and invalidated) by `update_file`.
     pub sidecar_registries: HashMap<String, Registry>,
+    /// jinja-lsp-q0aw: latest known LSP document version per key (monotonic max), used
+    /// by `did_change` to detect and skip a stale `publish_file_diagnostics` call when
+    /// a newer edit's own pass1+publish already landed while this one was still running.
+    pub doc_versions: HashMap<String, i32>,
 }
 
 impl ServerState {
@@ -72,6 +76,7 @@ impl ServerState {
             extra_folders: Vec::new(),
             init_overlay: None,
             sidecar_registries: HashMap::new(),
+            doc_versions: HashMap::new(),
         }
     }
 
@@ -91,6 +96,7 @@ impl ServerState {
             extra_folders: Vec::new(),
             init_overlay: None,
             sidecar_registries: HashMap::new(),
+            doc_versions: HashMap::new(),
         }
     }
 

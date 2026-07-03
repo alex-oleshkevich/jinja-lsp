@@ -47,6 +47,43 @@ fn generation_increments_on_update() {
     assert!(state.generation > gen0, "generation must increment after update_file");
 }
 
+// ---------- jinja-lsp-q0aw: stale-diagnostics-publish guard via doc_versions ----
+
+#[test]
+fn jinja_lsp_q0aw_stale_publish_is_detected_after_interleaved_pass1() {
+    // Simulates did_change's exact race: pass1(A) then pass1(B) both complete (in
+    // real edit order) before either call reaches its publish step. The SLOWER task
+    // (A, the older edit) must detect — via doc_versions — that a newer version (B)
+    // has already landed by the time it's ready to publish, and skip.
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
+    state.sources.insert("t.html".to_owned(), String::new()); // did_open already tracked it
+
+    // did_change(A): record version 1, then run pass1.
+    let version_a = 1;
+    state.doc_versions.entry("t.html".to_owned())
+        .and_modify(|v| *v = (*v).max(version_a))
+        .or_insert(version_a);
+    state.update_file("t.html", "{{ a }}");
+
+    // did_change(B) interleaves and fully completes before A checks in: record
+    // version 2, run pass1 with the newer text.
+    let version_b = 2;
+    state.doc_versions.entry("t.html".to_owned())
+        .and_modify(|v| *v = (*v).max(version_b))
+        .or_insert(version_b);
+    state.update_file("t.html", "{{ b }}");
+
+    // Now A finally checks whether it's still the latest version — it must not be.
+    let a_is_latest = state.doc_versions.get("t.html").copied() == Some(version_a);
+    assert!(!a_is_latest, "the older edit (A) must detect it is stale and skip publishing");
+
+    // B, checking immediately after its own pass1, must see itself as latest.
+    let b_is_latest = state.doc_versions.get("t.html").copied() == Some(version_b);
+    assert!(b_is_latest, "the newer edit (B) must see itself as the latest version");
+}
+
 // ---------- REQ-FOLD-07: TextEdit/WorkspaceEdit live in edit/, not code_actions
 #[test]
 fn textedit_and_workspaceedit_defined_in_edit_module() {
