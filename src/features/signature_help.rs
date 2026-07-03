@@ -40,7 +40,7 @@ pub fn signature_help(
     col: u32,
     index: &TemplateIndex,
     registry: &Registry,
-    _workspace: &WorkspaceIndex,
+    workspace: &WorkspaceIndex,
 ) -> Option<SignatureHelp> {
     let cursor = line_col_to_byte(source, line, col);
 
@@ -53,8 +53,8 @@ pub fn signature_help(
     // Identify the callee name and whether it's a filter call.
     let (callee, is_filter) = callee_before_paren(inner, state.open_paren_pos, is_filter_ctx)?;
 
-    // Resolve signature from macro params or registry.
-    let sh = resolve_signature(callee, is_filter, state.comma_count, index, registry)?;
+    // Resolve signature from macro params, from-imports, or registry.
+    let sh = resolve_signature(callee, is_filter, state.comma_count, index, registry, workspace)?;
     Some(sh)
 }
 
@@ -211,6 +211,7 @@ fn resolve_signature(
     comma_count: usize,
     index: &TemplateIndex,
     registry: &Registry,
+    workspace: &WorkspaceIndex,
 ) -> Option<SignatureHelp> {
     if is_filter {
         // REQ-SIG-03: filter call — look in Category::Filter.
@@ -234,6 +235,20 @@ fn resolve_signature(
     // Try macro first.
     if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
         return Some(macro_signature(m, comma_count));
+    }
+
+    // Then from-imported macros.
+    for fi in &index.from_imports {
+        for n in &fi.names {
+            let matches = n.name == callee || n.alias.as_deref() == Some(callee);
+            if matches {
+                if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
+                    if let Some(m) = src_idx.macros.iter().find(|m| m.name == n.name) {
+                        return Some(macro_signature(m, comma_count));
+                    }
+                }
+            }
+        }
     }
 
     // Then registry functions and tests.

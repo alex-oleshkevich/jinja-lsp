@@ -276,6 +276,25 @@ fn sig_pgem_escaped_quote_does_not_miscount_commas() {
 }
 
 #[test]
+fn sig_from_imported_macro_resolves_signature() {
+    // completions.rs's resolve_callee_params already resolves from-imported macros via
+    // index.from_imports + workspace.get_by_ref; signature_help must do the same instead
+    // of only checking local macros and the registry.
+    let src = "{% from \"macros.html\" import greet %}{{ greet( }}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("macros.html", "{% macro greet(name, msg='hi') %}{% endmacro %}");
+    let col = src.rfind('(').unwrap() as u32 + 1;
+    let sh = signature_help(src, 0, col, &idx, &reg, &ws);
+    assert!(sh.is_some(), "from-imported macro call must return signature");
+    let sh = sh.unwrap();
+    assert!(sh.label.contains("greet"), "label must contain macro name: {}", sh.label);
+    let param_labels: Vec<&str> = sh.params.iter().map(|p| p.label.as_str()).collect();
+    assert!(param_labels.iter().any(|l| l.contains("name")), "must have 'name' param: {param_labels:?}");
+}
+
+#[test]
 fn sig_gmy7_nested_call_active_param_is_local_to_inner() {
     // After `inner(2, `, comma_count inside inner is 1 → active_parameter = Some(1).
     let src = "{% macro inner(a, b) %}{% endmacro %}{{ range(1, inner(2, }}";
