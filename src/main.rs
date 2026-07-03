@@ -219,6 +219,9 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
             w107_diags.extend(w107s.into_iter().map(|mut d| { d.file = file_path.to_owned(); d }));
         }
     }
+    // REQ-DIAG-06/jinja-lsp-ibun: W107 (invalid-noqa) must respect the same
+    // select/ignore filters as every other diagnostic code.
+    let w107_diags: Vec<Diagnostic> = filter_by_config(&w107_diags, &sel, &ign).into_iter().cloned().collect();
     post_noqa.extend(w107_diags);
     // Shadow `filtered` so the rest of the function uses the noqa-suppressed set.
     let filtered = post_noqa;

@@ -260,6 +260,22 @@ fn jinja_lsp_8dqt_invalid_noqa_reported_when_file_has_no_other_diagnostics() {
     assert_eq!(code, 1, "W107 is a finding → exit 1");
 }
 
+#[test]
+fn jinja_lsp_ibun_ignored_w107_is_not_reported() {
+    // jinja-lsp-ibun: W107 diagnostics were appended AFTER filter_by_config ran,
+    // so --ignore JINJA-W107 (or a --select that excludes it) had no effect on them.
+    let tmp = tmpdir("w107-ignored");
+    fs::write(tmp.join("t.html"), "<p>hello</p>\n{# noqa: bad-code #}\n").unwrap();
+    let (stdout, _, code) = check(&["--format", "json", "--ignore", "JINJA-W107", tmp.to_str().unwrap()]);
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let codes: Vec<&str> = arr.iter()
+        .filter_map(|v| v["code"].as_str())
+        .collect();
+    assert!(!codes.contains(&"JINJA-W107"),
+        "W107 must be suppressed by --ignore JINJA-W107, got codes: {codes:?}");
+    assert_eq!(code, 0, "no findings remain after ignoring the only diagnostic → exit 0");
+}
+
 // ---------- jinja-lsp-6g3l: invalid --format must exit 2 -------------------
 
 #[test]

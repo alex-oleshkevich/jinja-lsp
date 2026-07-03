@@ -118,6 +118,10 @@ impl Backend {
         let filtered: Vec<crate::diagnostic::Diagnostic> =
             filter_by_config(&raw, &select, &ignore).into_iter().cloned().collect();
         let (kept, w107s) = suppress_by_noqa(&filtered, source);
+        // REQ-DIAG-06/jinja-lsp-ibun: W107 (invalid-noqa) must respect the same
+        // select/ignore filters as every other diagnostic code.
+        let w107s: Vec<crate::diagnostic::Diagnostic> =
+            filter_by_config(&w107s, &select, &ignore).into_iter().cloned().collect();
         let utf8 = state.position_encoding_utf8;
         let mut lsp_diags: Vec<LspDiagnostic> =
             kept.into_iter().chain(w107s).map(|d| to_lsp_diagnostic(source, utf8, &d)).collect();
