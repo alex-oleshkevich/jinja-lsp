@@ -506,6 +506,12 @@ impl LanguageServer for Backend {
             return;
         }
         let key = Self::uri_to_key(&params.text_document.uri);
+        // jinja-lsp-wgi7: a reopened document's version counter is not guaranteed to
+        // continue from where it left off before the previous close — most clients
+        // restart it (often back to 1). Clear any stale high-water mark left by
+        // jinja-lsp-q0aw's monotonic-max guard, or every did_change after reopen
+        // would see a lower version than the stale mark and skip its publish forever.
+        self.state.write().await.doc_versions.remove(&key);
         self.pass1(&key, &params.text_document.text).await;
         self.publish_file_diagnostics(&key).await;
     }
@@ -550,7 +556,15 @@ impl LanguageServer for Backend {
 
     /// REQ-ARCH-05: close keeps the file in the index; it may still be
     /// referenced by other templates.
-    async fn did_close(&self, _params: DidCloseTextDocumentParams) {}
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        // jinja-lsp-wgi7: this document's LSP editing session has ended, so its
+        // version-tracking high-water mark is no longer meaningful — a future
+        // did_open starts a fresh version stream. Clearing it here (not just on
+        // reopen) also prevents doc_versions growing unboundedly across many
+        // open/close cycles over a long-running server session.
+        let key = Self::uri_to_key(&params.text_document.uri);
+        self.state.write().await.doc_versions.remove(&key);
+    }
 
     /// REQ-ARCH-06: watched-files dispatch — config and template file changes.
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
@@ -608,6 +622,9 @@ impl LanguageServer for Backend {
                         workspace.clear_inline_entries_for(&key);
                         state.sources.remove(&key);
                         state.sidecar_registries.remove(&key);
+                        // jinja-lsp-wgi7: also drop the version high-water mark so a
+                        // future recreate+reopen of this path doesn't inherit a stale one.
+                        state.doc_versions.remove(&key);
                     }
                     let uri = path_to_uri(&key);
                     self.client.publish_diagnostics(uri, vec![], None).await;

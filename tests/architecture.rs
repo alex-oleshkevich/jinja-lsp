@@ -84,6 +84,74 @@ fn jinja_lsp_q0aw_stale_publish_is_detected_after_interleaved_pass1() {
     assert!(b_is_latest, "the newer edit (B) must see itself as the latest version");
 }
 
+// ---------- jinja-lsp-wgi7: doc_versions must not survive close/reopen -------
+
+#[test]
+fn jinja_lsp_wgi7_stale_high_water_mark_does_not_freeze_diagnostics_after_reopen() {
+    // jinja-lsp-wgi7: LSP clients are not guaranteed to keep document versions
+    // monotonic across a close/reopen — most (VS Code, coc.nvim, ...) restart the
+    // counter. Without clearing doc_versions on close/reopen, a high version
+    // recorded before close permanently outranks every post-reopen edit, so
+    // is_latest is false forever and diagnostics never publish again.
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
+    state.sources.insert("t.html".to_owned(), String::new());
+
+    // Many edits before close drive the version high.
+    for v in 1..=20i32 {
+        state.doc_versions.entry("t.html".to_owned())
+            .and_modify(|cur| *cur = (*cur).max(v))
+            .or_insert(v);
+    }
+    assert_eq!(state.doc_versions.get("t.html").copied(), Some(20));
+
+    // did_close / did_open must clear the stale entry (this is what the fix in
+    // server/mod.rs's did_close and did_open handlers does).
+    state.doc_versions.remove("t.html");
+
+    // Reopen restarts the client's version counter at 1, then the user edits again.
+    let restarted_version = 1;
+    state.doc_versions.entry("t.html".to_owned())
+        .and_modify(|cur| *cur = (*cur).max(restarted_version))
+        .or_insert(restarted_version);
+
+    let is_latest = state.doc_versions.get("t.html").copied() == Some(restarted_version);
+    assert!(
+        is_latest,
+        "after doc_versions is cleared on close/reopen, a restarted version counter \
+         must be recognized as latest — otherwise diagnostics freeze forever"
+    );
+}
+
+#[test]
+fn jinja_lsp_wgi7_did_open_and_did_close_clear_doc_versions() {
+    // Structural: verify the fix is actually wired into the handlers, not just
+    // provable as a state-level invariant.
+    let src = include_str!("../src/server/mod.rs");
+
+    let open_start = src.find("async fn did_open(").expect("did_open must exist");
+    let open_end = open_start + src[open_start..].find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: change triggers").expect("did_change doc must follow did_open");
+    assert!(
+        src[open_start..open_end].contains("doc_versions.remove"),
+        "did_open must clear any stale doc_versions high-water mark from before a close/reopen cycle"
+    );
+
+    let close_start = src.find("async fn did_close(").expect("did_close must exist");
+    let close_end = close_start + src[close_start..].find("\n    async fn did_change_watched_files").expect("did_change_watched_files must follow did_close");
+    assert!(
+        src[close_start..close_end].contains("doc_versions.remove"),
+        "did_close must clear this document's doc_versions entry"
+    );
+
+    let deleted_start = src.find("FileChangeType::DELETED =>").expect("DELETED arm must exist");
+    let deleted_end = deleted_start + src[deleted_start..].find("\n                _ => {}").expect("catch-all arm must follow DELETED");
+    assert!(
+        src[deleted_start..deleted_end].contains("doc_versions.remove"),
+        "the DELETED watched-file branch must also clear doc_versions"
+    );
+}
+
 // ---------- REQ-FOLD-07: TextEdit/WorkspaceEdit live in edit/, not code_actions
 #[test]
 fn textedit_and_workspaceedit_defined_in_edit_module() {
