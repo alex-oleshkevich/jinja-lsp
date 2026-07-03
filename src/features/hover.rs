@@ -137,8 +137,10 @@ pub fn hover(
 
     // ── Word-level fallback: check text at cursor for special objects,
     //    imported names, keyword args, and statement keywords ──────────────────
-    // REQ-HOV-08: suppress hover inside {% raw %} bodies and plain string literals.
-    if is_in_raw_body(source, byte) || is_in_string_literal(source, byte) {
+    // REQ-HOV-08: suppress hover inside {% raw %} bodies, plain string literals,
+    // and outside Jinja delimiters entirely (e.g. plain HTML text that happens to
+    // match a keyword, macro name, or imported name/alias).
+    if is_in_raw_body(source, byte) || is_in_string_literal(source, byte) || !super::inside_jinja(source, byte) {
         return None;
     }
     if let Some((word, wb_start, wb_end)) = word_at_byte_range(source, byte) {

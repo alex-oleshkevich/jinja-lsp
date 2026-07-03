@@ -117,6 +117,29 @@ fn hov08_inside_jinja_comment_returns_none() {
 }
 
 #[test]
+fn hov08_plain_html_word_matching_special_name_returns_none() {
+    // The word-level fallback only guarded against raw bodies and string literals,
+    // never checking inside_jinja — so plain HTML prose containing "loop" produced
+    // a hover card outside any Jinja delimiter.
+    let src = "<p>the loop continues</p>";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None for 'loop' in plain HTML text; got: {:?}", result.map(|r| r.markdown));
+}
+
+#[test]
+fn hov08_plain_html_word_matching_macro_name_returns_none() {
+    let src = "{% macro greet() %}{% endmacro %}<p>please greet the guest</p>";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, last_col_of(src, "greet"), &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None for macro name appearing in plain HTML text; got: {:?}", result.map(|r| r.markdown));
+}
+
+#[test]
 fn hov08_raw_body_returns_none() {
     // REQ-HOV-08 (jinja-lsp-kz25): hover inside {% raw %} body must be silent.
     let src = "{% raw %}{{ loop }}{% endraw %}";
