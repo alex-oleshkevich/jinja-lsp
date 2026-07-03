@@ -473,7 +473,18 @@ fn remove_duplicate_from_import(
 ) -> Option<CodeAction> {
     let name = extract_quoted_name(&diag.message)?;
     let fi = index.from_imports.iter().find(|fi| fi.span.start_line == diag.line)?;
-    let edit = delete_region_clean(source, fi.span.start_line, fi.span.start_line + 1);
+
+    // Multi-name import: remove only the duplicate name, keeping the other valid names
+    // on the line (mirrors remove_unused_import's surgical single-name removal).
+    let edit = if fi.names.len() > 1 {
+        let line_idx = fi.span.start_line;
+        let line = source_line(source, line_idx);
+        let new_line = remove_name_from_import_line(line, &name)?;
+        TextEdit { start_line: line_idx, start_col: 0, end_line: line_idx, end_col: line.len() as u32, new_text: new_line }
+    } else {
+        delete_region_clean(source, fi.span.start_line, fi.span.start_line + 1)
+    };
+
     Some(CodeAction {
         title: format!("Remove duplicate from-import '{name}'"),
         kind: ActionKind::QuickFix,

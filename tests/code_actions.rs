@@ -649,6 +649,25 @@ fn act06_t16_remove_duplicate_from_import() {
     assert_eq!(result, "{% from \"x.html\" import foo %}", "later from-import removed");
 }
 
+// ─── REQ-ACT-06: multi-name from-import removes only the duplicate name ─────
+
+#[test]
+fn act06_remove_duplicate_from_import_keeps_other_names_on_line() {
+    // "b" is imported once (new), "a" is a duplicate of the earlier import — only
+    // "a" must be removed from the second statement's line; "b" must survive.
+    let src = "{% from \"x.html\" import a %}\n{% from \"x.html\" import a, b %}";
+    let idx = extract(src);
+    let diags = vec![w304(1, "a")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1);
+    let result = apply(src, "t.html", &actions);
+    assert_eq!(
+        result,
+        "{% from \"x.html\" import a %}\n{% from \"x.html\" import b %}",
+        "duplicate name 'a' removed, valid import 'b' preserved"
+    );
+}
+
 // ─── REQ-ACT-06: T-17 — Rename shadowing variable ────────────────────────────
 
 #[test]
