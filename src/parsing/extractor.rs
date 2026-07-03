@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
@@ -424,8 +424,8 @@ fn bytes_to_line_col(bytes: &[u8], offset: usize) -> (u32, u32) {
 
 fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, scope_regions: &[ScopeRegion]) {
     let source_len = bytes.len();
-    let mut seen_set: HashMap<usize, ()> = HashMap::new();
-    let mut seen_for: HashMap<usize, ()> = HashMap::new();
+    let mut seen_set: HashSet<usize> = HashSet::new();
+    let mut seen_for: HashSet<usize> = HashSet::new();
 
     run_set_unpacking(tree, bytes, idx, &mut seen_set, scope_regions, source_len);
     run_set(tree, bytes, idx, &seen_set, scope_regions, source_len);
@@ -439,7 +439,7 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex,
 
 fn run_set_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
+    idx: &mut TemplateIndex, seen: &mut HashSet<usize>,
     scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_SET_UNPACKING;
@@ -466,7 +466,7 @@ fn run_set_unpacking(
             }
         }
         if let Some(k) = key {
-            seen.insert(k, ());
+            seen.insert(k);
             let scope = scope_for_byte(scope_regions, k);
             let valid_end = enclosing_region(scope_regions, set_ctrl_end)
                 .map(|r| r.body_end)
@@ -481,7 +481,7 @@ fn run_set_unpacking(
 
 fn run_set(
     tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
+    idx: &mut TemplateIndex, skip: &HashSet<usize>,
     scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_SET;
@@ -504,8 +504,8 @@ fn run_set(
                 }
             }
         }
-        if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
-            let k = key.unwrap_or(0);
+        let k = key.unwrap_or(0);
+        if !name.is_empty() && !skip.contains(&k) {
             let scope = scope_for_byte(scope_regions, k);
             let valid_end = enclosing_region(scope_regions, set_ctrl_end)
                 .map(|r| r.body_end)
@@ -631,7 +631,7 @@ fn find_subslice(bytes: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
 
 fn run_for_unpacking(
     tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, seen: &mut HashMap<usize, ()>,
+    idx: &mut TemplateIndex, seen: &mut HashSet<usize>,
     scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_FOR_UNPACKING;
@@ -658,7 +658,7 @@ fn run_for_unpacking(
             }
         }
         if let Some(k) = key {
-            seen.insert(k, ());
+            seen.insert(k);
             // Find the ForLoop region whose body_start matches this for-tag's ctrl end.
             // Fallback to end-of-source for incomplete templates (no {% endfor %}).
             let valid_range = scope_regions.iter()
@@ -674,7 +674,7 @@ fn run_for_unpacking(
 
 fn run_for(
     tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, skip: &HashMap<usize, ()>,
+    idx: &mut TemplateIndex, skip: &HashSet<usize>,
     scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_FOR;
@@ -697,7 +697,7 @@ fn run_for(
                 }
             }
         }
-        if !name.is_empty() && !skip.contains_key(&key.unwrap_or(0)) {
+        if !name.is_empty() && !skip.contains(&key.unwrap_or(0)) {
             // Fallback to end-of-source for incomplete templates (no {% endfor %}).
             let valid_range = scope_regions.iter()
                 .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)

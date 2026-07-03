@@ -349,6 +349,27 @@ fn jinja_lsp_7ug6_scope_regions_computed_once_per_extract() {
 }
 
 #[test]
+fn jinja_lsp_duuc_seen_sets_use_hashset_not_unit_hashmap() {
+    // jinja-lsp-duuc: seen_set/seen_for (and run_set/run_for's skip parameters) were
+    // HashMap<usize, ()> used purely as sets (insert(k, ()), contains_key). Use
+    // HashSet<usize> for clarity. Also run_set evaluated key.unwrap_or(0) twice —
+    // bind it once.
+    let src = include_str!("../src/parsing/extractor.rs");
+    assert!(
+        !src.contains("HashMap<usize, ()>"),
+        "extractor.rs must not use HashMap<usize, ()> as a set: use HashSet<usize>"
+    );
+    assert!(
+        !src.contains(".insert(k, ())"),
+        "extractor.rs must not insert unit values into a set-shaped map: {src}"
+    );
+    assert!(
+        !src.contains("skip.contains_key(&key.unwrap_or(0))"),
+        "run_set must not evaluate key.unwrap_or(0) twice"
+    );
+}
+
+#[test]
 fn jinja_lsp_qved_empty_root_queries_dir_removed() {
     // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
     // tree-sitter query files live in src/parsing/queries/ (included via
