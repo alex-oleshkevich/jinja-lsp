@@ -301,9 +301,17 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                         // nearest closing block delimiter.
                         let name_end = cap.node.end_byte();
                         if let Some(after) = bytes.get(name_end..) {
-                            let close = after.windows(2).position(|w| w == b"%}")
-                                .or_else(|| after.windows(3).position(|w| w == b"-%}"))
+                            // jinja-lsp-fx8f: bound the scan to the next tag opener or newline
+                            // so an unclosed block tag can't pick up a later "scoped" word
+                            // from anywhere else in the file. `-%}` is unreachable as a
+                            // separate case since `%}` is already a substring of it.
+                            let bound = (0..after.len())
+                                .find(|&i| after[i] == b'\n'
+                                    || after[i..].starts_with(b"{%")
+                                    || after[i..].starts_with(b"{{"))
                                 .unwrap_or(after.len());
+                            let close = after[..bound].windows(2).position(|w| w == b"%}")
+                                .unwrap_or(bound);
                             if let Ok(segment) = std::str::from_utf8(&after[..close]) {
                                 if segment.split_whitespace().any(|w| w == "scoped") {
                                     scoped = true;

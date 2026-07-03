@@ -135,3 +135,19 @@ fn extraction_from_import() {
     let card = index.from_imports[0].names.iter().find(|n| n.name == "card").unwrap();
     assert_eq!(card.alias.as_deref(), Some("c"));
 }
+
+#[test]
+fn jinja_lsp_fx8f_unclosed_block_does_not_leak_scoped_from_later_source() {
+    // jinja-lsp-fx8f: the scoped-keyword scan used unwrap_or(after.len()) when no `%}`
+    // was found, so an unclosed `{% block %}` tag scanned all the way to EOF looking
+    // for "scoped" — a later, unrelated line containing that word would wrongly mark
+    // the block as scoped. The scan must stop at the next newline/tag opener instead.
+    let source = "{% block foo\nplain text mentions scoped later\n";
+    let index = extract(source);
+    assert_eq!(index.blocks.len(), 1, "blocks: {:?}", index.blocks);
+    assert!(
+        !index.blocks[0].scoped,
+        "unclosed block must not pick up 'scoped' from a later, unrelated line: {:?}",
+        index.blocks[0]
+    );
+}
