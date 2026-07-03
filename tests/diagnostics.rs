@@ -401,6 +401,24 @@ fn noqa_bare_all_on_opening_line_suppresses_any_code() {
 }
 
 #[test]
+fn jinja_lsp_0l7z_noqa_suppresses_when_opening_line_has_a_closed_tag_before_the_open_one() {
+    // The opening-delimiter line has a FULLY CLOSED tag ({% set a = 1 %})
+    // followed by an OPEN (unclosed) one ({% if cond). find_enclosing_tag_open_line
+    // used to inspect only the FIRST {% on the line — since the substring from
+    // that first {% contains a %}, the line wasn't recognized as opening a
+    // multi-line tag at all, so a noqa comment there failed to suppress a
+    // diagnostic reported on the tag's body line.
+    let source = "{% set a = 1 %} {% if cond {# noqa: JINJA-E101 #}\n    undefined_var %}\n{% endif %}";
+    let diag = make_diag(1, "JINJA-E101", "undefined-variable");
+    let (kept, _) = suppress_by_noqa(&[diag], source);
+    assert!(
+        kept.is_empty(),
+        "noqa on the opening-delimiter line must suppress the diagnostic in the tag body, \
+         even though that line also has an earlier, fully-closed tag"
+    );
+}
+
+#[test]
 fn noqa_on_unrelated_earlier_line_does_not_suppress() {
     // noqa on line 0, diagnostic on line 2 — line 0 is NOT the opening delimiter for line 2
     let source = "{# noqa: JINJA-E101 #}\n{% for x in y %}\n    {{ z }}\n{% endfor %}";

@@ -211,7 +211,11 @@ fn find_enclosing_tag_open_line(lines: &[&str], diag_line: usize) -> Option<u32>
     }
     for line_no in (0..diag_line).rev() {
         let line = lines[line_no];
-        if let Some(open_pos) = line.find("{%") {
+        // jinja-lsp-0l7z: use the LAST `{%` on the line, not the first — a line can
+        // contain a closed tag followed by an open one (e.g.
+        // `{% set a = 1 %} {% if cond`), and only the final `{%` governs whether
+        // this line leaves a multi-line tag open.
+        if let Some(open_pos) = line.rfind("{%") {
             let after_open = &line[open_pos..];
             if !after_open.contains("%}") {
                 // {%…} opens here but doesn't close on this line → multi-line tag
