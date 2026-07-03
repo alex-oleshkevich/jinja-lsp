@@ -298,18 +298,19 @@ impl ServerState {
         idx.relative_path = workspace.templates.get(key).and_then(|old| old.relative_path.clone());
         workspace.templates.insert(key.to_owned(), idx);
 
-        // Remove stale inline entries from a previous version of this file.
-        let inline_prefix = format!("{key}::");
-        workspace.templates.retain(|k, _| !k.starts_with(&inline_prefix));
+        // jinja-lsp-bv6m: evict this file's previous inline entries (from both
+        // `templates` and `inline_ranges`) via the tracked key list instead of a
+        // full-map `retain` scan — this runs on every keystroke. Unconditional (not
+        // gated on is_host_file_for_config) so entries don't linger if a config
+        // change makes a former host file a plain template.
+        workspace.clear_inline_entries_for(key);
 
         // For host files, detect embedded Jinja templates and index each one.
         if Self::is_host_file_for_config(key, config) {
             let patterns: Vec<&str> = config.inline_patterns.iter().map(|s| s.as_str()).collect();
-            // Clear stale inline range metadata alongside stale template entries.
-            workspace.inline_ranges.retain(|k, _| !k.starts_with(&inline_prefix));
             for region in detect_inline_regions(source, &patterns) {
                 let inline_key = format!("{key}::{}", region.host_offset);
-                workspace.index_inline(&inline_key, &region.content);
+                workspace.index_inline_for_host(key, &inline_key, &region.content);
                 // REQ-INLN-03: store host-coordinate metadata for position translation.
                 workspace.register_inline_range(&inline_key, InlineRange {
                     host_path: key.to_owned(),

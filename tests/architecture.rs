@@ -229,6 +229,26 @@ fn jinja_lsp_zcc7_span_containment_is_not_duplicated() {
 }
 
 #[test]
+fn jinja_lsp_bv6m_index_file_into_does_not_full_scan_templates() {
+    // jinja-lsp-bv6m: index_file_into ran workspace.templates.retain(..) and
+    // workspace.inline_ranges.retain(..) over the ENTIRE template map on every
+    // update_file call (every keystroke) just to evict a handful of one file's
+    // inline sub-entries. Must instead track and remove exactly those keys.
+    let src = include_str!("../src/server/state.rs");
+    let start = src.find("fn index_file_into(").expect("index_file_into must exist");
+    let end = start + src[start..].find("\n    fn is_host_file_for_config").expect("is_host_file_for_config must follow index_file_into");
+    let func = &src[start..end];
+    assert!(
+        !func.contains("templates.retain") && !func.contains("inline_ranges.retain"),
+        "index_file_into must not full-scan templates/inline_ranges via retain: {func}"
+    );
+    assert!(
+        func.contains("clear_inline_entries_for"),
+        "index_file_into must evict stale inline entries via the tracked-key helper: {func}"
+    );
+}
+
+#[test]
 fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
     // suite used it) and failed its own traversal-defence contract for absolute
@@ -378,4 +398,32 @@ fn jinja_template_file_does_not_trigger_inline_detection() {
         .filter(|k| k.starts_with("template.html::"))
         .collect();
     assert!(inline_keys.is_empty(), "Jinja template must not produce inline entries; got: {inline_keys:?}");
+}
+
+#[test]
+fn jinja_lsp_bv6m_stale_inline_entries_removed_when_host_status_changes() {
+    // jinja-lsp-bv6m: the old inline_ranges retain-cleanup only ran inside the
+    // `is_host_file_for_config` branch, so if a config change makes a former host
+    // file a plain template (its extension added to config.extensions), the old
+    // inline_ranges entries were never evicted and lingered forever.
+    use jinja_lsp::server::state::ServerState;
+
+    let mut state = ServerState::with_config(Default::default());
+    state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
+    assert_eq!(state.workspace.inline_ranges.len(), 1, "initial: 1 inline_ranges entry");
+
+    // Reconfigure so "py" is now a Jinja template extension — views.py is no longer a host file.
+    let mut cfg = state.config.clone();
+    cfg.extensions.push("py".to_owned());
+    state.reset_config(cfg);
+    state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
+
+    assert_eq!(
+        state.workspace.inline_ranges.len(), 0,
+        "inline_ranges must not linger once the file is no longer classified as a host file"
+    );
+    assert!(
+        !state.workspace.templates.keys().any(|k| k.starts_with("views.py::")),
+        "templates must not retain stale inline entries once the file is no longer a host file"
+    );
 }

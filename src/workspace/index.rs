@@ -159,9 +159,33 @@ pub struct WorkspaceIndex {
     /// REQ-INLN-03: host-coordinate metadata for each inline template entry.
     /// Keyed by the inline template key (e.g. `/path/view.py::47`).
     pub inline_ranges: HashMap<String, InlineRange>,
+    /// jinja-lsp-bv6m: each host file's current inline entry keys, so re-indexing a
+    /// host file can evict exactly its own stale inline entries (from `templates` and
+    /// `inline_ranges`) without a full-map `retain` scan on every keystroke.
+    pub host_inline_keys: HashMap<String, Vec<String>>,
 }
 
 impl WorkspaceIndex {
+    /// jinja-lsp-bv6m: remove every inline entry previously registered for `host_key`
+    /// (from both `templates` and `inline_ranges`), and clear its tracked key list.
+    /// Call this before re-detecting a host file's inline regions on re-index.
+    pub fn clear_inline_entries_for(&mut self, host_key: &str) {
+        if let Some(keys) = self.host_inline_keys.remove(host_key) {
+            for k in keys {
+                self.templates.remove(&k);
+                self.inline_ranges.remove(&k);
+            }
+        }
+    }
+
+    /// REQ-EXTR-05: index an inline Jinja region under `key` — identical to a file-based entry.
+    /// Tracks `key` under `host_key` so a later `clear_inline_entries_for(host_key)` can
+    /// evict it directly.
+    pub fn index_inline_for_host(&mut self, host_key: &str, key: &str, source: &str) {
+        self.index_inline(key, source);
+        self.host_inline_keys.entry(host_key.to_owned()).or_default().push(key.to_owned());
+    }
+
     /// REQ-EXTR-05: index an inline Jinja region under `key` — identical to a file-based entry.
     pub fn index_inline(&mut self, key: &str, source: &str) {
         let mut idx = extract(source);
