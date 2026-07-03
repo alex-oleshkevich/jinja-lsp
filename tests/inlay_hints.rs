@@ -311,6 +311,41 @@ fn inlay02_nested_blocks_echo_correct_name() {
     assert!(hs.iter().any(|h| h.label == "outer"), "second endblock must echo 'outer'");
 }
 
+#[test]
+fn jinja_lsp_7h6z_raw_section_endblock_text_does_not_corrupt_real_block_stack() {
+    // A raw section containing literal "{% endblock %}" text (e.g. documentation
+    // showing Jinja syntax) must not pop the real block stack — the scan wasn't
+    // honoring {% raw %}, so the literal endblock inside raw wrongly consumed
+    // "outer"'s stack entry (and got the "outer" echo itself), leaving the REAL
+    // endblock (after {% endraw %}) with an empty stack and no echo hint at all.
+    let src = "{% block outer %}{% raw %}{% endblock %}{% endraw %}{% endblock %}";
+    let hs = hints(src);
+    let echoes: Vec<_> = hs.iter().filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. })).collect();
+    assert_eq!(echoes.len(), 1, "exactly one echo hint: the real endblock, not the literal one inside {{% raw %}}");
+    assert_eq!(echoes[0].label, "outer");
+    // The real (last) "endblock" keyword starts at this byte offset.
+    let real_endblock_col = src.rfind("endblock").unwrap() as u32 + "endblock".len() as u32;
+    assert_eq!(
+        echoes[0].col, real_endblock_col,
+        "the echo must be anchored to the REAL endblock (after {{% endraw %}}), not the literal one inside raw"
+    );
+}
+
+#[test]
+fn jinja_lsp_7h6z_raw_section_block_open_text_does_not_push_phantom_entry() {
+    // A raw {% block x %} (with no matching real endblock inside the raw section)
+    // must not push a phantom stack entry. With the bug, this phantom persists
+    // under the real block's own entry and gets wrongly popped (and echoed) by a
+    // SECOND bare endblock that has no matching real opener at all.
+    let src = "{% raw %}{% block x %}{% endraw %}{% block real %}y{% endblock %}{% endblock %}";
+    let hs = hints(src);
+    let echoes: Vec<_> = hs.iter().filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. })).collect();
+    // Only the first bare endblock has a real matching opener ("real"); the
+    // second is a stray endblock with nothing left on a correctly-tracked stack.
+    assert_eq!(echoes.len(), 1, "the phantom 'x' entry must not let the stray second endblock echo anything: {echoes:?}");
+    assert_eq!(echoes[0].label, "real");
+}
+
 // ─── REQ-INLAY-04: toggles are independent ───────────────────────────────────
 
 #[test]

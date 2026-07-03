@@ -391,6 +391,10 @@ fn collect_endblock_echoes(source: &str, template_path: &str, out: &mut Vec<Inla
     let bytes = source.as_bytes();
     let mut block_stack: Vec<String> = Vec::new();
     let mut i = 0;
+    // jinja-lsp-7h6z: while inside {% raw %}…{% endraw %}, literal tag text (e.g. a
+    // stray {% endblock %} written as example markup) must not affect the real
+    // block stack. Mirrors folding.rs's in_raw handling for the same scan.
+    let mut in_raw = false;
 
     while i + 1 < bytes.len() {
         if bytes[i] != b'{' || bytes[i + 1] != b'%' {
@@ -408,8 +412,20 @@ fn collect_endblock_echoes(source: &str, template_path: &str, out: &mut Vec<Inla
         let inner = &source[tag_start + 2..close_pos];
         let trimmed = inner.trim().trim_start_matches('-').trim().trim_end_matches('-').trim();
         let mut words = trimmed.split_whitespace();
+        let keyword = words.next();
 
-        match words.next() {
+        if in_raw {
+            if keyword == Some("endraw") {
+                in_raw = false;
+            }
+            i = close_pos + 2;
+            continue;
+        }
+
+        match keyword {
+            Some("raw") => {
+                in_raw = true;
+            }
             Some("block") => {
                 // Opening block: push the block name (first word after `block`).
                 // Skip `scoped` and `required` modifiers — the name is always first.
