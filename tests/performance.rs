@@ -24,7 +24,11 @@ fn full_rebuild_500_templates_under_2s() {
     let workspace = build_workspace(&[&tmp], &["html"]);
     let elapsed = start.elapsed();
 
-    assert_eq!(workspace.templates.len(), 500, "expected 500 templates in workspace");
+    assert_eq!(
+        workspace.templates.len(),
+        500,
+        "expected 500 templates in workspace"
+    );
 
     // < 2s in release builds; debug builds have no optimizer so we use a
     // generous budget there. The hard requirement (< 2s) is for release mode.

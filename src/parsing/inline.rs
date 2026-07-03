@@ -75,7 +75,12 @@ fn extract_string_literal(source: &str, pos: usize) -> Option<InlineRegion> {
     let content = after_quote[..content_len].to_owned();
     let host_offset = content_start;
     let (host_line, host_col) = line_col(source, host_offset);
-    Some(InlineRegion { content, host_offset, host_line, host_col })
+    Some(InlineRegion {
+        content,
+        host_offset,
+        host_line,
+        host_col,
+    })
 }
 
 fn line_col(source: &str, offset: usize) -> (u32, u32) {

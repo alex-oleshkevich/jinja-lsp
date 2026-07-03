@@ -38,7 +38,10 @@ fn conv01_partial_extraction_continues_past_syntax_error() {
         !idx.macros.is_empty(),
         "REQ-CONV-01: macros defined before syntax error must still be extracted; got none"
     );
-    assert_eq!(idx.macros[0].name, "greet", "extracted macro name must be 'greet'");
+    assert_eq!(
+        idx.macros[0].name, "greet",
+        "extracted macro name must be 'greet'"
+    );
 }
 
 #[test]

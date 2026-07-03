@@ -54,7 +54,14 @@ pub fn signature_help(
     let (callee, is_filter) = callee_before_paren(inner, state.open_paren_pos, is_filter_ctx)?;
 
     // Resolve signature from macro params, from-imports, or registry.
-    let sh = resolve_signature(callee, is_filter, state.comma_count, index, registry, workspace)?;
+    let sh = resolve_signature(
+        callee,
+        is_filter,
+        state.comma_count,
+        index,
+        registry,
+        workspace,
+    )?;
     Some(sh)
 }
 
@@ -85,7 +92,13 @@ fn jinja_inner_before(source: &str, cursor: usize) -> Option<(&str, bool)> {
     let render_pos = if render_active { render_open } else { None };
     let stmt_pos = if stmt_active { stmt_open } else { None };
     let (open_pos, is_render) = match (render_pos, stmt_pos) {
-        (Some(ro), Some(so)) => if ro > so { (ro, true) } else { (so, false) },
+        (Some(ro), Some(so)) => {
+            if ro > so {
+                (ro, true)
+            } else {
+                (so, false)
+            }
+        }
         (Some(ro), None) => (ro, true),
         (None, Some(so)) => (so, false),
         (None, None) => return None,
@@ -147,7 +160,9 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
                 string_char = c;
             }
             '(' => stack.push((byte_pos, 0)),
-            ')' => { stack.pop(); }
+            ')' => {
+                stack.pop();
+            }
             '[' => bracket_depth += 1,
             ']' => bracket_depth -= 1,
             '{' => brace_depth += 1,
@@ -163,7 +178,10 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
 
     // Innermost unclosed paren is the stack top.
     let (open_paren_pos, comma_count) = stack.last().copied()?;
-    Some(CallState { open_paren_pos, comma_count })
+    Some(CallState {
+        open_paren_pos,
+        comma_count,
+    })
 }
 
 // ── Callee resolution ─────────────────────────────────────────────────────────
@@ -172,11 +190,7 @@ fn scan_call_state(inner: &str) -> Option<CallState> {
 /// and determine whether this is a filter call.
 ///
 /// Returns `(callee_name, is_filter)` or `None` if no callee is found.
-fn callee_before_paren(
-    inner: &str,
-    paren_pos: usize,
-    is_render_ctx: bool,
-) -> Option<(&str, bool)> {
+fn callee_before_paren(inner: &str, paren_pos: usize, is_render_ctx: bool) -> Option<(&str, bool)> {
     let before_paren = inner.get(..paren_pos)?.trim_end();
     if before_paren.is_empty() {
         return None;
@@ -227,9 +241,17 @@ fn resolve_signature(
             .collect();
         // Registry params do NOT include the implicit receiver — first explicit arg is index 0.
         let raw_active = comma_count;
-        let active = if raw_active < params.len() { Some(raw_active) } else { None };
+        let active = if raw_active < params.len() {
+            Some(raw_active)
+        } else {
+            None
+        };
         let label = build_label(callee, &params);
-        return Some(SignatureHelp { label, params, active_parameter: active });
+        return Some(SignatureHelp {
+            label,
+            params,
+            active_parameter: active,
+        });
     }
 
     // Try macro first.
@@ -263,13 +285,21 @@ fn resolve_signature(
             documentation: registry_param_doc(p),
         })
         .collect();
-    let active = if comma_count < params.len() { Some(comma_count) } else { None };
+    let active = if comma_count < params.len() {
+        Some(comma_count)
+    } else {
+        None
+    };
     let label = entry
         .signature
         .as_deref()
         .map(str::to_owned)
         .unwrap_or_else(|| build_label(callee, &params));
-    Some(SignatureHelp { label, params, active_parameter: active })
+    Some(SignatureHelp {
+        label,
+        params,
+        active_parameter: active,
+    })
 }
 
 fn macro_signature(m: &MacroDefinition, comma_count: usize) -> SignatureHelp {
@@ -285,9 +315,17 @@ fn macro_signature(m: &MacroDefinition, comma_count: usize) -> SignatureHelp {
             documentation: None,
         })
         .collect();
-    let active = if comma_count < params.len() { Some(comma_count) } else { None };
+    let active = if comma_count < params.len() {
+        Some(comma_count)
+    } else {
+        None
+    };
     let label = build_label(&m.name, &params);
-    SignatureHelp { label, params, active_parameter: active }
+    SignatureHelp {
+        label,
+        params,
+        active_parameter: active,
+    }
 }
 
 fn build_label(callee: &str, params: &[SignatureParam]) -> String {
@@ -313,4 +351,3 @@ fn registry_param_doc(p: &crate::builtins::registry::Param) -> Option<String> {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-

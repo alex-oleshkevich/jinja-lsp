@@ -7,12 +7,14 @@ use jinja_lsp::workspace::index::WorkspaceIndex;
 
 // Helper: find the byte column of the first occurrence of `needle` in `src`.
 fn col_of(src: &str, needle: &str) -> u32 {
-    src.find(needle).unwrap_or_else(|| panic!("{needle:?} not found in {src:?}")) as u32
+    src.find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not found in {src:?}")) as u32
 }
 
 // Helper: find the byte column of the last occurrence of `needle` in `src`.
 fn last_col_of(src: &str, needle: &str) -> u32 {
-    src.rfind(needle).unwrap_or_else(|| panic!("{needle:?} not found in {src:?}")) as u32
+    src.rfind(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not found in {src:?}")) as u32
 }
 
 // ─── REQ-HOV-02: registry doc for filters / functions / tests ───────────────
@@ -26,8 +28,14 @@ fn hov02_filter_hover_returns_doc() {
     let result = hover(src, 0, col_of(src, "truncate"), &idx, &reg, &ws);
     assert!(result.is_some(), "expected hover result for 'truncate'");
     let r = result.unwrap();
-    assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
-    assert!(r.markdown.contains("filter"), "expected 'filter' kind label");
+    assert!(
+        r.markdown.contains("truncate"),
+        "expected 'truncate' in doc"
+    );
+    assert!(
+        r.markdown.contains("filter"),
+        "expected 'filter' kind label"
+    );
 }
 
 #[test]
@@ -40,7 +48,10 @@ fn hov02_function_hover_returns_doc() {
     assert!(result.is_some(), "expected hover result for 'range'");
     let r = result.unwrap();
     assert!(r.markdown.contains("range"), "expected 'range' in doc");
-    assert!(r.markdown.contains("function"), "expected 'function' kind label");
+    assert!(
+        r.markdown.contains("function"),
+        "expected 'function' kind label"
+    );
 }
 
 #[test]
@@ -126,7 +137,11 @@ fn hov08_plain_html_word_matching_special_name_returns_none() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
-    assert!(result.is_none(), "expected None for 'loop' in plain HTML text; got: {:?}", result.map(|r| r.markdown));
+    assert!(
+        result.is_none(),
+        "expected None for 'loop' in plain HTML text; got: {:?}",
+        result.map(|r| r.markdown)
+    );
 }
 
 #[test]
@@ -136,7 +151,11 @@ fn hov08_plain_html_word_matching_macro_name_returns_none() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let result = hover(src, 0, last_col_of(src, "greet"), &idx, &reg, &ws);
-    assert!(result.is_none(), "expected None for macro name appearing in plain HTML text; got: {:?}", result.map(|r| r.markdown));
+    assert!(
+        result.is_none(),
+        "expected None for macro name appearing in plain HTML text; got: {:?}",
+        result.map(|r| r.markdown)
+    );
 }
 
 #[test]
@@ -147,7 +166,11 @@ fn hov08_raw_body_returns_none() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
-    assert!(result.is_none(), "expected None inside raw body; got: {:?}", result.map(|r| r.markdown));
+    assert!(
+        result.is_none(),
+        "expected None inside raw body; got: {:?}",
+        result.map(|r| r.markdown)
+    );
 }
 
 #[test]
@@ -161,7 +184,11 @@ fn hov08_raw_body_containing_literal_tag_returns_none() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
-    assert!(result.is_none(), "expected None inside raw body after a literal tag; got: {:?}", result.map(|r| r.markdown));
+    assert!(
+        result.is_none(),
+        "expected None inside raw body after a literal tag; got: {:?}",
+        result.map(|r| r.markdown)
+    );
 }
 
 #[test]
@@ -199,7 +226,10 @@ fn hov14_card_starts_with_bold_heading() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let r = hover(src, 0, col_of(src, "upper"), &idx, &reg, &ws).unwrap();
-    assert!(r.markdown.starts_with("**upper**"), "card must start with **name**");
+    assert!(
+        r.markdown.starts_with("**upper**"),
+        "card must start with **name**"
+    );
 }
 
 #[test]
@@ -209,7 +239,10 @@ fn hov14_filter_card_has_fenced_signature() {
     let reg = Registry::load_core();
     let ws = WorkspaceIndex::default();
     let r = hover(src, 0, col_of(src, "truncate"), &idx, &reg, &ws).unwrap();
-    assert!(r.markdown.contains("```"), "card must contain fenced signature block");
+    assert!(
+        r.markdown.contains("```"),
+        "card must contain fenced signature block"
+    );
 }
 
 #[test]
@@ -220,7 +253,11 @@ fn hov14_card_has_body_prose() {
     let ws = WorkspaceIndex::default();
     let r = hover(src, 0, col_of(src, "upper"), &idx, &reg, &ws).unwrap();
     // "upper" doc should have some prose
-    assert!(r.markdown.len() > 20, "card body must contain prose, got: {:?}", r.markdown);
+    assert!(
+        r.markdown.len() > 20,
+        "card body must contain prose, got: {:?}",
+        r.markdown
+    );
 }
 
 #[test]
@@ -231,7 +268,10 @@ fn hov14_since_metadata_appears_when_present() {
     let ws = WorkspaceIndex::default();
     let r = hover(src, 0, col_of(src, "truncate"), &idx, &reg, &ws).unwrap();
     // truncate has since="2.0" — should appear as "since 2.0" in the heading
-    assert!(r.markdown.contains("2.0"), "since metadata must appear in card");
+    assert!(
+        r.markdown.contains("2.0"),
+        "since metadata must appear in card"
+    );
 }
 
 // ─── REQ-HOV-03: macro signature + docstring ─────────────────────────────────
@@ -258,8 +298,10 @@ fn hov03_macro_hover_shows_parameters() {
     let ws = WorkspaceIndex::default();
     let col = col_of(src, "greet");
     let r = hover(src, 0, col, &idx, &reg, &ws).unwrap();
-    assert!(r.markdown.contains("name") || r.markdown.contains("msg"),
-        "macro parameters must appear in signature");
+    assert!(
+        r.markdown.contains("name") || r.markdown.contains("msg"),
+        "macro parameters must appear in signature"
+    );
 }
 
 #[test]
@@ -270,8 +312,11 @@ fn hov03_macro_docstring_appears_in_hover() {
     let ws = WorkspaceIndex::default();
     let col = col_of(src, "render");
     let r = hover(src, 0, col, &idx, &reg, &ws).unwrap();
-    assert!(r.markdown.contains("Renders a single item card."),
-        "macro docstring must appear in hover: {:?}", r.markdown);
+    assert!(
+        r.markdown.contains("Renders a single item card."),
+        "macro docstring must appear in hover: {:?}",
+        r.markdown
+    );
 }
 
 #[test]
@@ -282,7 +327,10 @@ fn hov03_macro_without_docstring_shows_only_signature() {
     let ws = WorkspaceIndex::default();
     let col = col_of(src, "render");
     let r = hover(src, 0, col, &idx, &reg, &ws).unwrap();
-    assert!(r.markdown.contains("render(item)"), "signature must still appear");
+    assert!(
+        r.markdown.contains("render(item)"),
+        "signature must still appear"
+    );
 }
 
 // ─── qudr: fallback hover when reference has no registry doc ─────────────────
@@ -300,10 +348,16 @@ fn qudr_imported_macro_call_shows_macro_hover() {
     // Cursor on "greet" in the call site {{ greet( }}
     let call_col = src.rfind("greet").unwrap() as u32;
     let result = hover(src, 0, call_col, &idx, &reg, &ws);
-    assert!(result.is_some(), "hover on a local macro call must return macro card (not None); \
-        the early-return bug suppresses fallback handlers");
+    assert!(
+        result.is_some(),
+        "hover on a local macro call must return macro card (not None); \
+        the early-return bug suppresses fallback handlers"
+    );
     let r = result.unwrap();
-    assert!(r.markdown.contains("greet"), "macro name must appear in card");
+    assert!(
+        r.markdown.contains("greet"),
+        "macro name must appear in card"
+    );
 }
 
 // ─── REQ-HOV-04: variable scope and definition site ──────────────────────────
@@ -363,7 +417,10 @@ fn hov06_extends_path_hover() {
     let result = hover(src, 0, col, &idx, &reg, &ws);
     assert!(result.is_some(), "expected hover for template path");
     let r = result.unwrap();
-    assert!(r.markdown.contains("base.html"), "path must appear in hover");
+    assert!(
+        r.markdown.contains("base.html"),
+        "path must appear in hover"
+    );
 }
 
 // ─── REQ-HOV-09: block hover ─────────────────────────────────────────────────
@@ -391,7 +448,10 @@ fn hov09_block_scoped_modifier_appears_in_hover() {
     let ws = WorkspaceIndex::default();
     let result = hover(src, 0, col_of(src, "content"), &idx, &reg, &ws);
     assert!(result.is_some());
-    assert!(result.unwrap().markdown.contains("scoped"), "scoped modifier must appear");
+    assert!(
+        result.unwrap().markdown.contains("scoped"),
+        "scoped modifier must appear"
+    );
 }
 
 #[test]
@@ -407,7 +467,10 @@ fn hov09_block_override_shows_parent_template() {
     let result = hover(child_src, 0, col, &idx, &reg, &ws);
     assert!(result.is_some(), "block hover must return a result");
     let r = result.unwrap();
-    assert!(r.markdown.contains("base.html"), "must mention parent template");
+    assert!(
+        r.markdown.contains("base.html"),
+        "must mention parent template"
+    );
 }
 
 #[test]
@@ -424,7 +487,10 @@ fn hov09_block_shows_overriding_children() {
     let result = hover(base_src, 0, col, &idx, &reg, &ws);
     assert!(result.is_some());
     let r = result.unwrap();
-    assert!(r.markdown.contains("child.html"), "must mention overriding child");
+    assert!(
+        r.markdown.contains("child.html"),
+        "must mention overriding child"
+    );
 }
 
 // ─── REQ-HOV-10: imported names resolve through the import ───────────────────
@@ -441,7 +507,10 @@ fn hov10_from_import_name_shows_source() {
     let result = hover(src, 0, col, &idx, &reg, &ws);
     assert!(result.is_some(), "expected hover for imported name");
     let r = result.unwrap();
-    assert!(r.markdown.contains("macros.html"), "source template must appear in hover");
+    assert!(
+        r.markdown.contains("macros.html"),
+        "source template must appear in hover"
+    );
 }
 
 #[test]
@@ -457,7 +526,10 @@ fn hov10_from_import_alias_shows_aliased_name() {
     assert!(result.is_some(), "expected hover for import alias");
     let r = result.unwrap();
     let md = r.markdown.to_lowercase();
-    assert!(md.contains("alias") || md.contains("render_post"), "alias relationship must appear");
+    assert!(
+        md.contains("alias") || md.contains("render_post"),
+        "alias relationship must appear"
+    );
 }
 
 #[test]
@@ -498,9 +570,15 @@ fn hov10_import_alias_shows_source() {
     let ws = WorkspaceIndex::default();
     let col = last_col_of(src, "macros");
     let result = hover(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "expected hover for namespace import alias");
+    assert!(
+        result.is_some(),
+        "expected hover for namespace import alias"
+    );
     let r = result.unwrap();
-    assert!(r.markdown.contains("macros.html"), "source template must appear in namespace import hover");
+    assert!(
+        r.markdown.contains("macros.html"),
+        "source template must appear in namespace import hover"
+    );
 }
 
 // ─── REQ-HOV-11: keyword-argument names show their bound parameter ────────────
@@ -518,7 +596,8 @@ fn hov11_keyword_arg_name_shows_parameter() {
     let r = result.unwrap();
     assert!(
         r.markdown.contains("length") || r.markdown.contains("truncate"),
-        "keyword arg or callee must appear; got: {:?}", r.markdown
+        "keyword arg or callee must appear; got: {:?}",
+        r.markdown
     );
 }
 
@@ -537,7 +616,8 @@ fn hov12_loop_inside_for_shows_doc() {
     let r = result.unwrap();
     assert!(
         r.markdown.to_lowercase().contains("loop"),
-        "loop special object doc must appear; got: {:?}", r.markdown
+        "loop special object doc must appear; got: {:?}",
+        r.markdown
     );
 }
 
@@ -549,11 +629,15 @@ fn hov12_caller_shows_doc() {
     let ws = WorkspaceIndex::default();
     let col = col_of(src, "caller");
     let result = hover(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "expected hover for special object 'caller'");
+    assert!(
+        result.is_some(),
+        "expected hover for special object 'caller'"
+    );
     let r = result.unwrap();
     assert!(
         r.markdown.to_lowercase().contains("caller"),
-        "caller doc must appear; got: {:?}", r.markdown
+        "caller doc must appear; got: {:?}",
+        r.markdown
     );
 }
 
@@ -570,7 +654,8 @@ fn hov12_loop_outside_for_has_scope_note() {
     let r = result.expect("expected hover for loop outside for");
     assert!(
         r.markdown.contains("only valid"),
-        "out-of-scope loop must carry a scope note; got: {:?}", r.markdown
+        "out-of-scope loop must carry a scope note; got: {:?}",
+        r.markdown
     );
 }
 
@@ -585,7 +670,8 @@ fn hov12_loop_inside_for_has_no_scope_note() {
     let r = result.expect("expected hover for loop inside for");
     assert!(
         !r.markdown.contains("only valid"),
-        "in-scope loop must NOT have a scope note; got: {:?}", r.markdown
+        "in-scope loop must NOT have a scope note; got: {:?}",
+        r.markdown
     );
 }
 
@@ -600,7 +686,8 @@ fn hov12_super_outside_block_has_scope_note() {
     let r = result.expect("expected hover for super outside block");
     assert!(
         r.markdown.contains("only valid"),
-        "out-of-scope super must carry a scope note; got: {:?}", r.markdown
+        "out-of-scope super must carry a scope note; got: {:?}",
+        r.markdown
     );
 }
 
@@ -615,7 +702,8 @@ fn hov12_caller_outside_macro_has_scope_note() {
     let r = result.expect("expected hover for caller outside macro");
     assert!(
         r.markdown.contains("only valid"),
-        "out-of-scope caller must carry a scope note; got: {:?}", r.markdown
+        "out-of-scope caller must carry a scope note; got: {:?}",
+        r.markdown
     );
 }
 
@@ -633,8 +721,11 @@ fn hov13_for_keyword_shows_description() {
     assert!(result.is_some(), "expected hover for 'for' keyword");
     let r = result.unwrap();
     assert!(
-        r.markdown.to_lowercase().contains("for") || r.markdown.to_lowercase().contains("loop") || r.markdown.to_lowercase().contains("iterate"),
-        "for-keyword doc must describe looping; got: {:?}", r.markdown
+        r.markdown.to_lowercase().contains("for")
+            || r.markdown.to_lowercase().contains("loop")
+            || r.markdown.to_lowercase().contains("iterate"),
+        "for-keyword doc must describe looping; got: {:?}",
+        r.markdown
     );
 }
 
@@ -650,7 +741,8 @@ fn hov13_if_keyword_shows_description() {
     let r = result.unwrap();
     assert!(
         r.markdown.to_lowercase().contains("if") || r.markdown.to_lowercase().contains("condition"),
-        "if-keyword doc must mention condition; got: {:?}", r.markdown
+        "if-keyword doc must mention condition; got: {:?}",
+        r.markdown
     );
 }
 
@@ -666,8 +758,10 @@ fn hov13_block_keyword_shows_description() {
     assert!(result.is_some(), "expected hover for 'block' keyword");
     let r = result.unwrap();
     assert!(
-        r.markdown.to_lowercase().contains("block") || r.markdown.to_lowercase().contains("inherit"),
-        "block-keyword doc must appear; got: {:?}", r.markdown
+        r.markdown.to_lowercase().contains("block")
+            || r.markdown.to_lowercase().contains("inherit"),
+        "block-keyword doc must appear; got: {:?}",
+        r.markdown
     );
 }
 
@@ -703,9 +797,15 @@ fn hov02_filter_with_args_hover_returns_doc() {
     let ws = WorkspaceIndex::default();
     let col = src.find("truncate").unwrap() as u32;
     let result = hover(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "hover on truncate(60) must return documentation");
+    assert!(
+        result.is_some(),
+        "hover on truncate(60) must return documentation"
+    );
     let r = result.unwrap();
-    assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
+    assert!(
+        r.markdown.contains("truncate"),
+        "expected 'truncate' in doc"
+    );
 }
 
 #[test]
@@ -717,7 +817,10 @@ fn hov02_attr_chain_filter_without_args_returns_doc() {
     let ws = WorkspaceIndex::default();
     let col = src.find("upper").unwrap() as u32;
     let result = hover(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "hover on 'upper' after attribute chain must return doc");
+    assert!(
+        result.is_some(),
+        "hover on 'upper' after attribute chain must return doc"
+    );
     let r = result.unwrap();
     assert!(r.markdown.contains("upper"), "expected 'upper' in doc");
 }
@@ -732,7 +835,13 @@ fn hov02_attr_chain_filter_with_args_returns_doc() {
     let ws = WorkspaceIndex::default();
     let col = src.find("truncate").unwrap() as u32;
     let result = hover(src, 0, col, &idx, &reg, &ws);
-    assert!(result.is_some(), "hover on 'truncate(60)' after attribute chain must return doc");
+    assert!(
+        result.is_some(),
+        "hover on 'truncate(60)' after attribute chain must return doc"
+    );
     let r = result.unwrap();
-    assert!(r.markdown.contains("truncate"), "expected 'truncate' in doc");
+    assert!(
+        r.markdown.contains("truncate"),
+        "expected 'truncate' in doc"
+    );
 }

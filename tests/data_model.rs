@@ -1,7 +1,7 @@
 use jinja_lsp::workspace::index::{ResolvedBinding, TemplateIndex, WorkspaceIndex};
 use jinja_lsp::workspace::symbols::{
-    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, ImportedName, MacroDefinition, Parameter,
-    Reference, ReferenceKind, Span, TemplateRefKind, TemplateReference,
+    BlockDefinition, EnclosingOwner, FromImport, ImportAlias, ImportedName, MacroDefinition,
+    Parameter, Reference, ReferenceKind, Span, TemplateRefKind, TemplateReference,
     VariableDefinition, VariableScope,
 };
 use std::collections::HashMap;
@@ -13,8 +13,16 @@ fn span() -> Span {
 // jinja-lsp-zcc7: Span::contains is the single containment implementation.
 #[test]
 fn span_contains_true_for_nested_range() {
-    let outer = Span { start_byte: 0, end_byte: 10, ..Span::default() };
-    let inner = Span { start_byte: 2, end_byte: 8, ..Span::default() };
+    let outer = Span {
+        start_byte: 0,
+        end_byte: 10,
+        ..Span::default()
+    };
+    let inner = Span {
+        start_byte: 2,
+        end_byte: 8,
+        ..Span::default()
+    };
     assert!(outer.contains(&inner));
 }
 
@@ -24,8 +32,16 @@ fn span_contains_false_when_outer_is_empty() {
     // an equally-empty span at the same offset, which previously false-positived
     // in call_hierarchy's span_contains but not in index.rs's body_contains/
     // range_contains before they were unified onto Span::contains.
-    let empty_outer = Span { start_byte: 5, end_byte: 5, ..Span::default() };
-    let inner = Span { start_byte: 5, end_byte: 5, ..Span::default() };
+    let empty_outer = Span {
+        start_byte: 5,
+        end_byte: 5,
+        ..Span::default()
+    };
+    let inner = Span {
+        start_byte: 5,
+        end_byte: 5,
+        ..Span::default()
+    };
     assert!(!empty_outer.contains(&inner));
 }
 
@@ -35,8 +51,14 @@ fn macro_definition_has_name_params_body_span() {
     let m = MacroDefinition {
         name: "post_url".into(),
         parameters: vec![
-            Parameter { name: "post".into(), default: None },
-            Parameter { name: "label".into(), default: Some("\"\"".into()) },
+            Parameter {
+                name: "post".into(),
+                default: None,
+            },
+            Parameter {
+                name: "label".into(),
+                default: Some("\"\"".into()),
+            },
         ],
         body: span(),
         span: span(),
@@ -81,7 +103,12 @@ fn variable_definition_has_name_scope_span_valid_range() {
 // REQ-DATA-04
 #[test]
 fn import_alias_has_alias_and_source() {
-    let ia = ImportAlias { alias: "macros".into(), source: "blog/macros.html".into(), span: span(), alias_span: span() };
+    let ia = ImportAlias {
+        alias: "macros".into(),
+        source: "blog/macros.html".into(),
+        span: span(),
+        alias_span: span(),
+    };
     assert_eq!(ia.alias, "macros");
     assert_eq!(ia.source, "blog/macros.html");
 }
@@ -91,8 +118,16 @@ fn from_import_has_source_and_names() {
     let fi = FromImport {
         source: "blog/macros.html".into(),
         names: vec![
-            ImportedName { name: "post_url".into(), alias: None, name_span: span() },
-            ImportedName { name: "comment_card".into(), alias: Some("cc".into()), name_span: span() },
+            ImportedName {
+                name: "post_url".into(),
+                alias: None,
+                name_span: span(),
+            },
+            ImportedName {
+                name: "comment_card".into(),
+                alias: Some("cc".into()),
+                name_span: span(),
+            },
         ],
         span: span(),
     };
@@ -129,7 +164,11 @@ fn template_reference_has_ignore_missing_and_is_dynamic_flags() {
 // REQ-DATA-06
 #[test]
 fn reference_records_name_kind_and_span() {
-    let r = Reference { name: "post".into(), kind: ReferenceKind::Identifier, span: span() };
+    let r = Reference {
+        name: "post".into(),
+        kind: ReferenceKind::Identifier,
+        span: span(),
+    };
     assert_eq!(r.name, "post");
     assert!(matches!(r.kind, ReferenceKind::Identifier));
 
@@ -167,7 +206,14 @@ fn template_index_holds_one_files_symbols_and_errors() {
         path: "blog/post.html".into(),
         relative_path: None,
         macros: vec![],
-        blocks: vec![BlockDefinition { name: "content".into(), scoped: false, required: false, body: span(), span: span(), end_name_span: None }],
+        blocks: vec![BlockDefinition {
+            name: "content".into(),
+            scoped: false,
+            required: false,
+            body: span(),
+            span: span(),
+            end_name_span: None,
+        }],
         variables: vec![],
         import_aliases: vec![],
         from_imports: vec![],
@@ -208,7 +254,10 @@ fn workspace_index_maps_paths_to_template_indexes() {
             syntax_errors: vec![],
         },
     );
-    let ws = WorkspaceIndex { templates, ..Default::default() };
+    let ws = WorkspaceIndex {
+        templates,
+        ..Default::default()
+    };
     assert!(ws.templates.contains_key("blog/post.html"));
 }
 
@@ -250,7 +299,10 @@ fn workspace_index_can_compute_template_chain() {
     let mut templates = HashMap::new();
     templates.insert("base.html".into(), base);
     templates.insert("blog/post.html".into(), post);
-    let ws = WorkspaceIndex { templates, ..Default::default() };
+    let ws = WorkspaceIndex {
+        templates,
+        ..Default::default()
+    };
 
     let chain = ws.template_chain("blog/post.html");
     assert_eq!(chain, vec!["blog/post.html", "base.html"]);
@@ -266,7 +318,8 @@ fn set_inside_block_gets_block_scope() {
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
     assert_eq!(
-        var.unwrap().scope, VariableScope::Block,
+        var.unwrap().scope,
+        VariableScope::Block,
         "set inside block must have Block scope"
     );
 }
@@ -278,7 +331,11 @@ fn set_inside_macro_gets_macro_scope() {
     let idx = extract(src);
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
-    assert_eq!(var.unwrap().scope, VariableScope::Macro, "set inside macro must have Macro scope");
+    assert_eq!(
+        var.unwrap().scope,
+        VariableScope::Macro,
+        "set inside macro must have Macro scope"
+    );
 }
 
 #[test]
@@ -288,7 +345,11 @@ fn set_inside_filter_gets_filter_scope() {
     let idx = extract(src);
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
-    assert_eq!(var.unwrap().scope, VariableScope::Filter, "set inside filter must have Filter scope");
+    assert_eq!(
+        var.unwrap().scope,
+        VariableScope::Filter,
+        "set inside filter must have Filter scope"
+    );
 }
 
 #[test]
@@ -298,7 +359,11 @@ fn set_inside_autoescape_gets_autoescape_scope() {
     let idx = extract(src);
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
-    assert_eq!(var.unwrap().scope, VariableScope::Autoescape, "set inside autoescape must have Autoescape scope");
+    assert_eq!(
+        var.unwrap().scope,
+        VariableScope::Autoescape,
+        "set inside autoescape must have Autoescape scope"
+    );
 }
 
 #[test]
@@ -308,7 +373,11 @@ fn set_at_top_level_gets_template_scope() {
     let idx = extract(src);
     let var = idx.variables.iter().find(|v| v.name == "x");
     assert!(var.is_some(), "variable x should be extracted");
-    assert_eq!(var.unwrap().scope, VariableScope::Template, "top-level set must have Template scope");
+    assert_eq!(
+        var.unwrap().scope,
+        VariableScope::Template,
+        "top-level set must have Template scope"
+    );
 }
 
 // REQ-DATA-12: enclosing-owner computation ────────────────────────────────────
@@ -317,7 +386,11 @@ fn make_macro(name: &str, body_start: usize, body_end: usize) -> MacroDefinition
     MacroDefinition {
         name: name.to_owned(),
         parameters: vec![],
-        body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
+        body: Span {
+            start_byte: body_start,
+            end_byte: body_end,
+            ..Span::default()
+        },
         span: Span::default(),
         name_span: Span::default(),
         doc: None,
@@ -329,14 +402,22 @@ fn make_block(name: &str, body_start: usize, body_end: usize) -> BlockDefinition
         name: name.to_owned(),
         scoped: false,
         required: false,
-        body: Span { start_byte: body_start, end_byte: body_end, ..Span::default() },
+        body: Span {
+            start_byte: body_start,
+            end_byte: body_end,
+            ..Span::default()
+        },
         span: Span::default(),
         end_name_span: None,
     }
 }
 
 fn query_span(start_byte: usize, end_byte: usize) -> Span {
-    Span { start_byte, end_byte, ..Span::default() }
+    Span {
+        start_byte,
+        end_byte,
+        ..Span::default()
+    }
 }
 
 #[test]
@@ -347,7 +428,10 @@ fn enclosing_owner_returns_template_when_no_body_contains_span() {
     // "x" reference is at byte >= body_end, outside any macro body
     let q = query_span(37, 38); // roughly where "x" is
     let owner = idx.enclosing_owner(&q);
-    assert!(matches!(owner, EnclosingOwner::Template), "outside any body should be Template");
+    assert!(
+        matches!(owner, EnclosingOwner::Template),
+        "outside any body should be Template"
+    );
 }
 
 #[test]
@@ -394,11 +478,19 @@ fn resolve_variable_reference_finds_innermost_binding() {
     let ws = WorkspaceIndex::default();
 
     // Find the reference to `post` inside the for body (the {{ post }} expression)
-    let ref_post = idx.references.iter().find(|r| r.name == "post").expect("reference to post must exist");
+    let ref_post = idx
+        .references
+        .iter()
+        .find(|r| r.name == "post")
+        .expect("reference to post must exist");
     match idx.resolve_reference(ref_post, &ws) {
         ResolvedBinding::Variable(v) => {
             assert_eq!(v.name, "post");
-            assert_eq!(v.scope, VariableScope::ForLoop, "innermost binding is from the for loop");
+            assert_eq!(
+                v.scope,
+                VariableScope::ForLoop,
+                "innermost binding is from the for loop"
+            );
         }
         other => panic!("expected Variable, got {other:?}"),
     }
@@ -412,10 +504,15 @@ fn resolve_variable_outside_scope_returns_host_owned() {
     let idx = extract(src);
     let ws = WorkspaceIndex::default();
 
-    let ref_ctx = idx.references.iter()
+    let ref_ctx = idx
+        .references
+        .iter()
         .find(|r| r.name == "ctx_var" && matches!(r.kind, ReferenceKind::Identifier))
         .expect("identifier reference to ctx_var must exist");
-    assert!(matches!(idx.resolve_reference(ref_ctx, &ws), ResolvedBinding::HostOwned));
+    assert!(matches!(
+        idx.resolve_reference(ref_ctx, &ws),
+        ResolvedBinding::HostOwned
+    ));
 }
 
 #[test]
@@ -425,7 +522,11 @@ fn resolve_macro_call_finds_local_macro() {
     let idx = extract(src);
     let ws = WorkspaceIndex::default();
 
-    let ref_greet = idx.references.iter().find(|r| r.name == "greet" && matches!(r.kind, ReferenceKind::Function)).expect("function reference to greet");
+    let ref_greet = idx
+        .references
+        .iter()
+        .find(|r| r.name == "greet" && matches!(r.kind, ReferenceKind::Function))
+        .expect("function reference to greet");
     match idx.resolve_reference(ref_greet, &ws) {
         ResolvedBinding::Macro(m) => assert_eq!(m.name, "greet"),
         other => panic!("expected Macro, got {other:?}"),
@@ -451,7 +552,9 @@ fn resolve_macro_call_finds_workspace_macro() {
     let mut ws = WorkspaceIndex::default();
     ws.templates.insert("macros.html".into(), macros_idx);
 
-    let ref_post_url = post_idx.references.iter()
+    let ref_post_url = post_idx
+        .references
+        .iter()
         .find(|r| r.name == "post_url" && matches!(r.kind, ReferenceKind::Function))
         .expect("function reference to post_url");
     match post_idx.resolve_reference(ref_post_url, &ws) {
@@ -468,21 +571,38 @@ fn jinja_lsp_izfw_workspace_wide_macro_fallback_is_deterministic() {
     // It must now always resolve to the same one regardless of insertion order:
     // sorted by template key, "a.html" sorts before "z.html".
     use jinja_lsp::parsing::extract;
-    let z_idx = { let mut idx = extract("{% macro dup(one) %}z{% endmacro %}"); idx.path = "z.html".into(); idx };
-    let a_idx = { let mut idx = extract("{% macro dup(two, three) %}a{% endmacro %}"); idx.path = "a.html".into(); idx };
-    let caller_idx = { let idx = extract("{{ dup(1) }}"); idx };
+    let z_idx = {
+        let mut idx = extract("{% macro dup(one) %}z{% endmacro %}");
+        idx.path = "z.html".into();
+        idx
+    };
+    let a_idx = {
+        let mut idx = extract("{% macro dup(two, three) %}a{% endmacro %}");
+        idx.path = "a.html".into();
+        idx
+    };
+    let caller_idx = {
+        let idx = extract("{{ dup(1) }}");
+        idx
+    };
 
     // Insert "z.html" first to bias against alphabetical == insertion order.
     let mut ws = WorkspaceIndex::default();
     ws.templates.insert("z.html".into(), z_idx);
     ws.templates.insert("a.html".into(), a_idx);
 
-    let ref_dup = caller_idx.references.iter()
+    let ref_dup = caller_idx
+        .references
+        .iter()
         .find(|r| r.name == "dup" && matches!(r.kind, ReferenceKind::Function))
         .expect("function reference to dup");
     match caller_idx.resolve_reference(ref_dup, &ws) {
         ResolvedBinding::Macro(m) => {
-            assert_eq!(m.parameters.len(), 2, "must resolve to a.html's 2-param 'dup', not z.html's 1-param one");
+            assert_eq!(
+                m.parameters.len(),
+                2,
+                "must resolve to a.html's 2-param 'dup', not z.html's 1-param one"
+            );
         }
         other => panic!("expected Macro, got {other:?}"),
     }
@@ -499,7 +619,11 @@ fn jinja_lsp_6jx0_endblock_with_name_does_not_corrupt_enclosing_for_scope() {
     use jinja_lsp::parsing::extract;
     let src = "{% for x in xs %}{% block b %}{% endblock b %}\n{% endfor %}TAIL";
     let idx = extract(src);
-    let x = idx.variables.iter().find(|v| v.name == "x").expect("for-loop variable 'x' must be extracted");
+    let x = idx
+        .variables
+        .iter()
+        .find(|v| v.name == "x")
+        .expect("for-loop variable 'x' must be extracted");
     let endfor_pos = src.find("{% endfor %}").unwrap();
     assert_eq!(
         x.valid_range.end_byte, endfor_pos,
@@ -518,7 +642,11 @@ fn jinja_lsp_z0d8_stray_endblock_name_before_block_does_not_invert_body_span() {
     use jinja_lsp::parsing::extract;
     let src = "{% endblock b %}\n{% block b %}unclosed content";
     let idx = extract(src);
-    let b = idx.blocks.iter().find(|b| b.name == "b").expect("block 'b' must be extracted");
+    let b = idx
+        .blocks
+        .iter()
+        .find(|b| b.name == "b")
+        .expect("block 'b' must be extracted");
     assert!(
         b.body.start_byte <= b.body.end_byte,
         "block body span must never be inverted: {:?}",
@@ -538,7 +666,11 @@ fn resolve_set_variable_at_top_level_binds_correctly() {
     let idx = extract(src);
     let ws = WorkspaceIndex::default();
 
-    let ref_title = idx.references.iter().find(|r| r.name == "title").expect("reference to title");
+    let ref_title = idx
+        .references
+        .iter()
+        .find(|r| r.name == "title")
+        .expect("reference to title");
     match idx.resolve_reference(ref_title, &ws) {
         ResolvedBinding::Variable(v) => {
             assert_eq!(v.name, "title");

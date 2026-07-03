@@ -10,7 +10,10 @@ use jinja_lsp::server::state::ServerState;
 fn state_stores_config() {
     let cfg = JinjaConfig::default();
     let state = ServerState::with_config(cfg.clone());
-    assert_eq!(state.config.extras, cfg.extras, "config must round-trip through state");
+    assert_eq!(
+        state.config.extras, cfg.extras,
+        "config must round-trip through state"
+    );
 }
 
 // ─── T-02: config overlay applied via apply_init_options ─────────────────────
@@ -35,13 +38,21 @@ fn state_overlay_absent_key_keeps_existing_value() {
     cfg.extensions = vec!["html".to_owned()];
     let mut state = ServerState::with_config(cfg);
     let overlay = ConfigOverlay {
-        extensions: None,  // not overriding
+        extensions: None, // not overriding
         extras: Some(vec!["flask".to_owned()]),
         ..Default::default()
     };
     let _ = state.apply_init_options(overlay);
-    assert_eq!(state.config.extensions, vec!["html"], "extensions kept from original");
-    assert_eq!(state.config.extras, vec!["flask"], "extras applied from overlay");
+    assert_eq!(
+        state.config.extensions,
+        vec!["html"],
+        "extensions kept from original"
+    );
+    assert_eq!(
+        state.config.extras,
+        vec!["flask"],
+        "extras applied from overlay"
+    );
 }
 
 #[test]
@@ -57,14 +68,24 @@ fn jinja_lsp_j32g_clearing_an_overlay_key_reverts_to_base_config_not_stale_value
     assert!(state.config.extras.is_empty());
 
     // First overlay: user sets extras=flask.
-    let set_extras = ConfigOverlay { extras: Some(vec!["flask".to_owned()]), ..Default::default() };
-    state.apply_init_options(set_extras).expect("valid overlay must apply");
+    let set_extras = ConfigOverlay {
+        extras: Some(vec!["flask".to_owned()]),
+        ..Default::default()
+    };
+    state
+        .apply_init_options(set_extras)
+        .expect("valid overlay must apply");
     assert_eq!(state.config.extras, vec!["flask"]);
 
     // Second overlay: user cleared the setting — buildInitOptions now omits extras
     // entirely (extras: None), same as if it had never been set.
-    let cleared = ConfigOverlay { extras: None, ..Default::default() };
-    state.apply_init_options(cleared).expect("valid overlay must apply");
+    let cleared = ConfigOverlay {
+        extras: None,
+        ..Default::default()
+    };
+    state
+        .apply_init_options(cleared)
+        .expect("valid overlay must apply");
     assert!(
         state.config.extras.is_empty(),
         "clearing the setting must revert extras to the base config, not keep the stale 'flask' value: {:?}",
@@ -108,10 +129,16 @@ fn canonical_language_ids_are_jinja_and_jinja_html() {
     use jinja_lsp::server::is_jinja_language_id;
 
     for &id in &["jinja", "jinja-html"] {
-        assert!(is_jinja_language_id(id), "{id} must be accepted by is_jinja_language_id");
+        assert!(
+            is_jinja_language_id(id),
+            "{id} must be accepted by is_jinja_language_id"
+        );
     }
     for &id in &["html", "htmldjango", "jinja2", "j2", "plaintext", ""] {
-        assert!(!is_jinja_language_id(id), "{id} must be rejected by is_jinja_language_id");
+        assert!(
+            !is_jinja_language_id(id),
+            "{id} must be rejected by is_jinja_language_id"
+        );
     }
 }
 
@@ -145,10 +172,19 @@ fn jinja_lsp_8wlr_invalid_overlay_does_not_mutate_config_or_persist() {
         ..Default::default()
     };
     let result = state.apply_init_options(overlay);
-    assert!(matches!(result, Err(ConfigError::UnknownExtra(_))), "must reject unknown extra: {result:?}");
+    assert!(
+        matches!(result, Err(ConfigError::UnknownExtra(_))),
+        "must reject unknown extra: {result:?}"
+    );
 
-    assert_eq!(state.config, default_config, "rejected overlay must not mutate the active config");
-    assert!(state.init_overlay.is_none(), "rejected overlay must not be persisted for future reloads");
+    assert_eq!(
+        state.config, default_config,
+        "rejected overlay must not mutate the active config"
+    );
+    assert!(
+        state.init_overlay.is_none(),
+        "rejected overlay must not be persisted for future reloads"
+    );
 }
 
 #[test]
@@ -161,9 +197,13 @@ fn apply_init_options_surfaces_overlapping_filter_warning() {
         }),
         ..Default::default()
     };
-    let result = state.apply_init_options(overlay).expect("overlapping filter is a warning, not error");
+    let result = state
+        .apply_init_options(overlay)
+        .expect("overlapping filter is a warning, not error");
     assert!(
-        result.iter().any(|w| matches!(w, ConfigWarning::OverlappingFilter(_))),
+        result
+            .iter()
+            .any(|w| matches!(w, ConfigWarning::OverlappingFilter(_))),
         "overlapping select/ignore must produce OverlappingFilter warning: {result:?}",
     );
 }
@@ -175,8 +215,13 @@ fn apply_init_options_valid_config_returns_empty_warnings() {
         extras: Some(vec!["starlette".to_owned()]),
         ..Default::default()
     };
-    let result = state.apply_init_options(overlay).expect("valid config must not error");
-    assert!(result.is_empty(), "valid config must produce no warnings: {result:?}");
+    let result = state
+        .apply_init_options(overlay)
+        .expect("valid config must not error");
+    assert!(
+        result.is_empty(),
+        "valid config must produce no warnings: {result:?}"
+    );
 }
 
 // ─── T-REG-01: REQ-BLTN-07 — registry loads custom_builtins from config at init
@@ -199,7 +244,10 @@ fn state_registry_loads_custom_builtins_from_config() {
     let state = ServerState::with_config(cfg);
 
     let entry = state.registry.get(Category::Filter, "my_filter");
-    assert!(entry.is_some(), "custom builtin must be in registry after with_config");
+    assert!(
+        entry.is_some(),
+        "custom builtin must be in registry after with_config"
+    );
     assert_eq!(entry.unwrap().source, Source::Custom);
 }
 
@@ -220,7 +268,10 @@ fn state_registry_rebuilt_on_apply_init_options() {
     let mut state = ServerState::with_config(JinjaConfig::default());
     // Before overlay: custom filter must not be present
     assert!(
-        state.registry.get(Category::Filter, "overlay_filter").is_none(),
+        state
+            .registry
+            .get(Category::Filter, "overlay_filter")
+            .is_none(),
         "filter must not exist before overlay"
     );
 
@@ -231,7 +282,10 @@ fn state_registry_rebuilt_on_apply_init_options() {
     let _ = state.apply_init_options(overlay);
 
     let entry = state.registry.get(Category::Filter, "overlay_filter");
-    assert!(entry.is_some(), "custom builtin must be in registry after apply_init_options");
+    assert!(
+        entry.is_some(),
+        "custom builtin must be in registry after apply_init_options"
+    );
     assert_eq!(entry.unwrap().source, Source::Custom);
 }
 
@@ -253,7 +307,10 @@ fn with_config_extras_loads_pack_entries_into_registry() {
 fn apply_init_options_extras_loads_pack_entries_into_registry() {
     let mut state = ServerState::with_config(JinjaConfig::default());
     // Before overlay: url_for must not exist (no pack loaded)
-    assert!(state.registry.get(Category::Function, "url_for").is_none(), "url_for must not exist before pack overlay");
+    assert!(
+        state.registry.get(Category::Function, "url_for").is_none(),
+        "url_for must not exist before pack overlay"
+    );
 
     let overlay = ConfigOverlay {
         extras: Some(vec!["starlette".to_owned()]),
@@ -304,7 +361,10 @@ fn apply_init_options_hints_dir_loads_hints_into_registry() {
     .unwrap();
 
     let mut state = ServerState::with_config(JinjaConfig::default());
-    assert!(state.registry.get(Category::Variable, "ctx_hint").is_none(), "hint must not exist before overlay");
+    assert!(
+        state.registry.get(Category::Variable, "ctx_hint").is_none(),
+        "hint must not exist before overlay"
+    );
 
     let overlay = ConfigOverlay {
         hints: Some(vec![dir.path().to_string_lossy().to_string()]),
@@ -324,14 +384,29 @@ fn apply_init_options_hints_dir_loads_hints_into_registry() {
 fn readme_nvim_snippet_has_required_keys() {
     let readme = include_str!("../README.md");
     // cmd must be jinja-lsp lsp
-    assert!(readme.contains(r#"{ "jinja-lsp", "lsp" }"#), "README nvim cmd must be {{ \"jinja-lsp\", \"lsp\" }}");
+    assert!(
+        readme.contains(r#"{ "jinja-lsp", "lsp" }"#),
+        "README nvim cmd must be {{ \"jinja-lsp\", \"lsp\" }}"
+    );
     // filetypes must include the Neovim canonical filetypes per REQ-EDIT-11
-    assert!(readme.contains("htmldjango"), "README nvim filetypes must include htmldjango");
-    assert!(readme.contains("jinja.html"), "README nvim filetypes must include jinja.html");
+    assert!(
+        readme.contains("htmldjango"),
+        "README nvim filetypes must include htmldjango"
+    );
+    assert!(
+        readme.contains("jinja.html"),
+        "README nvim filetypes must include jinja.html"
+    );
     // init_options must be shown
-    assert!(readme.contains("init_options"), "README nvim snippet must show init_options");
+    assert!(
+        readme.contains("init_options"),
+        "README nvim snippet must show init_options"
+    );
     // root_dir keyed on jinja.toml
-    assert!(readme.contains("jinja.toml"), "README nvim snippet must reference jinja.toml root");
+    assert!(
+        readme.contains("jinja.toml"),
+        "README nvim snippet must reference jinja.toml root"
+    );
 }
 
 // ─── jinja-lsp-uoyh: reset_config sets full config + rebuilds registry ────────
@@ -350,7 +425,10 @@ fn state_reset_config_updates_config_and_registry() {
 
     let mut state = ServerState::with_config(JinjaConfig::default());
     assert!(
-        state.registry.get(Category::Filter, "reset_filter").is_none(),
+        state
+            .registry
+            .get(Category::Filter, "reset_filter")
+            .is_none(),
         "filter must not exist before reset_config"
     );
 
@@ -358,9 +436,15 @@ fn state_reset_config_updates_config_and_registry() {
     new_cfg.custom_builtins = vec![dir.path().to_string_lossy().to_string()];
     state.reset_config(new_cfg.clone());
 
-    assert_eq!(state.config.custom_builtins, new_cfg.custom_builtins, "config.custom_builtins must be updated");
+    assert_eq!(
+        state.config.custom_builtins, new_cfg.custom_builtins,
+        "config.custom_builtins must be updated"
+    );
     assert!(
-        state.registry.get(Category::Filter, "reset_filter").is_some(),
+        state
+            .registry
+            .get(Category::Filter, "reset_filter")
+            .is_some(),
         "registry must be rebuilt with new config after reset_config"
     );
 }
@@ -379,6 +463,14 @@ fn state_reset_config_then_overlay_applies_on_top() {
     };
     let _ = state.apply_init_options(overlay);
 
-    assert_eq!(state.config.extensions, vec!["html"], "extensions from reset_config must survive overlay");
-    assert_eq!(state.config.extras, vec!["starlette"], "extras from overlay must be applied");
+    assert_eq!(
+        state.config.extensions,
+        vec!["html"],
+        "extensions from reset_config must survive overlay"
+    );
+    assert_eq!(
+        state.config.extras,
+        vec!["starlette"],
+        "extras from overlay must be applied"
+    );
 }

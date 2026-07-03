@@ -2,7 +2,7 @@
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::features::call_hierarchy::{
-    incoming_calls, outgoing_calls, prepare_call_hierarchy, ItemKind,
+    ItemKind, incoming_calls, outgoing_calls, prepare_call_hierarchy,
 };
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
@@ -53,7 +53,10 @@ fn call01_prepare_selection_range_anchors_at_macro_name_not_keyword() {
         item.selection_range.start_col, name_col,
         "selection_range must start at 'greet', not the 'macro' keyword"
     );
-    assert_eq!(item.selection_range.end_col, name_col + "greet".len() as u32);
+    assert_eq!(
+        item.selection_range.end_col,
+        name_col + "greet".len() as u32
+    );
 }
 
 #[test]
@@ -73,7 +76,10 @@ fn call01_prepare_at_call_site_anchors_to_definition() {
     );
     assert_eq!(items.len(), 1, "call site must resolve to definition");
     assert_eq!(items[0].name, "greet");
-    assert_eq!(items[0].uri, "macro.html", "item must anchor to definition file");
+    assert_eq!(
+        items[0].uri, "macro.html",
+        "item must anchor to definition file"
+    );
 }
 
 #[test]
@@ -124,9 +130,16 @@ fn call01_prepare_via_from_import_anchors_to_definition() {
         &w,
         &reg(),
     );
-    assert_eq!(items.len(), 1, "from-imported call must resolve to definition");
+    assert_eq!(
+        items.len(),
+        1,
+        "from-imported call must resolve to definition"
+    );
     assert_eq!(items[0].name, "post_url");
-    assert_eq!(items[0].uri, "macros.html", "item anchors to definition file");
+    assert_eq!(
+        items[0].uri, "macros.html",
+        "item anchors to definition file"
+    );
 }
 
 // ─── REQ-CALL-02: Incoming calls ─────────────────────────────────────────────
@@ -139,7 +152,10 @@ fn call02_incoming_empty_when_no_callers() {
     let mut items =
         prepare_call_hierarchy(src, 0, col_of(src, "unused"), "t.html", &idx, &w, &reg());
     let item = items.remove(0);
-    assert!(incoming_calls(&item, &w).is_empty(), "no callers → empty list");
+    assert!(
+        incoming_calls(&item, &w).is_empty(),
+        "no callers → empty list"
+    );
 }
 
 #[test]
@@ -159,8 +175,16 @@ fn call02_incoming_two_calls_from_template_merged_with_two_ranges() {
     );
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
-    assert_eq!(calls.len(), 1, "two calls from same template → one IncomingCall");
-    assert_eq!(calls[0].from_ranges.len(), 2, "two call sites → two fromRanges");
+    assert_eq!(
+        calls.len(),
+        1,
+        "two calls from same template → one IncomingCall"
+    );
+    assert_eq!(
+        calls[0].from_ranges.len(),
+        2,
+        "two call sites → two fromRanges"
+    );
 }
 
 #[test]
@@ -182,8 +206,15 @@ fn call02_incoming_template_level_caller_is_module_item() {
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].from.kind, ItemKind::Module, "template-level call → Module from");
-    assert!(calls[0].from.uri.contains("caller.html"), "from uri points to calling template");
+    assert_eq!(
+        calls[0].from.kind,
+        ItemKind::Module,
+        "template-level call → Module from"
+    );
+    assert!(
+        calls[0].from.uri.contains("caller.html"),
+        "from uri points to calling template"
+    );
 }
 
 #[test]
@@ -205,7 +236,11 @@ fn call02_incoming_enclosing_macro_is_from_item() {
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].from.kind, ItemKind::Function, "enclosing macro → Function from");
+    assert_eq!(
+        calls[0].from.kind,
+        ItemKind::Function,
+        "enclosing macro → Function from"
+    );
     assert_eq!(calls[0].from.name, "wrapper");
 }
 
@@ -251,7 +286,13 @@ fn jinja_lsp_x6e9_incoming_calls_sorted_deterministically_by_uri_and_name() {
     ]);
     let macro_idx = extract(macro_src);
     let mut items = prepare_call_hierarchy(
-        macro_src, 0, col_of(macro_src, "ping"), "macro.html", &macro_idx, &w, &reg(),
+        macro_src,
+        0,
+        col_of(macro_src, "ping"),
+        "macro.html",
+        &macro_idx,
+        &w,
+        &reg(),
     );
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
@@ -270,10 +311,12 @@ fn call03_outgoing_empty_for_leaf_macro() {
     let src = "{% macro leaf() %}plain text{% endmacro %}";
     let w = ws(&[("t.html", src)]);
     let idx = extract(src);
-    let mut items =
-        prepare_call_hierarchy(src, 0, col_of(src, "leaf"), "t.html", &idx, &w, &reg());
+    let mut items = prepare_call_hierarchy(src, 0, col_of(src, "leaf"), "t.html", &idx, &w, &reg());
     let item = items.remove(0);
-    assert!(outgoing_calls(&item, &w, &reg()).is_empty(), "leaf macro → empty outgoing");
+    assert!(
+        outgoing_calls(&item, &w, &reg()).is_empty(),
+        "leaf macro → empty outgoing"
+    );
 }
 
 #[test]
@@ -300,7 +343,9 @@ fn call03_outgoing_include_is_module_edge() {
     let item = items.remove(0);
     let calls = outgoing_calls(&item, &w, &reg());
     assert!(
-        calls.iter().any(|c| c.to.kind == ItemKind::Module && c.to.name.contains("base.html")),
+        calls
+            .iter()
+            .any(|c| c.to.kind == ItemKind::Module && c.to.name.contains("base.html")),
         "include inside macro body → Module outgoing edge; got: {:?}",
         calls.iter().map(|c| &c.to.name).collect::<Vec<_>>()
     );
@@ -316,7 +361,9 @@ fn call03_outgoing_import_is_module_edge() {
     let item = items.remove(0);
     let calls = outgoing_calls(&item, &w, &reg());
     assert!(
-        calls.iter().any(|c| c.to.kind == ItemKind::Module && c.to.name.contains("helpers.html")),
+        calls
+            .iter()
+            .any(|c| c.to.kind == ItemKind::Module && c.to.name.contains("helpers.html")),
         "import inside macro body → Module outgoing edge"
     );
 }
@@ -334,12 +381,19 @@ fn jinja_lsp_x6e9_outgoing_calls_sorted_deterministically_by_uri_and_name() {
     let mut items = prepare_call_hierarchy(src, 0, m_col, "t.html", &idx, &w, &reg());
     let item = items.remove(0);
     let calls = outgoing_calls(&item, &w, &reg());
-    let pairs: Vec<(&str, &str)> = calls.iter().map(|c| (c.to.uri.as_str(), c.to.name.as_str())).collect();
+    let pairs: Vec<(&str, &str)> = calls
+        .iter()
+        .map(|c| (c.to.uri.as_str(), c.to.name.as_str()))
+        .collect();
     // a_dep/z_dep are both local macros (uri="t.html"); m_dep.html is a template
     // edge. Sorted by (uri, name): "m_dep.html" < "t.html", then "a_dep" < "z_dep".
     assert_eq!(
         pairs,
-        vec![("m_dep.html", "m_dep.html"), ("t.html", "a_dep"), ("t.html", "z_dep")],
+        vec![
+            ("m_dep.html", "m_dep.html"),
+            ("t.html", "a_dep"),
+            ("t.html", "z_dep")
+        ],
         "outgoing calls must be sorted by (uri, name), not HashMap iteration order"
     );
 }
@@ -374,7 +428,11 @@ fn call04_outgoing_is_one_level_only() {
     let mut items = prepare_call_hierarchy(src, 0, outer_col, "t.html", &idx, &w, &reg());
     let item = items.remove(0);
     let calls = outgoing_calls(&item, &w, &reg());
-    assert_eq!(calls.len(), 1, "one level only — core must not appear directly");
+    assert_eq!(
+        calls.len(),
+        1,
+        "one level only — core must not appear directly"
+    );
     assert_eq!(calls[0].to.name, "inner");
 }
 
@@ -386,8 +444,7 @@ fn call04_cycle_incoming_terminates() {
     let w = ws(&[("a.html", a_src), ("b.html", b_src)]);
     let a_idx = extract(a_src);
     let col = a_src.find("macro a").map(|i| i + 6).unwrap() as u32;
-    let mut items =
-        prepare_call_hierarchy(a_src, 0, col, "a.html", &a_idx, &w, &reg());
+    let mut items = prepare_call_hierarchy(a_src, 0, col, "a.html", &a_idx, &w, &reg());
     let item = items.remove(0);
     // must terminate and return exactly one level
     let calls = incoming_calls(&item, &w);
@@ -399,8 +456,7 @@ fn call04_cycle_incoming_terminates() {
 #[test]
 fn call04_cycle_outgoing_terminates() {
     // a calls b, b calls a — outgoing from a returns only b (one level).
-    let src =
-        "{% macro a() %}{{ b() }}{% endmacro %}{% macro b() %}{{ a() }}{% endmacro %}";
+    let src = "{% macro a() %}{{ b() }}{% endmacro %}{% macro b() %}{{ a() }}{% endmacro %}";
     let w = ws(&[("t.html", src)]);
     let idx = extract(src);
     let col = src.find("macro a").map(|i| i + 6).unwrap() as u32;
@@ -425,9 +481,23 @@ fn call_hierarchy_prepare_resolves_aliased_from_import() {
     let caller_idx = extract(caller_src);
     // col_of finds the first "salute" which is in the declaration; use the call site.
     let call_col = caller_src.find("salute(").unwrap() as u32;
-    let items = prepare_call_hierarchy(caller_src, 0, call_col, "caller.html", &caller_idx, &ws, &reg());
-    assert!(!items.is_empty(), "prepare must resolve aliased from-import to greet macro");
-    assert_eq!(items[0].name, "greet", "resolved name must be the real macro name, not the alias");
+    let items = prepare_call_hierarchy(
+        caller_src,
+        0,
+        call_col,
+        "caller.html",
+        &caller_idx,
+        &ws,
+        &reg(),
+    );
+    assert!(
+        !items.is_empty(),
+        "prepare must resolve aliased from-import to greet macro"
+    );
+    assert_eq!(
+        items[0].name, "greet",
+        "resolved name must be the real macro name, not the alias"
+    );
     assert_eq!(items[0].uri, "macros.html");
 }
 
@@ -445,14 +515,22 @@ fn call04_nested_macro_body_does_not_steal_enclosing_endmacro() {
     let ping_idx = extract("{% macro ping() %}{% endmacro %}");
     let ping_src = "{% macro ping() %}{% endmacro %}";
     let mut items = prepare_call_hierarchy(
-        ping_src, 0, col_of(ping_src, "ping"), "t.html",
-        &ping_idx, &w, &reg(),
+        ping_src,
+        0,
+        col_of(ping_src, "ping"),
+        "t.html",
+        &ping_idx,
+        &w,
+        &reg(),
     );
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
     // ping() is called inside outer's body (not inner's), so the enclosing macro is outer.
     assert_eq!(calls.len(), 1, "one IncomingCall from outer");
-    assert_eq!(calls[0].from.name, "outer", "ping() is enclosed by outer, not inner");
+    assert_eq!(
+        calls[0].from.name, "outer",
+        "ping() is enclosed by outer, not inner"
+    );
     assert_eq!(calls[0].from.kind, ItemKind::Function);
 }
 
@@ -484,12 +562,23 @@ fn call6cbt_global_function_detail_and_uri_use_pack_prefix() {
     });
 
     let item = prepare_call_hierarchy(src, 0, col_of(src, "caller"), "t.html", &idx, &w, &r)
-        .into_iter().next().expect("must prepare item");
+        .into_iter()
+        .next()
+        .expect("must prepare item");
     let calls = outgoing_calls(&item, &w, &r);
-    let url_for_edge = calls.iter().find(|c| c.to.name == "url_for").expect("url_for must be a outgoing edge");
+    let url_for_edge = calls
+        .iter()
+        .find(|c| c.to.name == "url_for")
+        .expect("url_for must be a outgoing edge");
 
-    assert_eq!(url_for_edge.to.detail, "global - starlette pack", "detail must name the pack");
-    assert_eq!(url_for_edge.to.uri, "jinja-builtin:starlette/url_for", "URI must include pack prefix");
+    assert_eq!(
+        url_for_edge.to.detail, "global - starlette pack",
+        "detail must name the pack"
+    );
+    assert_eq!(
+        url_for_edge.to.uri, "jinja-builtin:starlette/url_for",
+        "URI must include pack prefix"
+    );
 }
 
 // ─── jinja-lsp-1dzt: incoming_calls must respect macro shadowing ────────────
@@ -508,16 +597,24 @@ fn call02_incoming_calls_excludes_shadowing_template_local_macro() {
     ]);
     let macro_idx = extract(macro_src);
     let mut items = prepare_call_hierarchy(
-        macro_src, 0, col_of(macro_src, "greet"), "macro.html", &macro_idx, &w, &reg(),
+        macro_src,
+        0,
+        col_of(macro_src, "greet"),
+        "macro.html",
+        &macro_idx,
+        &w,
+        &reg(),
     );
     let item = items.remove(0);
     let calls = incoming_calls(&item, &w);
 
     let uris: Vec<&str> = calls.iter().map(|c| c.from.uri.as_str()).collect();
-    assert!(uris.contains(&"caller.html"), "caller.html must call the real macro.html greet: {uris:?}");
+    assert!(
+        uris.contains(&"caller.html"),
+        "caller.html must call the real macro.html greet: {uris:?}"
+    );
     assert!(
         !uris.contains(&"shadow.html"),
         "shadow.html's own local greet() call must NOT be attributed to macro.html's greet: {uris:?}"
     );
 }
-

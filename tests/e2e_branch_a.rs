@@ -4,11 +4,7 @@
 // and diffs the output against `expected-diagnostics.json`.
 // Run with UPDATE_FIXTURES=1 to regenerate golden files.
 
-use std::{
-    env, fs,
-    path::Path,
-    process::Command,
-};
+use std::{env, fs, path::Path, process::Command};
 
 use jinja_lsp::diagnostic::Diagnostic;
 
@@ -27,8 +23,7 @@ fn binary_path() -> std::path::PathBuf {
         }
     }
     // Fallback: build path relative to CARGO_MANIFEST_DIR
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target/debug/jinja-lsp")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/jinja-lsp")
 }
 
 fn fixture_dir(name: &str) -> std::path::PathBuf {
@@ -110,8 +105,9 @@ fn check_or_update_corpus(code: &str) {
         .unwrap_or_else(|e| panic!("failed to run {}: {e}", bin.display()));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let raw_actual: Vec<Diagnostic> = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("check output is not valid JSON for corpus/{code}: {e}\nraw: {stdout}"));
+    let raw_actual: Vec<Diagnostic> = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!("check output is not valid JSON for corpus/{code}: {e}\nraw: {stdout}")
+    });
 
     // Normalize absolute file paths to paths relative to the fixture dir so
     // golden files are portable across machines.
@@ -138,7 +134,8 @@ fn check_or_update_corpus(code: &str) {
         .unwrap_or_else(|e| panic!("golden file invalid JSON for corpus/{code}: {e}"));
 
     assert_eq!(
-        actual, expected,
+        actual,
+        expected,
         "corpus/{code} mismatch. Re-run with UPDATE_FIXTURES=1 to accept.\nactual:\n{}\nexpected:\n{}",
         serde_json::to_string_pretty(&actual).unwrap(),
         serde_json::to_string_pretty(&expected).unwrap(),
@@ -156,37 +153,115 @@ fn starlette_blog_matches_golden() {
 
 // ---------- REQ-TEST-02: per-code corpus fixtures ────────────────────────────
 
-#[test] fn corpus_e001() { check_or_update_corpus("e001"); }
-#[test] fn corpus_e101() { check_or_update_corpus("e101"); }
-#[test] fn corpus_e102() { check_or_update_corpus("e102"); }
-#[test] fn corpus_e103() { check_or_update_corpus("e103"); }
-#[test] fn corpus_e104() { check_or_update_corpus("e104"); }
-#[test] fn corpus_w106() { check_or_update_corpus("w106"); }
-#[test] fn corpus_w107() { check_or_update_corpus("w107"); }
-#[test] fn corpus_w201() { check_or_update_corpus("w201"); }
-#[test] fn corpus_w202() { check_or_update_corpus("w202"); }
-#[test] fn corpus_w203() { check_or_update_corpus("w203"); }
-#[test] fn corpus_w301() { check_or_update_corpus("w301"); }
-#[test] fn corpus_w302() { check_or_update_corpus("w302"); }
-#[test] fn corpus_w303() { check_or_update_corpus("w303"); }
-#[test] fn corpus_w304() { check_or_update_corpus("w304"); }
-#[test] fn corpus_w305() { check_or_update_corpus("w305"); }
-#[test] fn corpus_e401() { check_or_update_corpus("e401"); }
-#[test] fn corpus_w402() { check_or_update_corpus("w402"); }
-#[test] fn corpus_e403() { check_or_update_corpus("e403"); }
-#[test] fn corpus_e404() { check_or_update_corpus("e404"); }
-#[test] fn corpus_e501() { check_or_update_corpus("e501"); }
-#[test] fn corpus_e601() { check_or_update_corpus("e601"); }
+#[test]
+fn corpus_e001() {
+    check_or_update_corpus("e001");
+}
+#[test]
+fn corpus_e101() {
+    check_or_update_corpus("e101");
+}
+#[test]
+fn corpus_e102() {
+    check_or_update_corpus("e102");
+}
+#[test]
+fn corpus_e103() {
+    check_or_update_corpus("e103");
+}
+#[test]
+fn corpus_e104() {
+    check_or_update_corpus("e104");
+}
+#[test]
+fn corpus_w106() {
+    check_or_update_corpus("w106");
+}
+#[test]
+fn corpus_w107() {
+    check_or_update_corpus("w107");
+}
+#[test]
+fn corpus_w201() {
+    check_or_update_corpus("w201");
+}
+#[test]
+fn corpus_w202() {
+    check_or_update_corpus("w202");
+}
+#[test]
+fn corpus_w203() {
+    check_or_update_corpus("w203");
+}
+#[test]
+fn corpus_w301() {
+    check_or_update_corpus("w301");
+}
+#[test]
+fn corpus_w302() {
+    check_or_update_corpus("w302");
+}
+#[test]
+fn corpus_w303() {
+    check_or_update_corpus("w303");
+}
+#[test]
+fn corpus_w304() {
+    check_or_update_corpus("w304");
+}
+#[test]
+fn corpus_w305() {
+    check_or_update_corpus("w305");
+}
+#[test]
+fn corpus_e401() {
+    check_or_update_corpus("e401");
+}
+#[test]
+fn corpus_w402() {
+    check_or_update_corpus("w402");
+}
+#[test]
+fn corpus_e403() {
+    check_or_update_corpus("e403");
+}
+#[test]
+fn corpus_e404() {
+    check_or_update_corpus("e404");
+}
+#[test]
+fn corpus_e501() {
+    check_or_update_corpus("e501");
+}
+#[test]
+fn corpus_e601() {
+    check_or_update_corpus("e601");
+}
 
 // ---------- REQ-TEST-01/02: named fixture corpus (jinja-lsp-r5o7) ───────────
 
 /// Parse-recovery fixtures — triggers E001 on intentionally broken templates.
-#[test] fn fixture_syntax_errors() { check_or_update("syntax-errors"); }
+#[test]
+fn fixture_syntax_errors() {
+    check_or_update("syntax-errors");
+}
 /// Template-chain fixture — valid inheritance chain; golden file is empty.
-#[test] fn fixture_inheritance() { check_or_update("inheritance"); }
+#[test]
+fn fixture_inheritance() {
+    check_or_update("inheritance");
+}
 /// Macro-call and template-path fixture — triggers E501, E601.
-#[test] fn fixture_call_and_paths() { check_or_update("call-and-paths"); }
+#[test]
+fn fixture_call_and_paths() {
+    check_or_update("call-and-paths");
+}
 /// Config-reload fixture — valid templates with starlette extras; golden file is empty.
-#[test] fn fixture_config_reload() { check_or_update("config-reload"); }
+#[test]
+fn fixture_config_reload() {
+    check_or_update("config-reload");
+}
 /// User-hints fixture — W106 on undeclared attribute; hints suppress E101 for declared vars.
-#[test] fn fixture_user_hints() { check_or_update("user-hints"); }
+#[test]
+fn fixture_user_hints() {
+    check_or_update("user-hints");
+}

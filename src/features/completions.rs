@@ -2,7 +2,10 @@
 
 use crate::{
     builtins::registry::{Category, Registry},
-    workspace::{index::{TemplateIndex, WorkspaceIndex}, symbols::VariableScope},
+    workspace::{
+        index::{TemplateIndex, WorkspaceIndex},
+        symbols::VariableScope,
+    },
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -102,8 +105,14 @@ fn detect_context(source: &str, byte: usize) -> CursorContext {
     // Safety: render_active ↔ render_open.is_some(); stmt_active ↔ stmt_open.is_some().
     match (render_active, stmt_active) {
         (false, false) => CursorContext::Outside,
-        (true, false) => classify_render(before, render_open.expect("render_active guarantees render_open is Some")),
-        (false, true) => classify_stmt(before, stmt_open.expect("stmt_active guarantees stmt_open is Some")),
+        (true, false) => classify_render(
+            before,
+            render_open.expect("render_active guarantees render_open is Some"),
+        ),
+        (false, true) => classify_stmt(
+            before,
+            stmt_open.expect("stmt_active guarantees stmt_open is Some"),
+        ),
         (true, true) => {
             // Both active (unusual but can happen if `{{` appears inside `{% %}`).
             // The later opener wins.
@@ -133,11 +142,22 @@ fn cursor_in_string(inner: &str) -> bool {
     let mut escaped = false;
     for c in inner.chars() {
         if in_string {
-            if escaped { escaped = false; continue; }
-            if c == '\\' { escaped = true; continue; }
-            if c == string_char { in_string = false; }
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == string_char {
+                in_string = false;
+            }
         } else {
-            if c == '"' || c == '\'' { in_string = true; string_char = c; }
+            if c == '"' || c == '\'' {
+                in_string = true;
+                string_char = c;
+            }
         }
     }
     in_string
@@ -150,12 +170,23 @@ fn contains_pipe_outside_string(inner: &str) -> bool {
     let mut escaped = false;
     for c in inner.chars() {
         if in_string {
-            if escaped { escaped = false; continue; }
-            if c == '\\' { escaped = true; continue; }
-            if c == string_char { in_string = false; }
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == string_char {
+                in_string = false;
+            }
         } else {
             match c {
-                '"' | '\'' => { in_string = true; string_char = c; }
+                '"' | '\'' => {
+                    in_string = true;
+                    string_char = c;
+                }
                 '|' => return true,
                 _ => {}
             }
@@ -194,7 +225,9 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
         let before_dot = &inner[..dot_pos];
         let parent = last_identifier(before_dot);
         if !parent.is_empty() {
-            return CursorContext::Attribute { parent: parent.to_owned() };
+            return CursorContext::Attribute {
+                parent: parent.to_owned(),
+            };
         }
     }
 
@@ -215,7 +248,10 @@ fn classify_render(before: &str, open_pos: usize) -> CursorContext {
 
 /// Classify the cursor inside `{% … %}`.
 fn classify_stmt(before: &str, open_pos: usize) -> CursorContext {
-    let inner = before.get(open_pos + 2..).unwrap_or("").trim_start_matches(['-', '+', ' ', '\t']);
+    let inner = before
+        .get(open_pos + 2..)
+        .unwrap_or("")
+        .trim_start_matches(['-', '+', ' ', '\t']);
 
     // Alias slot: `{% import "..." as ` or `{% from "..." import name as `.
     // Cursor is in an identifier-naming position — no list to offer (§5.4).
@@ -269,10 +305,17 @@ fn extract_typed_path_prefix(inner: &str) -> Option<String> {
 /// innermost unclosed block statement (e.g. `"for"`, `"block"`, `"if"`).
 fn find_innermost_open_block(source_before: &str) -> Option<&'static str> {
     const PAIRS: &[(&str, &str)] = &[
-        ("for", "endfor"), ("if", "endif"), ("block", "endblock"),
-        ("macro", "endmacro"), ("call", "endcall"), ("filter", "endfilter"),
-        ("set", "endset"), ("with", "endwith"), ("raw", "endraw"),
-        ("autoescape", "endautoescape"), ("trans", "endtrans"),
+        ("for", "endfor"),
+        ("if", "endif"),
+        ("block", "endblock"),
+        ("macro", "endmacro"),
+        ("call", "endcall"),
+        ("filter", "endfilter"),
+        ("set", "endset"),
+        ("with", "endwith"),
+        ("raw", "endraw"),
+        ("autoescape", "endautoescape"),
+        ("trans", "endtrans"),
     ];
     let bytes = source_before.as_bytes();
     let mut stack: Vec<&'static str> = Vec::new();
@@ -288,7 +331,9 @@ fn find_innermost_open_block(source_before: &str) -> Option<&'static str> {
                 let mut found_close = false;
                 for &(open, close) in PAIRS {
                     if first == close {
-                        if stack.last() == Some(&open) { stack.pop(); }
+                        if stack.last() == Some(&open) {
+                            stack.pop();
+                        }
                         found_close = true;
                         break;
                     }
@@ -322,11 +367,16 @@ fn find_close_in_bytes(bytes: &[u8]) -> Option<usize> {
     while i < bytes.len() {
         let b = bytes[i];
         if in_str {
-            if escaped { escaped = false; }
-            else if b == b'\\' { escaped = true; }
-            else if b == str_char { in_str = false; }
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == str_char {
+                in_str = false;
+            }
         } else if b == b'"' || b == b'\'' {
-            in_str = true; str_char = b;
+            in_str = true;
+            str_char = b;
         } else if b == b'%' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
             return Some(i);
         }
@@ -397,7 +447,11 @@ fn callee_before_open_paren(inner: &str) -> Option<String> {
     let paren_pos = paren_pos?;
     let before_paren = inner[..paren_pos].trim_end();
     let callee = last_identifier(before_paren);
-    if callee.is_empty() { None } else { Some(callee.to_owned()) }
+    if callee.is_empty() {
+        None
+    } else {
+        Some(callee.to_owned())
+    }
 }
 
 // ── Completion item builders ───────────────────────────────────────────────────
@@ -505,14 +559,35 @@ fn macro_name_item(name: &str) -> CompletionItem {
 // ── Statement keyword list (REQ-CMP-09) ───────────────────────────────────────
 
 static STATEMENT_KEYWORDS: &[&str] = &[
-    "for", "endfor", "if", "elif", "else", "endif",
-    "block", "endblock", "macro", "endmacro",
-    "call", "endcall", "filter", "endfilter",
-    "set", "endset", "include", "extends",
-    "import", "from", "with", "endwith",
-    "do", "raw", "endraw",
-    "autoescape", "endautoescape",
-    "trans", "endtrans",
+    "for",
+    "endfor",
+    "if",
+    "elif",
+    "else",
+    "endif",
+    "block",
+    "endblock",
+    "macro",
+    "endmacro",
+    "call",
+    "endcall",
+    "filter",
+    "endfilter",
+    "set",
+    "endset",
+    "include",
+    "extends",
+    "import",
+    "from",
+    "with",
+    "endwith",
+    "do",
+    "raw",
+    "endraw",
+    "autoescape",
+    "endautoescape",
+    "trans",
+    "endtrans",
 ];
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -548,14 +623,17 @@ pub fn complete(
             // Determine which scope-gated specials are in scope (REQ-CMP-10).
             let in_for = index.variables.iter().any(|v| {
                 v.scope == VariableScope::ForLoop
-                && v.valid_range.start_byte <= byte && byte <= v.valid_range.end_byte
+                    && v.valid_range.start_byte <= byte
+                    && byte <= v.valid_range.end_byte
             });
-            let in_block = index.blocks.iter().any(|b| {
-                b.body.start_byte <= byte && byte <= b.body.end_byte
-            });
-            let in_macro = index.macros.iter().any(|m| {
-                m.body.start_byte <= byte && byte <= m.body.end_byte
-            });
+            let in_block = index
+                .blocks
+                .iter()
+                .any(|b| b.body.start_byte <= byte && byte <= b.body.end_byte);
+            let in_macro = index
+                .macros
+                .iter()
+                .any(|m| m.body.start_byte <= byte && byte <= m.body.end_byte);
             // Global functions (range, dict, …)
             for e in registry.iter_by_category(Category::Function) {
                 items.push(function_item(&e.name));
@@ -597,16 +675,25 @@ pub fn complete(
         CursorContext::Statement => {
             let before = &source[..byte];
             let stmt_start = before.rfind("{%").unwrap_or(0);
-            let inner_raw = before.get(stmt_start + 2..).unwrap_or("")
+            let inner_raw = before
+                .get(stmt_start + 2..)
+                .unwrap_or("")
                 .trim_start_matches(['-', '+', ' ', '\t']);
             if inner_raw.starts_with("end") {
                 // Block-aware: offer only the innermost unclosed block's end-tag.
                 if let Some(open_kw) = find_innermost_open_block(before) {
                     let end_tag = match open_kw {
-                        "for" => "endfor", "if" => "endif", "block" => "endblock",
-                        "macro" => "endmacro", "call" => "endcall", "filter" => "endfilter",
-                        "set" => "endset", "with" => "endwith", "raw" => "endraw",
-                        "autoescape" => "endautoescape", "trans" => "endtrans",
+                        "for" => "endfor",
+                        "if" => "endif",
+                        "block" => "endblock",
+                        "macro" => "endmacro",
+                        "call" => "endcall",
+                        "filter" => "endfilter",
+                        "set" => "endset",
+                        "with" => "endwith",
+                        "raw" => "endraw",
+                        "autoescape" => "endautoescape",
+                        "trans" => "endtrans",
                         other => other, // fallback — should not happen
                     };
                     vec![keyword_item(end_tag)]
@@ -615,7 +702,10 @@ pub fn complete(
                 }
             } else {
                 // Normal statement context: offer all statement keywords.
-                STATEMENT_KEYWORDS.iter().map(|kw| keyword_item(kw)).collect()
+                STATEMENT_KEYWORDS
+                    .iter()
+                    .map(|kw| keyword_item(kw))
+                    .collect()
             }
         }
 
@@ -623,7 +713,9 @@ pub fn complete(
         CursorContext::Attribute { parent } => {
             // REQ-CMP-10: `self.<block>()` — offer all block names defined in this template.
             if parent == "self" {
-                let items: Vec<CompletionItem> = index.blocks.iter()
+                let items: Vec<CompletionItem> = index
+                    .blocks
+                    .iter()
                     .map(|b| self_block_item(&b.name))
                     .collect();
                 return (items, false);
@@ -632,7 +724,10 @@ pub fn complete(
             if attrs.is_empty() {
                 return (vec![], false); // REQ-CMP-03: unknown receiver → no completions
             }
-            attrs.iter().map(|a| attr_item(&a.attr, &a.parent)).collect()
+            attrs
+                .iter()
+                .map(|a| attr_item(&a.attr, &a.parent))
+                .collect()
         }
 
         // REQ-CMP-12: template path context → one directory level at a time.
@@ -644,7 +739,11 @@ pub fn complete(
         CursorContext::ImportName { source_path } => workspace
             .get_by_ref(&source_path)
             .map(|src_idx| {
-                src_idx.macros.iter().map(|m| macro_name_item(&m.name)).collect()
+                src_idx
+                    .macros
+                    .iter()
+                    .map(|m| macro_name_item(&m.name))
+                    .collect()
             })
             .unwrap_or_default(),
     };
@@ -686,7 +785,12 @@ pub fn resolve_doc(data: &str, registry: &Registry) -> Option<String> {
 }
 
 /// REQ-CMP-08: Resolve parameter names for `callee` from local macros, from-imports, or registry.
-fn resolve_callee_params(callee: &str, index: &TemplateIndex, registry: &Registry, workspace: &WorkspaceIndex) -> Vec<String> {
+fn resolve_callee_params(
+    callee: &str,
+    index: &TemplateIndex,
+    registry: &Registry,
+    workspace: &WorkspaceIndex,
+) -> Vec<String> {
     // 1. Local macro.
     if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
         return m.parameters.iter().map(|p| p.name.clone()).collect();
@@ -752,4 +856,3 @@ fn complete_template_path(typed: &str, workspace: &WorkspaceIndex) -> (Vec<Compl
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-

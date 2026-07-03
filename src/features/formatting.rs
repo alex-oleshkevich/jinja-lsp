@@ -4,7 +4,7 @@
 // between LSP TextEdit types and line/col coordinates.
 
 use crate::edit::TextEdit;
-use crate::format::{format_with_config, format_with_options, FormatterConfig};
+use crate::format::{FormatterConfig, format_with_config, format_with_options};
 
 pub use crate::format::FormatOptions;
 
@@ -36,14 +36,24 @@ pub fn format_document_with_config(source: &str, config: &FormatterConfig) -> Ve
 /// REQ-FMT-07: the range is snapped outward to whole Jinja constructs so partial-tag edits
 /// are never produced: if the selection begins inside a tag body, start_line is expanded to
 /// include the opening tag; if it ends inside a construct, end_line is expanded to the closer.
-pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOptions) -> Vec<TextEdit> {
+pub fn format_range(
+    source: &str,
+    start_line: u32,
+    end_line: u32,
+    opts: FormatOptions,
+) -> Vec<TextEdit> {
     let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_options(source, opts);
     range_edits(source, &formatted, snapped_start, snapped_end)
 }
 
 /// Like `format_range`, but with a full `FormatterConfig` (see `format_document_with_config`).
-pub fn format_range_with_config(source: &str, start_line: u32, end_line: u32, config: &FormatterConfig) -> Vec<TextEdit> {
+pub fn format_range_with_config(
+    source: &str,
+    start_line: u32,
+    end_line: u32,
+    config: &FormatterConfig,
+) -> Vec<TextEdit> {
     let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_config(source, config);
     range_edits(source, &formatted, snapped_start, snapped_end)

@@ -13,8 +13,8 @@ fn server_negotiates_utf8_position_encoding() {
 
 // ─── Conversion unit tests ────────────────────────────────────────────────────
 
-use jinja_lsp::server::lsp_char_to_byte_col;
 use jinja_lsp::server::byte_col_to_lsp_char;
+use jinja_lsp::server::lsp_char_to_byte_col;
 
 #[test]
 fn utf16_to_byte_ascii_no_op() {

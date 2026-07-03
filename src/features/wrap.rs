@@ -31,8 +31,12 @@ pub fn selection_is_well_formed(source: &str, start_line: u32, end_line: u32) ->
         let mut o = 0usize;
         let mut c = 0usize;
         for i in 0..s.len().saturating_sub(1) {
-            if &s[i..i + 2] == open  { o += 1; }
-            if &s[i..i + 2] == close { c += 1; }
+            if &s[i..i + 2] == open {
+                o += 1;
+            }
+            if &s[i..i + 2] == close {
+                c += 1;
+            }
         }
         (o, c)
     };
@@ -58,23 +62,32 @@ pub fn wrap_selection(
 
     let (open_tag, close_tag) = match &kind {
         WrapKind::If => ("{% if condition %}".to_owned(), "{% endif %}".to_owned()),
-        WrapKind::For => ("{% for item in items %}".to_owned(), "{% endfor %}".to_owned()),
-        WrapKind::Block(name) => (
-            format!("{{% block {name} %}}"),
-            "{% endblock %}".to_owned(),
+        WrapKind::For => (
+            "{% for item in items %}".to_owned(),
+            "{% endfor %}".to_owned(),
         ),
+        WrapKind::Block(name) => (format!("{{% block {name} %}}"), "{% endblock %}".to_owned()),
     };
 
     // Re-indent body one level (2 spaces per F18 indentation model); empty lines stay empty.
     let indented_body: String = body_lines
         .iter()
-        .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
+        .map(|l| {
+            if l.is_empty() {
+                String::new()
+            } else {
+                format!("  {l}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
     let new_text = format!("{open_tag}\n{indented_body}\n{close_tag}");
 
-    let end_col = lines.get(end_line as usize).map(|l| l.len() as u32).unwrap_or(0);
+    let end_col = lines
+        .get(end_line as usize)
+        .map(|l| l.len() as u32)
+        .unwrap_or(0);
     let edit = TextEdit {
         start_line,
         start_col: 0,
@@ -85,5 +98,8 @@ pub fn wrap_selection(
 
     let mut changes = HashMap::new();
     changes.insert(file.to_owned(), vec![edit]);
-    Some(WorkspaceEdit { changes, create_files: vec![] })
+    Some(WorkspaceEdit {
+        changes,
+        create_files: vec![],
+    })
 }

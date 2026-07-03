@@ -18,9 +18,15 @@ fn ref01_macro_ref_returned_from_same_file() {
     // Cursor on macro definition "greet"
     let col = src.find("greet").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
-    assert!(!results.is_empty(), "must find at least one reference to greet");
+    assert!(
+        !results.is_empty(),
+        "must find at least one reference to greet"
+    );
     let paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
-    assert!(paths.contains(&"test.html"), "reference must be in test.html");
+    assert!(
+        paths.contains(&"test.html"),
+        "reference must be in test.html"
+    );
 }
 
 #[test]
@@ -37,7 +43,10 @@ fn ref01_macro_ref_found_in_other_template() {
     let results = find_references(macro_src, 0, col, "macros.html", false, &idx, &reg, &ws);
     assert!(!results.is_empty(), "must find reference from caller.html");
     let paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
-    assert!(paths.contains(&"caller.html"), "caller.html must be in results");
+    assert!(
+        paths.contains(&"caller.html"),
+        "caller.html must be in results"
+    );
 }
 
 // ─── REQ-REF-02: dedup and stable sort ────────────────────────────────────
@@ -55,7 +64,11 @@ fn ref02_results_are_deduplicated() {
     let mut seen = std::collections::HashSet::new();
     for r in &results {
         let key = (r.path.clone(), r.start_col);
-        assert!(seen.insert(key), "duplicate reference at col {}", r.start_col);
+        assert!(
+            seen.insert(key),
+            "duplicate reference at col {}",
+            r.start_col
+        );
     }
 }
 
@@ -94,9 +107,14 @@ fn ref03_include_declaration_false_excludes_definition() {
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
     // None of the results should be at the declaration position (the macro name).
     let decl_col = src.find("greet").unwrap() as u32;
-    let decl_in_results = results.iter().any(|r| r.path == "test.html" && r.start_col == decl_col);
+    let decl_in_results = results
+        .iter()
+        .any(|r| r.path == "test.html" && r.start_col == decl_col);
     // With include_declaration=false, the definition itself is excluded.
-    assert!(!decl_in_results, "declaration must be excluded when includeDeclaration=false");
+    assert!(
+        !decl_in_results,
+        "declaration must be excluded when includeDeclaration=false"
+    );
 }
 
 #[test]
@@ -125,7 +143,10 @@ fn ref04_builtin_filter_returns_empty() {
     let ws = WorkspaceIndex::default();
     let col = src.find("truncate").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
-    assert!(results.is_empty(), "built-in filter must return empty results (REQ-REF-04)");
+    assert!(
+        results.is_empty(),
+        "built-in filter must return empty results (REQ-REF-04)"
+    );
 }
 
 #[test]
@@ -151,7 +172,10 @@ fn ref05_for_loop_variable_refs_in_same_file() {
     let col = src.find("item").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
     // Should find at least the usage in {{ item }}
-    assert!(!results.is_empty(), "for loop variable must have at least one reference");
+    assert!(
+        !results.is_empty(),
+        "for loop variable must have at least one reference"
+    );
     let all_same_file = results.iter().all(|r| r.path == "test.html");
     assert!(all_same_file, "scope-local refs must be file-local");
 }
@@ -179,7 +203,10 @@ fn ref05_two_unrelated_for_loops_do_not_merge_references() {
         !touches_second_loop,
         "references from the unrelated second for-loop must not be included: {results:?}"
     );
-    assert!(!results.is_empty(), "the first loop's own usage must still be found");
+    assert!(
+        !results.is_empty(),
+        "the first loop's own usage must still be found"
+    );
 }
 
 #[test]
@@ -193,7 +220,10 @@ fn ref05_html_text_matching_variable_name_is_not_a_reference() {
     // Position of "item" in the HTML class attribute (after the Jinja block).
     let col = src.rfind("item").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
-    assert!(results.is_empty(), "HTML text matching a variable name must not yield references");
+    assert!(
+        results.is_empty(),
+        "HTML text matching a variable name must not yield references"
+    );
 }
 
 // ─── REQ-REF-01b: aliased from-import reference ──────────────────────────────
@@ -211,7 +241,10 @@ fn ref01b_aliased_import_usage_classified_as_symbol() {
     // Cursor on "bar" at the call site
     let col = src.rfind("bar").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
-    assert!(!results.is_empty(), "aliased macro usage must be classified as a symbol and yield references");
+    assert!(
+        !results.is_empty(),
+        "aliased macro usage must be classified as a symbol and yield references"
+    );
 }
 
 // ─── jinja-lsp-hv0b: alias text-scan must skip string literals ──────────────
@@ -252,7 +285,10 @@ fn ref01_block_references_collected_workspace_wide() {
     let reg = Registry::load_core();
     let col = child.find("content").unwrap() as u32;
     let results = find_references(child, 0, col, "child.html", true, &idx, &reg, &ws);
-    assert!(results.len() >= 2, "both block declarations must be collected: {results:?}");
+    assert!(
+        results.len() >= 2,
+        "both block declarations must be collected: {results:?}"
+    );
     let paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
     assert!(paths.contains(&"child.html"), "child.html must appear");
     assert!(paths.contains(&"base.html"), "base.html must appear");
@@ -269,7 +305,10 @@ fn ref01_block_cursor_on_declaration_collects_all_templates() {
     let reg = Registry::load_core();
     let col = base.find("sidebar").unwrap() as u32;
     let results = find_references(base, 0, col, "base.html", true, &idx, &reg, &ws);
-    assert!(results.len() >= 2, "both sidebar blocks must be in results: {results:?}");
+    assert!(
+        results.len() >= 2,
+        "both sidebar blocks must be in results: {results:?}"
+    );
 }
 
 // ─── REQ-REF-01: import-alias namespace usages ───────────────────────────────
@@ -286,7 +325,10 @@ fn ref01_import_alias_namespace_usages_collected() {
     let reg = Registry::load_core();
     let col = src.rfind("macros").unwrap() as u32;
     let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
-    assert!(!results.is_empty(), "import alias usage must yield references: {results:?}");
+    assert!(
+        !results.is_empty(),
+        "import alias usage must yield references: {results:?}"
+    );
 }
 
 // ─── REQ-REF-03: block includeDeclaration=false must exclude current-file block ─
@@ -308,10 +350,16 @@ fn ref_u4yx_block_include_declaration_false_excludes_current_file() {
     let results = find_references(base_src, 0, col, "base.html", false, &base_idx, &reg, &ws);
 
     let base_in_results = results.iter().any(|r| r.path == "base.html");
-    assert!(!base_in_results, "base.html block must be excluded when include_declaration=false: {results:?}");
+    assert!(
+        !base_in_results,
+        "base.html block must be excluded when include_declaration=false: {results:?}"
+    );
 
     let child_in_results = results.iter().any(|r| r.path == "child.html");
-    assert!(child_in_results, "child.html override must be included: {results:?}");
+    assert!(
+        child_in_results,
+        "child.html override must be included: {results:?}"
+    );
 }
 
 // ─── REQ-REF-03: alias includeDeclaration=false must not leak declaration ────
@@ -336,12 +384,22 @@ fn ref_6s8p_alias_include_declaration_false_excludes_declaration_site() {
     let usage_col = src.rfind("macros").unwrap() as u32; // last  occurrence = "{{ macros"
 
     // The declaration site must NOT appear when include_declaration=false.
-    let decl_in_results = results.iter().any(|r| r.start_col == decl_col && r.start_line == 0);
-    assert!(!decl_in_results, "declaration site must be excluded when include_declaration=false; results: {results:?}");
+    let decl_in_results = results
+        .iter()
+        .any(|r| r.start_col == decl_col && r.start_line == 0);
+    assert!(
+        !decl_in_results,
+        "declaration site must be excluded when include_declaration=false; results: {results:?}"
+    );
 
     // The usage site MUST appear.
-    let usage_in_results = results.iter().any(|r| r.start_col == usage_col && r.start_line == 0);
-    assert!(usage_in_results, "usage site must be in results: {results:?}");
+    let usage_in_results = results
+        .iter()
+        .any(|r| r.start_col == usage_col && r.start_line == 0);
+    assert!(
+        usage_in_results,
+        "usage site must be in results: {results:?}"
+    );
 }
 
 // ─── REQ-REF-03 / jinja-lsp-tb4c: from-import usage resolves correct def span ─
@@ -360,11 +418,23 @@ fn ref03_from_imported_macro_declaration_has_correct_span() {
     let reg = Registry::load_core();
     // Cursor on "greet" usage in caller.html
     let col = caller_src.rfind("greet").unwrap() as u32;
-    let results = find_references(caller_src, 0, col, "caller.html", true, &caller_idx, &reg, &ws);
+    let results = find_references(
+        caller_src,
+        0,
+        col,
+        "caller.html",
+        true,
+        &caller_idx,
+        &reg,
+        &ws,
+    );
 
     // The declaration in macros.html must appear
     let decl: Vec<_> = results.iter().filter(|r| r.path == "macros.html").collect();
-    assert!(!decl.is_empty(), "declaration in macros.html must be included: {results:?}");
+    assert!(
+        !decl.is_empty(),
+        "declaration in macros.html must be included: {results:?}"
+    );
 
     // The declaration must NOT be at 0:0 (the bogus default span)
     for d in &decl {
@@ -385,18 +455,30 @@ fn ref_from_import_resolves_relative_source_against_absolute_workspace_keys() {
     let macro_src = "{% macro greet(name) %}hello{{ name }}{% endmacro %}";
     let caller_src = r#"{% from "macros.html" import greet %}{{ greet( }}"#;
     let mut ws = WorkspaceIndex::default();
-    ws.templates.insert("/abs/project/macros.html".to_owned(), extract(macro_src));
-    ws.templates.insert("/abs/project/caller.html".to_owned(), extract(caller_src));
+    ws.templates
+        .insert("/abs/project/macros.html".to_owned(), extract(macro_src));
+    ws.templates
+        .insert("/abs/project/caller.html".to_owned(), extract(caller_src));
 
     let caller_idx = extract(caller_src);
     let reg = Registry::load_core();
     let col = caller_src.rfind("greet").unwrap() as u32;
     let results = find_references(
-        caller_src, 0, col, "/abs/project/caller.html", true, &caller_idx, &reg, &ws,
+        caller_src,
+        0,
+        col,
+        "/abs/project/caller.html",
+        true,
+        &caller_idx,
+        &reg,
+        &ws,
     );
 
     // The declaration must be reported under the ABSOLUTE key, not the relative "macros.html".
-    let decl: Vec<_> = results.iter().filter(|r| r.path == "/abs/project/macros.html").collect();
+    let decl: Vec<_> = results
+        .iter()
+        .filter(|r| r.path == "/abs/project/macros.html")
+        .collect();
     assert!(
         !decl.is_empty(),
         "declaration must be reported under the absolute workspace key: {results:?}"

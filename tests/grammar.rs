@@ -52,7 +52,11 @@ fn block_grammar_block_set_is_error_node_with_reachable_identifier() {
             captured.push(cap.node.utf8_text(src.as_bytes()).unwrap_or("").to_owned());
         }
     }
-    assert_eq!(captured, vec!["nav"], "block-set query must capture the variable name");
+    assert_eq!(
+        captured,
+        vec!["nav"],
+        "block-set query must capture the variable name"
+    );
 }
 
 #[test]

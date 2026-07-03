@@ -88,7 +88,11 @@ pub fn prepare_call_hierarchy(
     }
 
     // 2. Check macro definitions (cursor on the definition header itself).
-    if let Some(m) = index.macros.iter().find(|m| super::byte_in_span(byte, &m.span)) {
+    if let Some(m) = index
+        .macros
+        .iter()
+        .find(|m| super::byte_in_span(byte, &m.span))
+    {
         return vec![macro_item(m, path)];
     }
 
@@ -107,7 +111,9 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
         // Skip templates that define their own local macro with this name — those
         // calls resolve to the local definition, not the queried macro (matches
         // code_lens's count_references so the lens count and hierarchy agree).
-        if tpl_path.as_str() != item.uri && !super::template_does_not_shadow_macro(tmpl_idx, macro_name) {
+        if tpl_path.as_str() != item.uri
+            && !super::template_does_not_shadow_macro(tmpl_idx, macro_name)
+        {
             continue;
         }
         for r in &tmpl_idx.references {
@@ -119,7 +125,11 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
             }
 
             let enclosing = tmpl_idx.enclosing_owner(&r.span);
-            let enclosing_name = if let EnclosingOwner::Macro(m) = &enclosing { Some(m.name.clone()) } else { None };
+            let enclosing_name = if let EnclosingOwner::Macro(m) = &enclosing {
+                Some(m.name.clone())
+            } else {
+                None
+            };
             let key = (tpl_path.clone(), enclosing_name);
 
             let from_range = span_to_range(&r.span);
@@ -187,7 +197,11 @@ pub fn outgoing_calls(
             macro_item(&m, &def_path)
         } else if let Some(entry) = registry.get(Category::Function, &r.name) {
             // Registry global — terminal, synthetic URI.
-            let pack = if let Source::Pack(p) = &entry.source { p.as_str() } else { "global" };
+            let pack = if let Source::Pack(p) = &entry.source {
+                p.as_str()
+            } else {
+                "global"
+            };
             global_item(&r.name, pack)
         } else {
             continue; // unknown — skip
@@ -198,7 +212,10 @@ pub fn outgoing_calls(
 
     // Template edges — include/import refs inside the body (REQ-CALL-03 §5.3).
     for tref in &tmpl_idx.template_refs {
-        if !matches!(tref.kind, TemplateRefKind::Include | TemplateRefKind::Import) {
+        if !matches!(
+            tref.kind,
+            TemplateRefKind::Include | TemplateRefKind::Import
+        ) {
             continue;
         }
         if tref.is_dynamic || tref.ignore_missing {
@@ -243,7 +260,12 @@ fn macro_item(m: &MacroDefinition, path: &str) -> CallHierarchyItem {
 }
 
 fn template_item(path: &str) -> CallHierarchyItem {
-    let zero = HierarchyRange { start_line: 0, start_col: 0, end_line: 0, end_col: 0 };
+    let zero = HierarchyRange {
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        end_col: 0,
+    };
     CallHierarchyItem {
         name: path.to_owned(),
         kind: ItemKind::Module,
@@ -255,7 +277,12 @@ fn template_item(path: &str) -> CallHierarchyItem {
 }
 
 fn global_item(name: &str, pack: &str) -> CallHierarchyItem {
-    let zero = HierarchyRange { start_line: 0, start_col: 0, end_line: 0, end_col: 0 };
+    let zero = HierarchyRange {
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        end_col: 0,
+    };
     CallHierarchyItem {
         name: name.to_owned(),
         kind: ItemKind::Function,
@@ -304,7 +331,9 @@ fn resolve_macro_item(
     // From-imported: {% from "source" import name %} or {% from "source" import name as alias %}.
     for fi in &index.from_imports {
         // Resolve alias to the real imported name for lookup in the source template.
-        let real_name = fi.names.iter()
+        let real_name = fi
+            .names
+            .iter()
             .find(|n| n.name == name || n.alias.as_deref() == Some(name))
             .map(|n| n.name.as_str());
         let Some(real_name) = real_name else { continue };

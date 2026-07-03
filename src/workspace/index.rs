@@ -79,11 +79,11 @@ impl TemplateIndex {
                 // Innermost binding: smallest valid_range that still contains the reference.
                 self.variables
                     .iter()
-                    .filter(|v| {
-                        v.name == reference.name && v.valid_range.contains(&reference.span)
-                    })
+                    .filter(|v| v.name == reference.name && v.valid_range.contains(&reference.span))
                     .min_by_key(|v| {
-                        v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte)
+                        v.valid_range
+                            .end_byte
+                            .saturating_sub(v.valid_range.start_byte)
                     })
                     .map(ResolvedBinding::Variable)
                     .unwrap_or(ResolvedBinding::HostOwned)
@@ -102,8 +102,12 @@ impl TemplateIndex {
                     if imported {
                         if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
                             // Find by original name (alias is local, original is in src).
-                            let orig = fi.names.iter()
-                                .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == reference.name)
+                            let orig = fi
+                                .names
+                                .iter()
+                                .find(|n| {
+                                    n.alias.as_deref().unwrap_or(n.name.as_str()) == reference.name
+                                })
                                 .map(|n| n.name.as_str())
                                 .unwrap_or(reference.name.as_str());
                             if let Some(m) = src_idx.macros.iter().find(|m| m.name == orig) {
@@ -130,11 +134,15 @@ impl TemplateIndex {
     /// "Innermost" = smallest body (by byte length) that still contains `span`.
     pub fn enclosing_owner<'a>(&'a self, span: &Span) -> EnclosingOwner<'a> {
         // Collect all candidates (macros and blocks whose body contains span).
-        let best_macro = self.macros.iter()
+        let best_macro = self
+            .macros
+            .iter()
             .filter(|m| m.body.contains(span))
             .min_by_key(|m| m.body.end_byte.saturating_sub(m.body.start_byte));
 
-        let best_block = self.blocks.iter()
+        let best_block = self
+            .blocks
+            .iter()
             .filter(|b| b.body.contains(span))
             .min_by_key(|b| b.body.end_byte.saturating_sub(b.body.start_byte));
 
@@ -146,7 +154,11 @@ impl TemplateIndex {
                 // Both contain span; pick the smaller body (innermost).
                 let m_len = m.body.end_byte.saturating_sub(m.body.start_byte);
                 let b_len = b.body.end_byte.saturating_sub(b.body.start_byte);
-                if m_len <= b_len { EnclosingOwner::Macro(m) } else { EnclosingOwner::Block(b) }
+                if m_len <= b_len {
+                    EnclosingOwner::Macro(m)
+                } else {
+                    EnclosingOwner::Block(b)
+                }
             }
         }
     }
@@ -183,7 +195,10 @@ impl WorkspaceIndex {
     /// evict it directly.
     pub fn index_inline_for_host(&mut self, host_key: &str, key: &str, source: &str) {
         self.index_inline(key, source);
-        self.host_inline_keys.entry(host_key.to_owned()).or_default().push(key.to_owned());
+        self.host_inline_keys
+            .entry(host_key.to_owned())
+            .or_default()
+            .push(key.to_owned());
     }
 
     /// REQ-EXTR-05: index an inline Jinja region under `key` — identical to a file-based entry.
@@ -199,10 +214,12 @@ impl WorkspaceIndex {
     }
 
     /// REQ-INLN-03: iterate over all inline regions belonging to `host_key`.
-    pub fn inline_ranges_for<'a>(&'a self, host_key: &'a str)
-        -> impl Iterator<Item = (&'a str, &'a InlineRange)> + 'a
-    {
-        self.inline_ranges.iter()
+    pub fn inline_ranges_for<'a>(
+        &'a self,
+        host_key: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a InlineRange)> + 'a {
+        self.inline_ranges
+            .iter()
             .filter(move |(_, r)| r.host_path == host_key)
             .map(|(k, r)| (k.as_str(), r))
     }
@@ -251,7 +268,8 @@ impl WorkspaceIndex {
     ///
     /// Returns `None` when no template in the workspace matches `ref_path`.
     pub fn get_by_ref(&self, ref_path: &str) -> Option<&TemplateIndex> {
-        self.resolve_key(ref_path).and_then(|k| self.templates.get(k))
+        self.resolve_key(ref_path)
+            .and_then(|k| self.templates.get(k))
     }
 
     /// Workspace-wide macro-name fallback search, used when a callee is neither a

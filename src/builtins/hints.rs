@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::builtins::registry::{parse_doc_str, Registry, Source};
+use crate::builtins::registry::{Registry, Source, parse_doc_str};
 
 /// REQ-HINT-01: return the sidecar path for a template, if it exists.
 /// A sidecar is `<template_path>.hints.md` in the same directory.

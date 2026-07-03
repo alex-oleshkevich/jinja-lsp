@@ -2,7 +2,9 @@
 // Constitution §4.7 / F17 §2: rename is a Non-Goal as an LSP method;
 // it is delivered as a code-action command instead.
 
-use jinja_lsp::features::rename::{rename_at_cursor, compute_rename, check_rename_preconditions, RenameTarget};
+use jinja_lsp::features::rename::{
+    RenameTarget, check_rename_preconditions, compute_rename, rename_at_cursor,
+};
 use jinja_lsp::server::state::ServerState;
 
 // ─── Architecture conformance: LSP method must NOT be advertised ─────────────
@@ -42,11 +44,27 @@ fn rename_local_variable_via_state() {
     assert_eq!(name, "count");
     assert!(matches!(target, RenameTarget::Local { .. }));
 
-    let edit = compute_rename(&state.sources, "t.html", "count", "total", target, index, &state.workspace);
+    let edit = compute_rename(
+        &state.sources,
+        "t.html",
+        "count",
+        "total",
+        target,
+        index,
+        &state.workspace,
+    );
     assert!(edit.is_some(), "compute_rename must return edits");
-    let edits = edit.unwrap().changes.get("t.html").cloned().unwrap_or_default();
+    let edits = edit
+        .unwrap()
+        .changes
+        .get("t.html")
+        .cloned()
+        .unwrap_or_default();
     assert!(!edits.is_empty(), "must produce at least one rename edit");
-    assert!(edits.iter().all(|e| e.new_text == "total"), "all edits must replace with 'total'");
+    assert!(
+        edits.iter().all(|e| e.new_text == "total"),
+        "all edits must replace with 'total'"
+    );
 }
 
 #[test]
@@ -80,5 +98,8 @@ fn rename_invalid_identifier_refused_via_preconditions() {
 #[test]
 fn rename_command_advertised_in_server() {
     let src = include_str!("../src/server/mod.rs");
-    assert!(src.contains("jinja-lsp.rename"), "rename command must be registered in execute_command_provider");
+    assert!(
+        src.contains("jinja-lsp.rename"),
+        "rename command must be registered in execute_command_provider"
+    );
 }

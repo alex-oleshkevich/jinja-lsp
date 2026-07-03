@@ -1,8 +1,8 @@
 // F04 — User Hints tests: REQ-HINT-01 through REQ-HINT-08.
 
-use std::path::Path;
 use jinja_lsp::builtins::registry::{Category, Registry, Source};
 use jinja_lsp::diagnostics::DiagCode;
+use std::path::Path;
 
 fn fixtures_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/user-hints")
@@ -62,7 +62,10 @@ fn sidecar_file_is_discovered() {
     use jinja_lsp::builtins::hints::find_sidecar;
     let template = templates_dir().join("detail.html");
     let sidecar = find_sidecar(&template);
-    assert!(sidecar.is_some(), "sidecar must be found beside detail.html");
+    assert!(
+        sidecar.is_some(),
+        "sidecar must be found beside detail.html"
+    );
     assert!(
         sidecar.unwrap().ends_with("detail.html.hints.md"),
         "sidecar path must end with detail.html.hints.md"
@@ -104,7 +107,10 @@ fn global_hint_has_no_template_scope() {
     let mut reg = Registry::load_core();
     reg.load_hints_from_dir(&hints_dir());
     let entry = reg.get(Category::ContextVariable, "post").unwrap();
-    assert!(entry.template.is_none(), "post hint must be global (no template field)");
+    assert!(
+        entry.template.is_none(),
+        "post hint must be global (no template field)"
+    );
 }
 
 #[test]
@@ -129,7 +135,11 @@ fn hint_overrides_builtin_join_filter() {
     // load hints dir containing join_override.hints.md
     reg.load_hints_from_dir(&hints_dir());
     let entry = reg.get(Category::Filter, "join").unwrap();
-    assert_eq!(entry.source, Source::Hint, "Hint must override Core for join");
+    assert_eq!(
+        entry.source,
+        Source::Hint,
+        "Hint must override Core for join"
+    );
 }
 
 #[test]
@@ -166,18 +176,30 @@ fn w106_exists_in_diag_code() {
 fn post_attributes_in_registry_after_hint() {
     let mut reg = Registry::load_core();
     reg.load_hints_from_dir(&hints_dir());
-    assert!(reg.get_attr("post", "title").is_some(), "post.title must be in attr map");
-    assert!(reg.get_attr("post", "slug").is_some(), "post.slug must be in attr map");
-    assert!(reg.get_attr("post", "body").is_some(), "post.body must be in attr map");
-    assert!(reg.get_attr("post", "author").is_some(), "post.author must be in attr map");
+    assert!(
+        reg.get_attr("post", "title").is_some(),
+        "post.title must be in attr map"
+    );
+    assert!(
+        reg.get_attr("post", "slug").is_some(),
+        "post.slug must be in attr map"
+    );
+    assert!(
+        reg.get_attr("post", "body").is_some(),
+        "post.body must be in attr map"
+    );
+    assert!(
+        reg.get_attr("post", "author").is_some(),
+        "post.author must be in attr map"
+    );
 }
 
 // ---------- REQ-HINT-01: ServerState.update_file wires sidecar into registry --
 
 #[test]
 fn server_state_sidecar_cached_on_update_file() {
-    use jinja_lsp::server::state::ServerState;
     use jinja_lsp::builtins::registry::{Category, Source};
+    use jinja_lsp::server::state::ServerState;
 
     let template_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/user-hints/templates/detail.html");
@@ -195,7 +217,10 @@ fn server_state_sidecar_cached_on_update_file() {
     // registry_for must return the sidecar-overlaid registry.
     let reg = state.registry_for(key);
     let entry = reg.get(Category::ContextVariable, "page_title");
-    assert!(entry.is_some(), "registry_for must include the sidecar hint page_title");
+    assert!(
+        entry.is_some(),
+        "registry_for must include the sidecar hint page_title"
+    );
     assert_eq!(entry.unwrap().source, Source::Hint);
 }
 
@@ -203,8 +228,8 @@ fn server_state_sidecar_cached_on_update_file() {
 fn server_state_no_sidecar_entry_for_template_without_sidecar() {
     use jinja_lsp::server::state::ServerState;
 
-    let template_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/user-hints/templates/base.html");
+    let template_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/user-hints/templates/base.html");
     let key = template_path.to_str().unwrap();
 
     let mut state = ServerState::with_config(Default::default());
@@ -218,12 +243,14 @@ fn server_state_no_sidecar_entry_for_template_without_sidecar() {
 
 #[test]
 fn server_state_refresh_sidecar_evicts_stale_entry() {
-    use jinja_lsp::server::state::ServerState;
     use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::server::state::ServerState;
 
     let mut state = ServerState::with_config(Default::default());
     // Manually insert a fake sidecar entry.
-    state.sidecar_registries.insert("no_such.html".to_owned(), Registry::load_core());
+    state
+        .sidecar_registries
+        .insert("no_such.html".to_owned(), Registry::load_core());
 
     // refresh_sidecar for a path with no sidecar on disk must evict the entry.
     let base = state.base_registry_for("no_such.html").clone();
@@ -239,28 +266,39 @@ fn server_state_refresh_sidecar_evicts_stale_entry() {
 
 #[test]
 fn sidecar_live_reload_updates_registry() {
+    use jinja_lsp::builtins::registry::Category;
+    use jinja_lsp::server::state::ServerState;
     use std::fs;
     use tempfile::TempDir;
-    use jinja_lsp::server::state::ServerState;
-    use jinja_lsp::builtins::registry::Category;
 
     let dir = TempDir::new().unwrap();
     let template = dir.path().join("view.html");
     let sidecar = dir.path().join("view.html.hints.md");
     fs::write(&template, "{{ ctx_var }}").unwrap();
     // Write initial sidecar — declares ctx_var.
-    fs::write(&sidecar, "---\nname: ctx_var\ncategory: context_variable\n---\nA context var.").unwrap();
+    fs::write(
+        &sidecar,
+        "---\nname: ctx_var\ncategory: context_variable\n---\nA context var.",
+    )
+    .unwrap();
 
     let key = template.to_str().unwrap();
     let mut state = ServerState::with_config(Default::default());
     state.update_file(key, "{{ ctx_var }}");
     assert!(
-        state.registry_for(key).get(Category::ContextVariable, "ctx_var").is_some(),
+        state
+            .registry_for(key)
+            .get(Category::ContextVariable, "ctx_var")
+            .is_some(),
         "initial sidecar hint must be in registry"
     );
 
     // Simulate editing the sidecar: add a second variable.
-    fs::write(&sidecar, "---\nname: new_var\ncategory: context_variable\n---\nAdded by live-reload.").unwrap();
+    fs::write(
+        &sidecar,
+        "---\nname: new_var\ncategory: context_variable\n---\nAdded by live-reload.",
+    )
+    .unwrap();
     let base = state.base_registry_for(key).clone();
     state.refresh_sidecar(key, base);
 
@@ -297,11 +335,16 @@ fn malformed_hint_skipped_siblings_load() {
     use tempfile::TempDir;
 
     let dir = TempDir::new().unwrap();
-    fs::write(dir.path().join("bad.hints.md"), "---\nnot valid: yaml: :\n---\nbody").unwrap();
+    fs::write(
+        dir.path().join("bad.hints.md"),
+        "---\nnot valid: yaml: :\n---\nbody",
+    )
+    .unwrap();
     fs::write(
         dir.path().join("good.hints.md"),
         "---\nname: good_var\ncategory: context_variable\n---\nA good var.",
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut reg = Registry::load_core();
     reg.load_hints_from_dir(dir.path());

@@ -1,6 +1,6 @@
 // F18 — Formatter engine tests: REQ-FMT-01/03/04 delimiter spacing, marker spacing, pipe spacing.
 
-use jinja_lsp::format::{format, format_with_config, normalize_delimiter, FormatterConfig};
+use jinja_lsp::format::{FormatterConfig, format, format_with_config, normalize_delimiter};
 
 // ─── REQ-FMT-01: T-01 — Expression delimiter spacing ─────────────────────────
 
@@ -90,11 +90,18 @@ fn fmt01_multiline_comment_ending_with_newline_no_leading_space_before_close() {
 fn fmt01_multiline_tag_via_format_with_config_lsp_mode_has_no_trailing_whitespace() {
     // Mirrors FormatOptions::into_config: LSP mode disables trim_trailing_whitespace,
     // so the delimiter-normalization pass itself must never introduce any.
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{#\nnote\n#}";
     let result = format_with_config(src, &cfg);
     for line in result.lines() {
-        assert!(!line.ends_with(' ') && !line.ends_with('\t'), "line must have no trailing whitespace: {line:?}");
+        assert!(
+            !line.ends_with(' ') && !line.ends_with('\t'),
+            "line must have no trailing whitespace: {line:?}"
+        );
     }
 }
 
@@ -120,14 +127,23 @@ fn fmt01_syntax_error_passthrough() {
 #[test]
 fn fmt03_t11_statement_marker_spacing() {
     // {%-if x-%} → {%- if x -%}
-    assert_eq!(format("{%-if x-%}\n{%-endif-%}"), "{%- if x -%}\n{%- endif -%}");
+    assert_eq!(
+        format("{%-if x-%}\n{%-endif-%}"),
+        "{%- if x -%}\n{%- endif -%}"
+    );
 }
 
 #[test]
 fn fmt03_t13_one_sided_marker_preserved() {
     // One-sided marker preserved; spacing normalized
-    assert_eq!(format("{%- if x %}body{% endif %}"), "{%- if x %}body{% endif %}");
-    assert_eq!(format("{% if x -%}body{%- endif %}"), "{% if x -%}body{%- endif %}");
+    assert_eq!(
+        format("{%- if x %}body{% endif %}"),
+        "{%- if x %}body{% endif %}"
+    );
+    assert_eq!(
+        format("{% if x -%}body{%- endif %}"),
+        "{% if x -%}body{%- endif %}"
+    );
 }
 
 #[test]
@@ -168,7 +184,12 @@ fn fmt04_t15_compact_pipe_default() {
 #[test]
 fn fmt04_t15_spaced_pipe_with_config() {
     // Opt-in: space_around_pipe=true → spaced notation `x | filter`.
-    let cfg = FormatterConfig { space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        space_around_pipe: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     assert_eq!(format_with_config("{{ x|e }}", &cfg), "{{ x | e }}");
 }
 
@@ -187,21 +208,41 @@ fn fmt04_t17_is_test_spacing() {
 #[test]
 fn fmt04_t18_filter_call_arg_commas() {
     // space_after_comma=true (default): filter call args get a space after comma.
-    let cfg = FormatterConfig { space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
-    assert_eq!(format_with_config("{{ x | truncate( 20,true ) }}", &cfg), "{{ x | truncate(20, true) }}");
+    let cfg = FormatterConfig {
+        space_around_pipe: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
+    assert_eq!(
+        format_with_config("{{ x | truncate( 20,true ) }}", &cfg),
+        "{{ x | truncate(20, true) }}"
+    );
 }
 
 #[test]
 fn fmt04_t18_compact_filter_call_arg_commas() {
     // With default (compact pipes): filter args still get spaces, pipe stays compact.
-    assert_eq!(format("{{ x | truncate( 20,true ) }}"), "{{ x|truncate(20, true) }}");
+    assert_eq!(
+        format("{{ x | truncate( 20,true ) }}"),
+        "{{ x|truncate(20, true) }}"
+    );
 }
 
 #[test]
 fn fmt04_space_after_comma_false() {
     // space_after_comma=false: args joined without space.
-    let cfg = FormatterConfig { space_after_comma: false, space_around_pipe: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
-    assert_eq!(format_with_config("{{ x | truncate( 20,true ) }}", &cfg), "{{ x | truncate(20,true) }}");
+    let cfg = FormatterConfig {
+        space_after_comma: false,
+        space_around_pipe: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
+    assert_eq!(
+        format_with_config("{{ x | truncate( 20,true ) }}", &cfg),
+        "{{ x | truncate(20,true) }}"
+    );
 }
 
 #[test]
@@ -278,21 +319,28 @@ fn fmt02_multiline_if_tag_opener_still_counted_and_endif_dedents_correctly() {
     // exactly as written (no reindent — its own hanging alignment is the
     // author's choice, not something this pass tries to fix).
     let src = "{% block content %}\n{% if x\n   and y %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    let want =
+        "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_multiline_tag_reindent_is_idempotent() {
-    let src = "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
-    assert_eq!(format(src), src, "re-formatting already-correct output must be a no-op");
+    let src =
+        "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    assert_eq!(
+        format(src),
+        src,
+        "re-formatting already-correct output must be a no-op"
+    );
 }
 
 #[test]
 fn fmt02_t02_nested_blocks_compound() {
     // Nested blocks: depth 1 = 4 spaces, depth 2 = 8 spaces.
     let src = "{% block outer %}\n{% block inner %}\nhello\n{% endblock %}\n{% endblock %}";
-    let want = "{% block outer %}\n    {% block inner %}\nhello\n    {% endblock %}\n{% endblock %}";
+    let want =
+        "{% block outer %}\n    {% block inner %}\nhello\n    {% endblock %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -327,7 +375,8 @@ fn fmt02_t06_macro_body_indented() {
 #[test]
 fn fmt02_t07_inline_set_not_opener() {
     // {% set x = value %} is an inline statement — must NOT increase depth.
-    let src = "{% block content %}\n{% set x = 1 %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let src =
+        "{% block content %}\n{% set x = 1 %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     let want = "{% block content %}\n    {% set x = 1 %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
@@ -361,7 +410,8 @@ fn fmt02_t10_single_line_if_endif_no_depth_leak() {
 fn fmt02_t11_single_line_in_outer_block() {
     // A single-line inner block inside a multi-line outer block must still
     // produce depth=1 indentation for subsequent siblings.
-    let src = "{% block outer %}\n{% block inner %}x{% endblock %}\n{% set y = 1 %}\n{% endblock %}";
+    let src =
+        "{% block outer %}\n{% block inner %}x{% endblock %}\n{% set y = 1 %}\n{% endblock %}";
     let want = "{% block outer %}\n    {% block inner %}x{% endblock %}\n    {% set y = 1 %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
@@ -451,7 +501,10 @@ fn fmt02_idempotent() {
 #[test]
 fn fmt05_t20_html_bytes_untouched() {
     let src = "<p class=\"lead\">{{name}}</p>\n<a href=\"url\">link</a>";
-    assert_eq!(format(src), "<p class=\"lead\">{{ name }}</p>\n<a href=\"url\">link</a>");
+    assert_eq!(
+        format(src),
+        "<p class=\"lead\">{{ name }}</p>\n<a href=\"url\">link</a>"
+    );
 }
 
 #[test]
@@ -499,14 +552,25 @@ fn fmt06_t27_syntax_error_passthrough() {
 
 #[test]
 fn fmt_config_newline_at_eof_adds_newline() {
-    let cfg = FormatterConfig { newline_at_eof: true, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: true,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let result = format_with_config("{{ x }}", &cfg);
-    assert!(result.ends_with('\n'), "newline_at_eof=true must append newline");
+    assert!(
+        result.ends_with('\n'),
+        "newline_at_eof=true must append newline"
+    );
 }
 
 #[test]
 fn fmt_config_newline_at_eof_idempotent() {
-    let cfg = FormatterConfig { newline_at_eof: true, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: true,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let once = format_with_config("{{ x }}", &cfg);
     let twice = format_with_config(&once, &cfg);
     assert_eq!(once, twice, "newline_at_eof must be idempotent");
@@ -514,17 +578,29 @@ fn fmt_config_newline_at_eof_idempotent() {
 
 #[test]
 fn fmt_config_trim_trailing_whitespace() {
-    let cfg = FormatterConfig { trim_trailing_whitespace: true, newline_at_eof: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        trim_trailing_whitespace: true,
+        newline_at_eof: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% if x %}  \nhello   \n{% endif %}";
     let result = format_with_config(src, &cfg);
     for line in result.lines() {
-        assert!(!line.ends_with(' '), "trailing whitespace must be stripped: {line:?}");
+        assert!(
+            !line.ends_with(' '),
+            "trailing whitespace must be stripped: {line:?}"
+        );
     }
 }
 
 #[test]
 fn fmt_config_indent_size_2() {
-    let cfg = FormatterConfig { indent_size: 2, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        indent_size: 2,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     let want = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
@@ -532,17 +608,29 @@ fn fmt_config_indent_size_2() {
 
 #[test]
 fn fmt_config_use_tabs() {
-    let cfg = FormatterConfig { use_tabs: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        use_tabs: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     let result = format_with_config(src, &cfg);
-    assert!(result.contains('\t'), "use_tabs=true must use tabs for indentation");
+    assert!(
+        result.contains('\t'),
+        "use_tabs=true must use tabs for indentation"
+    );
 }
 
 // ─── jinja-lsp-qupa: space_inside_variable_delimiters / space_inside_block_delimiters ───
 
 #[test]
 fn fmt_config_space_inside_variable_delimiters_default_true() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     assert_eq!(format_with_config("{{x}}", &cfg), "{{ x }}");
 }
 
@@ -550,7 +638,8 @@ fn fmt_config_space_inside_variable_delimiters_default_true() {
 fn fmt_config_space_inside_variable_delimiters_false() {
     let cfg = FormatterConfig {
         space_inside_variable_delimiters: false,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     assert_eq!(format_with_config("{{ x }}", &cfg), "{{x}}");
@@ -558,25 +647,37 @@ fn fmt_config_space_inside_variable_delimiters_false() {
 
 #[test]
 fn fmt_config_space_inside_block_delimiters_default_true() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
-    assert_eq!(format_with_config("{%if x%}{%endif%}", &cfg), "{% if x %}{% endif %}");
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
+    assert_eq!(
+        format_with_config("{%if x%}{%endif%}", &cfg),
+        "{% if x %}{% endif %}"
+    );
 }
 
 #[test]
 fn fmt_config_space_inside_block_delimiters_false() {
     let cfg = FormatterConfig {
         space_inside_block_delimiters: false,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
-    assert_eq!(format_with_config("{% if x %}{% endif %}", &cfg), "{%if x%}{%endif%}");
+    assert_eq!(
+        format_with_config("{% if x %}{% endif %}", &cfg),
+        "{%if x%}{%endif%}"
+    );
 }
 
 #[test]
 fn fmt_config_space_inside_delimiters_false_preserves_whitespace_control_markers() {
     let cfg = FormatterConfig {
         space_inside_variable_delimiters: false,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     assert_eq!(format_with_config("{{- x -}}", &cfg), "{{-x-}}");
@@ -588,28 +689,43 @@ fn fmt_config_space_inside_block_delimiters_false_does_not_affect_variable_delim
     // touch {{ }} spacing.
     let cfg = FormatterConfig {
         space_inside_block_delimiters: false,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
-    assert_eq!(format_with_config("{%if x%}{{ y }}{%endif%}", &cfg), "{%if x%}{{ y }}{%endif%}");
+    assert_eq!(
+        format_with_config("{%if x%}{{ y }}{%endif%}", &cfg),
+        "{%if x%}{{ y }}{%endif%}"
+    );
 }
 
 // ─── jinja-lsp-qupa: space_inside_parens ─────────────────────────────────────
 
 #[test]
 fn fmt_config_space_inside_parens_default_false() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
-    assert_eq!(format_with_config("{{ name|upper(20, true) }}", &cfg), "{{ name|upper(20, true) }}");
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
+    assert_eq!(
+        format_with_config("{{ name|upper(20, true) }}", &cfg),
+        "{{ name|upper(20, true) }}"
+    );
 }
 
 #[test]
 fn fmt_config_space_inside_parens_true() {
     let cfg = FormatterConfig {
         space_inside_parens: true,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
-    assert_eq!(format_with_config("{{ name|upper(20, true) }}", &cfg), "{{ name|upper( 20, true ) }}");
+    assert_eq!(
+        format_with_config("{{ name|upper(20, true) }}", &cfg),
+        "{{ name|upper( 20, true ) }}"
+    );
 }
 
 // ─── jinja-lsp-qupa: space_around_operators ──────────────────────────────────
@@ -627,7 +743,12 @@ fn fmt_config_space_around_operators_default_false_leaves_spaced_untouched() {
 
 #[test]
 fn fmt_config_space_around_operators_true_adds_spaces() {
-    let cfg = FormatterConfig { space_around_operators: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        space_around_operators: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     assert_eq!(format_with_config("{{ a+b }}", &cfg), "{{ a + b }}");
     assert_eq!(format_with_config("{{ a==b }}", &cfg), "{{ a == b }}");
     assert_eq!(format_with_config("{{ a<=b }}", &cfg), "{{ a <= b }}");
@@ -635,7 +756,12 @@ fn fmt_config_space_around_operators_true_adds_spaces() {
 
 #[test]
 fn fmt_config_space_around_operators_true_keeps_keyword_operators_spaced_as_before() {
-    let cfg = FormatterConfig { space_around_operators: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        space_around_operators: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     assert_eq!(format_with_config("{{ a and b }}", &cfg), "{{ a and b }}");
 }
 
@@ -643,7 +769,11 @@ fn fmt_config_space_around_operators_true_keeps_keyword_operators_spaced_as_befo
 
 #[test]
 fn fmt_config_blank_lines_after_block_default_zero_is_noop() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% block a %}x{% endblock %}\n{% block b %}y{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), src);
 }
@@ -652,7 +782,8 @@ fn fmt_config_blank_lines_after_block_default_zero_is_noop() {
 fn fmt_config_blank_lines_after_block_inserts_configured_count() {
     let cfg = FormatterConfig {
         blank_lines_after_block: 1,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "{% block a %}x{% endblock %}\n{% block b %}y{% endblock %}";
@@ -664,7 +795,8 @@ fn fmt_config_blank_lines_after_block_inserts_configured_count() {
 fn fmt_config_blank_lines_after_block_does_not_add_past_end_of_file() {
     let cfg = FormatterConfig {
         blank_lines_after_block: 2,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "{% block a %}x{% endblock %}";
@@ -676,7 +808,8 @@ fn fmt_config_blank_lines_after_block_ignores_elif_else() {
     // elif/else re-align within the same if/endif — they don't return to depth 0.
     let cfg = FormatterConfig {
         blank_lines_after_block: 1,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "{% if x %}\na\n{% else %}\nb\n{% endif %}\n{% block c %}z{% endblock %}";
@@ -691,7 +824,8 @@ fn fmt_config_blank_lines_after_block_does_not_fire_for_nested_closer() {
     // the for-loop tags one level — that's REQ-FMT-02, not this option.)
     let cfg = FormatterConfig {
         blank_lines_after_block: 1,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "{% block a %}\n{% for x in xs %}\n{{ x }}\n{% endfor %}\n{% endblock %}";
@@ -703,21 +837,38 @@ fn fmt_config_blank_lines_after_block_does_not_fire_for_nested_closer() {
 
 #[test]
 fn fmt_config_trim_blocks_default_false_is_noop() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% if x %}\nhello\n{% endif %}";
     assert_eq!(format_with_config(src, &cfg), src);
 }
 
 #[test]
 fn fmt_config_trim_blocks_true_strips_newline_after_tag() {
-    let cfg = FormatterConfig { trim_blocks: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        trim_blocks: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% if x %}\nhello\n{% endif %}";
-    assert_eq!(format_with_config(src, &cfg), "{% if x %}hello\n{% endif %}");
+    assert_eq!(
+        format_with_config(src, &cfg),
+        "{% if x %}hello\n{% endif %}"
+    );
 }
 
 #[test]
 fn fmt_config_trim_blocks_does_not_affect_variable_delimiters() {
-    let cfg = FormatterConfig { trim_blocks: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        trim_blocks: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{{ x }}\nhello";
     assert_eq!(format_with_config(src, &cfg), src);
 }
@@ -727,7 +878,11 @@ fn fmt_config_lstrip_blocks_default_false_leaves_reindented_output_alone() {
     // reindent (REQ-FMT-02) already runs before lstrip_blocks and indents the
     // nested if/endif to depth 1 — lstrip_blocks=false must not additionally
     // strip that indentation.
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     let want = "{% block a %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
@@ -737,7 +892,12 @@ fn fmt_config_lstrip_blocks_default_false_leaves_reindented_output_alone() {
 fn fmt_config_lstrip_blocks_true_strips_leading_whitespace_before_tag() {
     // Same nested source as above, but lstrip_blocks=true flattens the leading
     // whitespace reindent just added, regardless of depth.
-    let cfg = FormatterConfig { lstrip_blocks: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        lstrip_blocks: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     let want = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
@@ -746,7 +906,12 @@ fn fmt_config_lstrip_blocks_true_strips_leading_whitespace_before_tag() {
 #[test]
 fn fmt_config_lstrip_blocks_leaves_non_whitespace_prefix_untouched() {
     // If there's real content before the tag on the same line, don't strip anything.
-    let cfg = FormatterConfig { lstrip_blocks: true, newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        lstrip_blocks: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     let src = "text {% if x %}\nhello\n{% endif %}";
     assert_eq!(format_with_config(src, &cfg), src);
 }
@@ -754,21 +919,33 @@ fn fmt_config_lstrip_blocks_leaves_non_whitespace_prefix_untouched() {
 #[test]
 fn fmt_config_trim_blocks_and_lstrip_blocks_combine() {
     let cfg = FormatterConfig {
-        trim_blocks: true, lstrip_blocks: true,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        trim_blocks: true,
+        lstrip_blocks: true,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "    {% if x %}\nhello\n    {% endif %}";
-    assert_eq!(format_with_config(src, &cfg), "{% if x %}hello\n{% endif %}");
+    assert_eq!(
+        format_with_config(src, &cfg),
+        "{% if x %}hello\n{% endif %}"
+    );
 }
 
 // ─── jinja-lsp-qupa: preferred_quote ──────────────────────────────────────────
 
 #[test]
 fn fmt_config_preferred_quote_default_preserve_is_noop() {
-    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let cfg = FormatterConfig {
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
+        ..FormatterConfig::default()
+    };
     assert_eq!(format_with_config("{{ 'hello' }}", &cfg), "{{ 'hello' }}");
-    assert_eq!(format_with_config("{{ \"hello\" }}", &cfg), "{{ \"hello\" }}");
+    assert_eq!(
+        format_with_config("{{ \"hello\" }}", &cfg),
+        "{{ \"hello\" }}"
+    );
 }
 
 #[test]
@@ -776,7 +953,8 @@ fn fmt_config_preferred_quote_double_converts_single() {
     use jinja_lsp::format::QuoteStyle;
     let cfg = FormatterConfig {
         preferred_quote: QuoteStyle::Double,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     assert_eq!(format_with_config("{{ 'hello' }}", &cfg), "{{ \"hello\" }}");
@@ -787,7 +965,8 @@ fn fmt_config_preferred_quote_single_converts_double() {
     use jinja_lsp::format::QuoteStyle;
     let cfg = FormatterConfig {
         preferred_quote: QuoteStyle::Single,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     assert_eq!(format_with_config("{{ \"hello\" }}", &cfg), "{{ 'hello' }}");
@@ -798,12 +977,16 @@ fn fmt_config_preferred_quote_unescapes_no_longer_needed_escape() {
     use jinja_lsp::format::QuoteStyle;
     let cfg = FormatterConfig {
         preferred_quote: QuoteStyle::Double,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     // \' is only needed inside a single-quoted string; once we switch to double
     // quotes it must be unescaped to a plain '.
-    assert_eq!(format_with_config(r#"{{ 'it\'s' }}"#, &cfg), r#"{{ "it's" }}"#);
+    assert_eq!(
+        format_with_config(r#"{{ 'it\'s' }}"#, &cfg),
+        r#"{{ "it's" }}"#
+    );
 }
 
 #[test]
@@ -811,7 +994,8 @@ fn fmt_config_preferred_quote_skips_conversion_when_it_would_need_reescaping() {
     use jinja_lsp::format::QuoteStyle;
     let cfg = FormatterConfig {
         preferred_quote: QuoteStyle::Double,
-        newline_at_eof: false, trim_trailing_whitespace: false,
+        newline_at_eof: false,
+        trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     // Converting to double quotes would require escaping the embedded ", which
@@ -835,24 +1019,53 @@ fn fmt_config_merge_into_overrides_only_tab_size_and_insert_spaces() {
         preferred_quote: jinja_lsp::format::QuoteStyle::Double,
         ..FormatterConfig::default()
     };
-    let opts = FormatOptions { tab_size: 2, insert_spaces: true };
+    let opts = FormatOptions {
+        tab_size: 2,
+        insert_spaces: true,
+    };
     let merged = opts.merge_into(&base);
 
-    assert_eq!(merged.indent_size, 2, "indent_size must come from the LSP request");
-    assert!(!merged.use_tabs, "use_tabs must come from the LSP request (insert_spaces=true)");
-    assert!(merged.space_around_pipe, "space_around_pipe must be preserved from the workspace config");
-    assert!(!merged.space_after_comma, "space_after_comma must be preserved from the workspace config");
-    assert_eq!(merged.preferred_quote, jinja_lsp::format::QuoteStyle::Double, "preferred_quote must be preserved from the workspace config");
+    assert_eq!(
+        merged.indent_size, 2,
+        "indent_size must come from the LSP request"
+    );
+    assert!(
+        !merged.use_tabs,
+        "use_tabs must come from the LSP request (insert_spaces=true)"
+    );
+    assert!(
+        merged.space_around_pipe,
+        "space_around_pipe must be preserved from the workspace config"
+    );
+    assert!(
+        !merged.space_after_comma,
+        "space_after_comma must be preserved from the workspace config"
+    );
+    assert_eq!(
+        merged.preferred_quote,
+        jinja_lsp::format::QuoteStyle::Double,
+        "preferred_quote must be preserved from the workspace config"
+    );
 }
 
 #[test]
 fn fmt_config_merge_into_disables_file_level_concerns_for_lsp() {
     use jinja_lsp::format::FormatOptions;
-    let base = FormatterConfig { newline_at_eof: true, trim_trailing_whitespace: true, ..FormatterConfig::default() };
+    let base = FormatterConfig {
+        newline_at_eof: true,
+        trim_trailing_whitespace: true,
+        ..FormatterConfig::default()
+    };
     let opts = FormatOptions::default();
     let merged = opts.merge_into(&base);
-    assert!(!merged.newline_at_eof, "LSP formatting must not force a trailing newline (editors handle this)");
-    assert!(!merged.trim_trailing_whitespace, "LSP formatting must not trim trailing whitespace (editors handle this)");
+    assert!(
+        !merged.newline_at_eof,
+        "LSP formatting must not force a trailing newline (editors handle this)"
+    );
+    assert!(
+        !merged.trim_trailing_whitespace,
+        "LSP formatting must not trim trailing whitespace (editors handle this)"
+    );
 }
 
 #[test]
@@ -886,6 +1099,7 @@ fn jinja_lsp_e1ef_apostrophe_in_host_text_does_not_hide_a_following_open_tag() {
     // entirely, so its depth increment never applied to a nested {% block %}.
     use jinja_lsp::format::reindent;
     let src = "{% set x = \"a\" %} don't {% if\ncond %}\n{% block b %}x{% endblock %}\n{% endif %}";
-    let want = "{% set x = \"a\" %} don't {% if\ncond %}\n  {% block b %}x{% endblock %}\n{% endif %}";
+    let want =
+        "{% set x = \"a\" %} don't {% if\ncond %}\n  {% block b %}x{% endblock %}\n{% endif %}";
     assert_eq!(reindent(src, "  "), want);
 }

@@ -7,14 +7,22 @@ fn binary() -> std::path::PathBuf {
     loop {
         p.pop();
         let c = p.join("jinja-lsp");
-        if c.is_file() { return c; }
-        if p.parent().is_none() { break; }
+        if c.is_file() {
+            return c;
+        }
+        if p.parent().is_none() {
+            break;
+        }
     }
     Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/jinja-lsp")
 }
 
 fn check(args: &[&str]) -> (String, String, i32) {
-    let out = Command::new(binary()).arg("check").args(args).output().unwrap();
+    let out = Command::new(binary())
+        .arg("check")
+        .args(args)
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     let code = out.status.code().unwrap_or(-1);
@@ -42,7 +50,10 @@ fn tmpdir(suffix: &str) -> std::path::PathBuf {
 fn single_file_path_accepted() {
     let f = starlette_templates().join("base.html");
     let (_, _, code) = check(&[f.to_str().unwrap()]);
-    assert!(code == 0 || code == 1, "exit code must be 0 or 1, got {code}");
+    assert!(
+        code == 0 || code == 1,
+        "exit code must be 0 or 1, got {code}"
+    );
 }
 
 #[test]
@@ -69,7 +80,10 @@ fn format_json_flag_accepted() {
     assert!(code == 0 || code == 1);
     // stdout must be valid JSON
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
-    assert!(parsed.is_ok(), "json format must produce valid JSON: {stdout}");
+    assert!(
+        parsed.is_ok(),
+        "json format must produce valid JSON: {stdout}"
+    );
 }
 
 #[test]
@@ -147,7 +161,10 @@ fn json_file_field_is_forward_slash() {
     let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
     for item in arr {
         let file = item["file"].as_str().unwrap();
-        assert!(!file.contains('\\'), "path must use forward slashes: {file}");
+        assert!(
+            !file.contains('\\'),
+            "path must use forward slashes: {file}"
+        );
     }
 }
 
@@ -159,16 +176,27 @@ fn compact_format_one_line_per_finding() {
     fs::write(tmp.join("bad.html"), "{{ undefined_var }}").unwrap();
     let (stdout, _, _) = check(&["--format", "compact", tmp.to_str().unwrap()]);
     // Must produce at least one finding
-    assert!(!stdout.trim().is_empty(), "compact output must not be empty");
+    assert!(
+        !stdout.trim().is_empty(),
+        "compact output must not be empty"
+    );
     // Each line: "path:line:col: CODE slug: message" — no blank lines
     for line in stdout.lines() {
         assert!(!line.is_empty(), "compact must not emit blank lines");
         // Verify structure: starts with a path and 1-based line:col
         let parts: Vec<&str> = line.splitn(2, ": ").collect();
-        assert_eq!(parts.len(), 2, "each compact line must have ': ' separator: {line:?}");
+        assert_eq!(
+            parts.len(),
+            2,
+            "each compact line must have ': ' separator: {line:?}"
+        );
         let loc = parts[0]; // "path:line:col"
         let loc_parts: Vec<&str> = loc.rsplitn(3, ':').collect();
-        assert_eq!(loc_parts.len(), 3, "location must be path:line:col: {line:?}");
+        assert_eq!(
+            loc_parts.len(),
+            3,
+            "location must be path:line:col: {line:?}"
+        );
         let col: u32 = loc_parts[0].parse().expect("col must be numeric");
         let linenum: u32 = loc_parts[1].parse().expect("line must be numeric");
         assert!(linenum >= 1, "line must be 1-based: {line:?}");
@@ -183,16 +211,28 @@ fn t30_slug_in_ignore_exits_2() {
     // REQ-LINT-03: slugs must be rejected; only codes/prefixes are valid
     let dir = starlette_templates();
     let (stdout, stderr, code) = check(&["--ignore", "undefined-variable", dir.to_str().unwrap()]);
-    assert_eq!(code, 2, "slug in --ignore must exit 2, stdout={stdout:?} stderr={stderr:?}");
-    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+    assert_eq!(
+        code, 2,
+        "slug in --ignore must exit 2, stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stderr.contains("error"),
+        "must emit error to stderr: {stderr:?}"
+    );
 }
 
 #[test]
 fn t30_slug_in_select_exits_2() {
     let dir = starlette_templates();
     let (stdout, stderr, code) = check(&["--select", "unused-import", dir.to_str().unwrap()]);
-    assert_eq!(code, 2, "slug in --select must exit 2, stdout={stdout:?} stderr={stderr:?}");
-    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+    assert_eq!(
+        code, 2,
+        "slug in --select must exit 2, stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stderr.contains("error"),
+        "must emit error to stderr: {stderr:?}"
+    );
 }
 
 // ---------- REQ-LINT-08 / T-29: nonexistent PATH → exit 2 -------------------
@@ -201,8 +241,14 @@ fn t30_slug_in_select_exits_2() {
 fn t29_nonexistent_path_exits_2() {
     // REQ-LINT-08: bad PATH → exit 2, not 0
     let (stdout, stderr, code) = check(&["./does-not-exist-jinjachecktest"]);
-    assert_eq!(code, 2, "missing path must exit 2, stdout={stdout:?} stderr={stderr:?}");
-    assert!(stderr.contains("error"), "must emit error to stderr: {stderr:?}");
+    assert_eq!(
+        code, 2,
+        "missing path must exit 2, stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stderr.contains("error"),
+        "must emit error to stderr: {stderr:?}"
+    );
 }
 
 // ---------- REQ-LINT-10 / T-04c: json file path is workspace-relative -------
@@ -217,10 +263,15 @@ fn t04c_json_file_field_is_workspace_relative() {
     assert!(!arr.is_empty(), "fixture must produce at least one finding");
     for item in &arr {
         let file = item["file"].as_str().unwrap();
-        assert!(!std::path::Path::new(file).is_absolute(),
-            "file field must be workspace-relative, not absolute: {file:?}");
+        assert!(
+            !std::path::Path::new(file).is_absolute(),
+            "file field must be workspace-relative, not absolute: {file:?}"
+        );
         // The only file in the fixture is t.html
-        assert_eq!(file, "t.html", "relative path must equal the filename: got {file:?}");
+        assert_eq!(
+            file, "t.html",
+            "relative path must equal the filename: got {file:?}"
+        );
     }
 }
 
@@ -235,11 +286,11 @@ fn t6zo5_invalid_noqa_w107_appears_in_check_output() {
     fs::write(tmp.join("t.html"), "{{ x }} {# noqa: bad-code #}").unwrap();
     let (stdout, _, code) = check(&["--format", "json", tmp.to_str().unwrap()]);
     let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
-    let codes: Vec<&str> = arr.iter()
-        .filter_map(|v| v["code"].as_str())
-        .collect();
-    assert!(codes.contains(&"JINJA-W107"),
-        "W107 invalid-noqa must appear in check output, got codes: {codes:?}");
+    let codes: Vec<&str> = arr.iter().filter_map(|v| v["code"].as_str()).collect();
+    assert!(
+        codes.contains(&"JINJA-W107"),
+        "W107 invalid-noqa must appear in check output, got codes: {codes:?}"
+    );
     assert_eq!(code, 1, "W107 is a finding → exit 1");
 }
 
@@ -252,11 +303,11 @@ fn jinja_lsp_8dqt_invalid_noqa_reported_when_file_has_no_other_diagnostics() {
     fs::write(tmp.join("t.html"), "<p>hello</p>\n{# noqa: bad-code #}\n").unwrap();
     let (stdout, _, code) = check(&["--format", "json", tmp.to_str().unwrap()]);
     let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
-    let codes: Vec<&str> = arr.iter()
-        .filter_map(|v| v["code"].as_str())
-        .collect();
-    assert!(codes.contains(&"JINJA-W107"),
-        "W107 must be reported even when it is the file's only diagnostic, got codes: {codes:?}");
+    let codes: Vec<&str> = arr.iter().filter_map(|v| v["code"].as_str()).collect();
+    assert!(
+        codes.contains(&"JINJA-W107"),
+        "W107 must be reported even when it is the file's only diagnostic, got codes: {codes:?}"
+    );
     assert_eq!(code, 1, "W107 is a finding → exit 1");
 }
 
@@ -266,14 +317,23 @@ fn jinja_lsp_ibun_ignored_w107_is_not_reported() {
     // so --ignore JINJA-W107 (or a --select that excludes it) had no effect on them.
     let tmp = tmpdir("w107-ignored");
     fs::write(tmp.join("t.html"), "<p>hello</p>\n{# noqa: bad-code #}\n").unwrap();
-    let (stdout, _, code) = check(&["--format", "json", "--ignore", "JINJA-W107", tmp.to_str().unwrap()]);
+    let (stdout, _, code) = check(&[
+        "--format",
+        "json",
+        "--ignore",
+        "JINJA-W107",
+        tmp.to_str().unwrap(),
+    ]);
     let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
-    let codes: Vec<&str> = arr.iter()
-        .filter_map(|v| v["code"].as_str())
-        .collect();
-    assert!(!codes.contains(&"JINJA-W107"),
-        "W107 must be suppressed by --ignore JINJA-W107, got codes: {codes:?}");
-    assert_eq!(code, 0, "no findings remain after ignoring the only diagnostic → exit 0");
+    let codes: Vec<&str> = arr.iter().filter_map(|v| v["code"].as_str()).collect();
+    assert!(
+        !codes.contains(&"JINJA-W107"),
+        "W107 must be suppressed by --ignore JINJA-W107, got codes: {codes:?}"
+    );
+    assert_eq!(
+        code, 0,
+        "no findings remain after ignoring the only diagnostic → exit 0"
+    );
 }
 
 // ---------- jinja-lsp-6g3l: invalid --format must exit 2 -------------------
@@ -284,9 +344,14 @@ fn t6g3l_invalid_format_value_exits_2() {
     let tmp = tmpdir("fmt_bogus");
     fs::write(tmp.join("t.html"), "{{ x }}").unwrap();
     let (_, stderr, code) = check(&["--format", "bogus", tmp.to_str().unwrap()]);
-    assert_eq!(code, 2, "unrecognized --format must exit 2, got {code}; stderr: {stderr}");
-    assert!(stderr.contains("bogus") || stderr.contains("format"),
-        "stderr must mention the invalid value or 'format': {stderr}");
+    assert_eq!(
+        code, 2,
+        "unrecognized --format must exit 2, got {code}; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("bogus") || stderr.contains("format"),
+        "stderr must mention the invalid value or 'format': {stderr}"
+    );
 }
 
 // ---------- jinja-lsp-k2gk: --verbose emits INFO to stderr ------------------
@@ -299,7 +364,10 @@ fn k2gk_verbose_flag_emits_discovery_info_to_stderr() {
     fs::write(tmp.join("b.html"), "{{ y }}").unwrap();
     let (_, stderr, code) = check(&["--verbose", tmp.to_str().unwrap()]);
     assert!(code == 0 || code == 1, "exit code must be 0 or 1: {code}");
-    assert!(!stderr.is_empty(), "--verbose must emit something to stderr");
+    assert!(
+        !stderr.is_empty(),
+        "--verbose must emit something to stderr"
+    );
     // Must mention template count or the word "discovered"/"template"/"file".
     assert!(
         stderr.contains("template") || stderr.contains("discover") || stderr.contains("2"),
@@ -313,5 +381,8 @@ fn k2gk_non_verbose_run_emits_nothing_to_stderr() {
     let tmp = tmpdir("no_verbose_clean");
     fs::write(tmp.join("a.html"), "{{ x }}").unwrap();
     let (_, stderr, _) = check(&[tmp.to_str().unwrap()]);
-    assert!(stderr.is_empty(), "non-verbose run must not emit to stderr: {stderr}");
+    assert!(
+        stderr.is_empty(),
+        "non-verbose run must not emit to stderr: {stderr}"
+    );
 }

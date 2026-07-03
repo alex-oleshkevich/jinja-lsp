@@ -1,9 +1,9 @@
 // F01 diagnostics tests: REQ-DIAG-01 through REQ-DIAG-06.
 
-use jinja_lsp::diagnostics::{
-    filter_by_config, parse_noqa_directives, suppress_by_noqa, DiagCode, NoqaDirective,
-};
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
+use jinja_lsp::diagnostics::{
+    DiagCode, NoqaDirective, filter_by_config, parse_noqa_directives, suppress_by_noqa,
+};
 
 fn make_diag(line: u32, code: &str, slug: &str) -> Diagnostic {
     Diagnostic {
@@ -21,41 +21,75 @@ fn make_diag(line: u32, code: &str, slug: &str) -> Diagnostic {
 
 #[test]
 fn severity_from_code_str_e_is_error() {
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-E001"), DiagnosticSeverity::Error);
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-E601"), DiagnosticSeverity::Error);
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-E001"),
+        DiagnosticSeverity::Error
+    );
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-E601"),
+        DiagnosticSeverity::Error
+    );
 }
 
 #[test]
 fn severity_from_code_str_w_is_warning() {
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-W107"), DiagnosticSeverity::Warning);
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-W301"), DiagnosticSeverity::Warning);
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-W107"),
+        DiagnosticSeverity::Warning
+    );
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-W301"),
+        DiagnosticSeverity::Warning
+    );
 }
 
 #[test]
 fn severity_from_code_str_i_is_info() {
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-I001"), DiagnosticSeverity::Info);
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-I001"),
+        DiagnosticSeverity::Info
+    );
 }
 
 #[test]
 fn severity_from_code_str_h_is_hint() {
-    assert_eq!(DiagnosticSeverity::from_code_str("JINJA-H001"), DiagnosticSeverity::Hint);
+    assert_eq!(
+        DiagnosticSeverity::from_code_str("JINJA-H001"),
+        DiagnosticSeverity::Hint
+    );
 }
 
 #[test]
 fn diag_code_severity_matches_prefix() {
     // Every DiagCode's severity() must agree with its code_str() prefix.
     let codes = [
-        DiagCode::E001, DiagCode::E101, DiagCode::E102, DiagCode::E103,
-        DiagCode::E104, DiagCode::W106, DiagCode::W107, DiagCode::W201,
-        DiagCode::W202, DiagCode::W203, DiagCode::W301, DiagCode::W302,
-        DiagCode::W303, DiagCode::W304, DiagCode::W305, DiagCode::E401,
-        DiagCode::W402, DiagCode::E403, DiagCode::E404, DiagCode::E501,
+        DiagCode::E001,
+        DiagCode::E101,
+        DiagCode::E102,
+        DiagCode::E103,
+        DiagCode::E104,
+        DiagCode::W106,
+        DiagCode::W107,
+        DiagCode::W201,
+        DiagCode::W202,
+        DiagCode::W203,
+        DiagCode::W301,
+        DiagCode::W302,
+        DiagCode::W303,
+        DiagCode::W304,
+        DiagCode::W305,
+        DiagCode::E401,
+        DiagCode::W402,
+        DiagCode::E403,
+        DiagCode::E404,
+        DiagCode::E501,
         DiagCode::E601,
     ];
     for code in codes {
         let expected = DiagnosticSeverity::from_code_str(code.code_str());
         assert_eq!(
-            code.severity(), expected,
+            code.severity(),
+            expected,
             "{}.severity() must match code_str() prefix",
             code.code_str()
         );
@@ -69,19 +103,42 @@ fn jinja_lsp_rm5r_all_lists_every_diagcode_variant_exhaustively() {
     // single source noqa's known-codes list derives from) to be updated in the
     // same change instead of silently drifting out of sync.
     fn check(c: DiagCode) {
-        assert!(DiagCode::ALL.contains(&c), "{c:?} is missing from DiagCode::ALL");
+        assert!(
+            DiagCode::ALL.contains(&c),
+            "{c:?} is missing from DiagCode::ALL"
+        );
         match c {
-            DiagCode::E001 | DiagCode::E102 | DiagCode::E104 | DiagCode::W201 | DiagCode::W301
-            | DiagCode::W302 | DiagCode::W303 | DiagCode::W304 | DiagCode::W305 | DiagCode::W106
-            | DiagCode::W107 | DiagCode::E101 | DiagCode::E103 | DiagCode::W202 | DiagCode::W203
-            | DiagCode::E401 | DiagCode::W402 | DiagCode::E403 | DiagCode::E404 | DiagCode::E501
+            DiagCode::E001
+            | DiagCode::E102
+            | DiagCode::E104
+            | DiagCode::W201
+            | DiagCode::W301
+            | DiagCode::W302
+            | DiagCode::W303
+            | DiagCode::W304
+            | DiagCode::W305
+            | DiagCode::W106
+            | DiagCode::W107
+            | DiagCode::E101
+            | DiagCode::E103
+            | DiagCode::W202
+            | DiagCode::W203
+            | DiagCode::E401
+            | DiagCode::W402
+            | DiagCode::E403
+            | DiagCode::E404
+            | DiagCode::E501
             | DiagCode::E601 => {}
         }
     }
     for &c in DiagCode::ALL {
         check(c);
     }
-    assert_eq!(DiagCode::ALL.len(), 21, "DiagCode::ALL must list all 21 variants exactly once");
+    assert_eq!(
+        DiagCode::ALL.len(),
+        21,
+        "DiagCode::ALL must list all 21 variants exactly once"
+    );
 }
 
 #[test]
@@ -284,7 +341,10 @@ fn ulcx_unknown_uppercase_jinja_code_produces_w107() {
     let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
     let (kept, w107s) = suppress_by_noqa(&diags, source);
     assert_eq!(kept.len(), 1, "JINJA-FOO must not suppress diagnostics");
-    assert!(!w107s.is_empty(), "JINJA-FOO must produce W107 (not in known-codes list)");
+    assert!(
+        !w107s.is_empty(),
+        "JINJA-FOO must produce W107 (not in known-codes list)"
+    );
 }
 
 #[test]
@@ -295,7 +355,11 @@ fn ulcx_partial_prefix_does_not_over_suppress() {
     let source = "{{ x }}   {# noqa: JINJA-E10 #}";
     let diags = vec![make_diag(0, "JINJA-E101", "undefined-variable")];
     let (kept, w107s) = suppress_by_noqa(&diags, source);
-    assert_eq!(kept.len(), 1, "JINJA-E10 is not a valid prefix and must not suppress");
+    assert_eq!(
+        kept.len(),
+        1,
+        "JINJA-E10 is not a valid prefix and must not suppress"
+    );
     assert!(!w107s.is_empty(), "JINJA-E10 must produce W107");
 }
 
@@ -304,36 +368,53 @@ fn ulcx_partial_prefix_does_not_over_suppress() {
 #[test]
 fn trim_marker_bare_noqa_all_suppresses() {
     let directives = parse_noqa_directives("{#- noqa -#}", 0);
-    assert_eq!(directives.len(), 1, "trim-marker noqa must parse as NoqaDirective::All");
+    assert_eq!(
+        directives.len(),
+        1,
+        "trim-marker noqa must parse as NoqaDirective::All"
+    );
     assert!(matches!(directives[0], NoqaDirective::All { .. }));
 }
 
 #[test]
 fn trim_marker_noqa_with_code_suppresses() {
     let directives = parse_noqa_directives("{#- noqa: JINJA-E101 -#}", 0);
-    assert_eq!(directives.len(), 1, "trim-marker noqa with code must parse as NoqaDirective::Codes");
-    assert!(matches!(&directives[0], NoqaDirective::Codes { codes, .. } if codes[0] == "JINJA-E101"));
+    assert_eq!(
+        directives.len(),
+        1,
+        "trim-marker noqa with code must parse as NoqaDirective::Codes"
+    );
+    assert!(
+        matches!(&directives[0], NoqaDirective::Codes { codes, .. } if codes[0] == "JINJA-E101")
+    );
 }
 
 #[test]
 fn trim_marker_noqa_suppresses_via_suppress_by_noqa() {
     let diags = vec![Diagnostic {
-        file: String::new(), line: 0, col: 0,
-        code: "JINJA-E101".to_owned(), slug: "undefined-identifier".to_owned(),
-        severity: DiagCode::E101.severity(), message: "x undefined".to_owned(),
+        file: String::new(),
+        line: 0,
+        col: 0,
+        code: "JINJA-E101".to_owned(),
+        slug: "undefined-identifier".to_owned(),
+        severity: DiagCode::E101.severity(),
+        message: "x undefined".to_owned(),
     }];
     let source = "{{ x }}   {#- noqa -#}";
     let (kept, _w107) = suppress_by_noqa(&diags, source);
-    assert!(kept.is_empty(), "trim-marker noqa must suppress the diagnostic on the same line");
+    assert!(
+        kept.is_empty(),
+        "trim-marker noqa must suppress the diagnostic on the same line"
+    );
 }
 
 // ---------- E101 false-positive regression tests ─────────────────────────────
 
 #[test]
 fn e101_macro_parameter_not_undefined() {
-    use jinja_lsp::parsing::extract;
-    use jinja_lsp::diagnostics::checks::run_checks;
     use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::diagnostics::checks::run_checks;
+    use jinja_lsp::parsing::extract;
     use jinja_lsp::workspace::index::WorkspaceIndex;
 
     let source = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
@@ -342,14 +423,17 @@ fn e101_macro_parameter_not_undefined() {
     let ws = WorkspaceIndex::default();
     let diags = run_checks(source, "t.html", &idx, &reg, &ws);
     let e101: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-E101").collect();
-    assert!(e101.is_empty(), "macro parameter 'name' must not fire E101: {e101:?}");
+    assert!(
+        e101.is_empty(),
+        "macro parameter 'name' must not fire E101: {e101:?}"
+    );
 }
 
 #[test]
 fn e101_attribute_chain_intermediate_not_undefined() {
-    use jinja_lsp::parsing::extract;
-    use jinja_lsp::diagnostics::checks::run_checks;
     use jinja_lsp::builtins::registry::Registry;
+    use jinja_lsp::diagnostics::checks::run_checks;
+    use jinja_lsp::parsing::extract;
     use jinja_lsp::workspace::index::WorkspaceIndex;
 
     // request.user captured as dotted Identifier by @object; must not fire E101.
@@ -359,7 +443,8 @@ fn e101_attribute_chain_intermediate_not_undefined() {
     let ws = WorkspaceIndex::default();
     let diags = run_checks(source, "t.html", &idx, &reg, &ws);
     // Exactly one E101 for 'request' (the root) — NOT for 'request.user' (the intermediate).
-    let e101_names: Vec<_> = diags.iter()
+    let e101_names: Vec<_> = diags
+        .iter()
         .filter(|d| d.code == "JINJA-E101")
         .map(|d| d.message.as_str())
         .collect();
@@ -379,8 +464,10 @@ fn noqa_on_opening_delimiter_line_suppresses_inner_diagnostic() {
     let source = "{% set x =  {# noqa: JINJA-E101 #}\n    undefined_var %}";
     let diag = make_diag(1, "JINJA-E101", "undefined-variable");
     let (kept, _w107s) = suppress_by_noqa(&[diag], source);
-    assert!(kept.is_empty(),
-        "noqa on opening delimiter line 0 must suppress diagnostic on line 1");
+    assert!(
+        kept.is_empty(),
+        "noqa on opening delimiter line 0 must suppress diagnostic on line 1"
+    );
 }
 
 #[test]
@@ -397,7 +484,10 @@ fn noqa_bare_all_on_opening_line_suppresses_any_code() {
     let source = "{% set x = {# noqa #}\n    undefined_var %}";
     let diag = make_diag(1, "JINJA-E101", "undefined-variable");
     let (kept, _) = suppress_by_noqa(&[diag], source);
-    assert!(kept.is_empty(), "bare noqa on opening line suppresses all codes");
+    assert!(
+        kept.is_empty(),
+        "bare noqa on opening line suppresses all codes"
+    );
 }
 
 #[test]
@@ -408,7 +498,8 @@ fn jinja_lsp_0l7z_noqa_suppresses_when_opening_line_has_a_closed_tag_before_the_
     // that first {% contains a %}, the line wasn't recognized as opening a
     // multi-line tag at all, so a noqa comment there failed to suppress a
     // diagnostic reported on the tag's body line.
-    let source = "{% set a = 1 %} {% if cond {# noqa: JINJA-E101 #}\n    undefined_var %}\n{% endif %}";
+    let source =
+        "{% set a = 1 %} {% if cond {# noqa: JINJA-E101 #}\n    undefined_var %}\n{% endif %}";
     let diag = make_diag(1, "JINJA-E101", "undefined-variable");
     let (kept, _) = suppress_by_noqa(&[diag], source);
     assert!(
@@ -426,5 +517,9 @@ fn noqa_on_unrelated_earlier_line_does_not_suppress() {
     let (kept, _) = suppress_by_noqa(&[diag], source);
     // Line 0 noqa is not on the opening-delimiter line of the for loop (line 1 is),
     // and the for loop does close on the same line. So it must NOT suppress line 2.
-    assert_eq!(kept.len(), 1, "noqa on unrelated earlier line must not suppress");
+    assert_eq!(
+        kept.len(),
+        1,
+        "noqa on unrelated earlier line must not suppress"
+    );
 }

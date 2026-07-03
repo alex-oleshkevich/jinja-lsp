@@ -1,6 +1,6 @@
 // REQ-FMT-07: formatting / rangeFormatting feature unit tests.
 
-use jinja_lsp::features::formatting::{format_document, format_range, FormatOptions};
+use jinja_lsp::features::formatting::{FormatOptions, format_document, format_range};
 
 fn default_opts() -> FormatOptions {
     FormatOptions::default() // 4 spaces (default indent_size)
@@ -68,20 +68,34 @@ fn fmt07_t05_format_range_multi_line() {
 fn fmt07_4spaces_indents_nested_block() {
     // A nested for inside block should indent with 4 spaces when tab_size=4.
     let source = "{% block content %}\n{% for x in items %}\n{{ x }}\n{% endfor %}\n{% endblock %}";
-    let opts = FormatOptions { tab_size: 4, insert_spaces: true };
+    let opts = FormatOptions {
+        tab_size: 4,
+        insert_spaces: true,
+    };
     let formatted = jinja_lsp::format::format_with_options(source, opts);
     // The `{% for %}` line should have 4 spaces of indent (depth=1 inside block).
     let lines: Vec<&str> = formatted.split('\n').collect();
-    assert!(lines[1].starts_with("    "), "for line must have 4-space indent: {:?}", lines[1]);
+    assert!(
+        lines[1].starts_with("    "),
+        "for line must have 4-space indent: {:?}",
+        lines[1]
+    );
 }
 
 #[test]
 fn fmt07_tabs_indent_nested_block() {
     let source = "{% block content %}\n{% for x in items %}\n{{ x }}\n{% endfor %}\n{% endblock %}";
-    let opts = FormatOptions { tab_size: 1, insert_spaces: false };
+    let opts = FormatOptions {
+        tab_size: 1,
+        insert_spaces: false,
+    };
     let formatted = jinja_lsp::format::format_with_options(source, opts);
     let lines: Vec<&str> = formatted.split('\n').collect();
-    assert!(lines[1].starts_with('\t'), "for line must start with tab: {:?}", lines[1]);
+    assert!(
+        lines[1].starts_with('\t'),
+        "for line must start with tab: {:?}",
+        lines[1]
+    );
 }
 
 // ─── jinja-lsp-7ym9: range snap outward to whole Jinja constructs ────────────
@@ -94,8 +108,13 @@ fn fmt7ym9_range_snaps_outward_to_enclosing_opener() {
     let opts = FormatOptions::default();
     let edits = format_range(source, 1, 1, opts);
     // The formatter normalizes {{x}} to {{ x }}. The edit for line 1 must appear.
-    assert!(edits.iter().any(|e| e.start_line == 1 && e.new_text.contains("{{ x }}")),
-        "body line must be formatted: {:?}", edits);
+    assert!(
+        edits
+            .iter()
+            .any(|e| e.start_line == 1 && e.new_text.contains("{{ x }}")),
+        "body line must be formatted: {:?}",
+        edits
+    );
 }
 
 #[test]
@@ -106,8 +125,11 @@ fn fmt7ym9_range_unchanged_when_no_snap_needed() {
     let opts = FormatOptions::default();
     // Select only line 1 — there are no Jinja tags that need snapping.
     let edits = format_range(source, 1, 1, opts);
-    assert!(edits.iter().all(|e| e.start_line >= 1 && e.end_line <= 1),
-        "edits must stay within [1,1] when no snap is needed: {:?}", edits);
+    assert!(
+        edits.iter().all(|e| e.start_line >= 1 && e.end_line <= 1),
+        "edits must stay within [1,1] when no snap is needed: {:?}",
+        edits
+    );
 }
 
 #[test]
@@ -125,7 +147,11 @@ fn jinja_lsp_tjr3_snap_does_not_over_expand_past_an_already_closed_multiline_tag
         "must not touch the already-closed opener line 0 when only line 2 is selected: {edits:?}"
     );
     // The actually-selected line must still be formatted.
-    assert!(edits.iter().any(|e| e.start_line == 2 && e.new_text.contains("{{ x }}")));
+    assert!(
+        edits
+            .iter()
+            .any(|e| e.start_line == 2 && e.new_text.contains("{{ x }}"))
+    );
 }
 
 #[test]
@@ -140,7 +166,11 @@ fn jinja_lsp_tjr3_snap_end_does_not_over_expand_past_a_construct_that_opens_and_
         edits.iter().all(|e| e.end_line <= 0),
         "must not touch the later, unrelated multi-line tag when only line 0 is selected: {edits:?}"
     );
-    assert!(edits.iter().any(|e| e.start_line == 0 && e.new_text.contains("{{ x }}")));
+    assert!(
+        edits
+            .iter()
+            .any(|e| e.start_line == 0 && e.new_text.contains("{{ x }}"))
+    );
 }
 
 #[test]
@@ -149,5 +179,9 @@ fn fmt07_default_options_produces_4space_indent() {
     let opts = FormatOptions::default();
     let formatted = jinja_lsp::format::format_with_options(source, opts);
     let lines: Vec<&str> = formatted.split('\n').collect();
-    assert!(lines[1].starts_with("    "), "default must produce 4-space indent: {:?}", lines[1]);
+    assert!(
+        lines[1].starts_with("    "),
+        "default must produce 4-space indent: {:?}",
+        lines[1]
+    );
 }

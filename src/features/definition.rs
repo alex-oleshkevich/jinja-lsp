@@ -220,7 +220,8 @@ fn resolve_ident(
 
     // REQ-DEF-08: scope-local variable (set/for/with) — jump to its binding site.
     // Pick the narrowest binding whose valid_range contains the reference position.
-    let var = index.variables
+    let var = index
+        .variables
         .iter()
         .filter(|v| {
             v.name == name
@@ -228,7 +229,11 @@ fn resolve_ident(
                 && v.valid_range.start_byte <= reference_byte
                 && reference_byte < v.valid_range.end_byte
         })
-        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte));
+        .min_by_key(|v| {
+            v.valid_range
+                .end_byte
+                .saturating_sub(v.valid_range.start_byte)
+        });
 
     if let Some(v) = var {
         return Some(span_to_def(current_path, &v.span));
@@ -278,7 +283,11 @@ fn resolve_super(
     let chain = workspace.template_chain(&parent_path);
     for ancestor_path in &chain {
         if let Some(anc_idx) = workspace.templates.get(ancestor_path) {
-            if let Some(anc_block) = anc_idx.blocks.iter().find(|ab| ab.name == containing_block.name) {
+            if let Some(anc_block) = anc_idx
+                .blocks
+                .iter()
+                .find(|ab| ab.name == containing_block.name)
+            {
                 return Some(span_to_def(ancestor_path, &anc_block.span));
             }
         }
@@ -317,5 +326,7 @@ fn word_at_byte(source: &str, byte: usize) -> &str {
 
 /// Returns true when the identifier starting at `byte` is immediately preceded by `self.`.
 fn is_preceded_by_self_dot(source: &str, byte: usize) -> bool {
-    source.get(..byte).is_some_and(|before| before.ends_with("self."))
+    source
+        .get(..byte)
+        .is_some_and(|before| before.ends_with("self."))
 }

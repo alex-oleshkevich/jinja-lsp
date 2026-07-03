@@ -3,7 +3,7 @@
 pub mod checks;
 
 pub use filter::filter_by_config;
-pub use noqa::{parse_noqa_directives, suppress_by_noqa, NoqaDirective};
+pub use noqa::{NoqaDirective, parse_noqa_directives, suppress_by_noqa};
 
 mod filter;
 mod noqa;

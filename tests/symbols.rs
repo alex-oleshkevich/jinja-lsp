@@ -1,6 +1,6 @@
 // F10 — Symbols tests: REQ-SYM-01 through REQ-SYM-05.
 
-use jinja_lsp::features::symbols::{document_symbols, workspace_symbols, SymbolKind};
+use jinja_lsp::features::symbols::{SymbolKind, document_symbols, workspace_symbols};
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
 
@@ -120,7 +120,11 @@ fn sym01_extends_maps_to_module() {
     let syms = document_symbols(src, &idx);
     let s = find_sym(&syms, "base.html").expect("extends must appear");
     assert_eq!(s.kind, SymbolKind::Module, "extends → Module");
-    assert_eq!(s.detail.as_deref(), Some("base.html"), "detail is parent path");
+    assert_eq!(
+        s.detail.as_deref(),
+        Some("base.html"),
+        "detail is parent path"
+    );
 }
 
 #[test]
@@ -137,7 +141,10 @@ fn sym01_loop_variable_not_in_outline() {
     let src = "{% for item in items %}{{ item }}{% endfor %}";
     let idx = extract(src);
     let syms = document_symbols(src, &idx);
-    assert!(find_sym(&syms, "item").is_none(), "loop variable must not appear");
+    assert!(
+        find_sym(&syms, "item").is_none(),
+        "loop variable must not appear"
+    );
 }
 
 #[test]
@@ -145,7 +152,10 @@ fn sym01_in_block_set_not_in_outline() {
     let src = "{% block foo %}{% set inner = 1 %}{{ inner }}{% endblock %}";
     let idx = extract(src);
     let syms = document_symbols(src, &idx);
-    assert!(find_sym(&syms, "inner").is_none(), "in-block set must not appear");
+    assert!(
+        find_sym(&syms, "inner").is_none(),
+        "in-block set must not appear"
+    );
 }
 
 // ─── REQ-SYM-05: import / extends / include shape ────────────────────────────
@@ -157,7 +167,11 @@ fn sym05_alias_import_shape() {
     let syms = document_symbols(src, &idx);
     let s = find_sym(&syms, "macros").expect("alias import must appear as 'macros'");
     assert_eq!(s.kind, SymbolKind::Namespace, "alias import → Namespace");
-    assert_eq!(s.detail.as_deref(), Some("macros.html"), "detail is source path");
+    assert_eq!(
+        s.detail.as_deref(),
+        Some("macros.html"),
+        "detail is source path"
+    );
 }
 
 #[test]
@@ -183,8 +197,14 @@ fn sym05_from_import_names_are_not_child_symbols() {
             names
         })
         .collect();
-    assert!(!all_names.contains(&"post_url"), "from-import imported names must not appear");
-    assert!(!all_names.contains(&"comment_card"), "from-import imported names must not appear");
+    assert!(
+        !all_names.contains(&"post_url"),
+        "from-import imported names must not appear"
+    );
+    assert!(
+        !all_names.contains(&"comment_card"),
+        "from-import imported names must not appear"
+    );
 }
 
 // ─── REQ-SYM-02: nesting ─────────────────────────────────────────────────────
@@ -223,10 +243,19 @@ fn jinja_lsp_lrcm_two_same_named_macros_are_both_top_level_siblings() {
     // instead of keeping them as two sibling top-level symbols.
     let src = "{% macro dup() %}a{% endmacro %}{% macro dup() %}b{% endmacro %}";
     let idx = extract(src);
-    assert_eq!(idx.macros.len(), 2, "extractor must index both occurrences: {:?}", idx.macros);
+    assert_eq!(
+        idx.macros.len(),
+        2,
+        "extractor must index both occurrences: {:?}",
+        idx.macros
+    );
     let syms = document_symbols(src, &idx);
     let dups: Vec<_> = syms.iter().filter(|s| s.name == "dup").collect();
-    assert_eq!(dups.len(), 2, "both same-named macros must appear as top-level symbols: {syms:?}");
+    assert_eq!(
+        dups.len(),
+        2,
+        "both same-named macros must appear as top-level symbols: {syms:?}"
+    );
     assert_ne!(
         dups[0].range.start_byte, dups[1].range.start_byte,
         "the two occurrences must have distinct spans: {syms:?}"
@@ -237,10 +266,19 @@ fn jinja_lsp_lrcm_two_same_named_macros_are_both_top_level_siblings() {
 fn jinja_lsp_lrcm_two_same_named_blocks_are_both_top_level_siblings() {
     let src = "{% block dup %}a{% endblock %}{% block dup %}b{% endblock %}";
     let idx = extract(src);
-    assert_eq!(idx.blocks.len(), 2, "extractor must index both occurrences: {:?}", idx.blocks);
+    assert_eq!(
+        idx.blocks.len(),
+        2,
+        "extractor must index both occurrences: {:?}",
+        idx.blocks
+    );
     let syms = document_symbols(src, &idx);
     let dups: Vec<_> = syms.iter().filter(|s| s.name == "dup").collect();
-    assert_eq!(dups.len(), 2, "both same-named blocks must appear as top-level symbols: {syms:?}");
+    assert_eq!(
+        dups.len(),
+        2,
+        "both same-named blocks must appear as top-level symbols: {syms:?}"
+    );
     assert_ne!(
         dups[0].range.start_byte, dups[1].range.start_byte,
         "the two occurrences must have distinct spans: {syms:?}"
@@ -253,8 +291,16 @@ fn sym02_deeply_nested_block_macro_block() {
     let idx = extract(src);
     let syms = document_symbols(src, &idx);
     let outer = find_sym(&syms, "outer").expect("block 'outer' must appear");
-    let mid = outer.children.iter().find(|c| c.name == "mid").expect("macro 'mid' must be child of 'outer'");
-    let _inner = mid.children.iter().find(|c| c.name == "inner").expect("block 'inner' must be child of 'mid'");
+    let mid = outer
+        .children
+        .iter()
+        .find(|c| c.name == "mid")
+        .expect("macro 'mid' must be child of 'outer'");
+    let _inner = mid
+        .children
+        .iter()
+        .find(|c| c.name == "inner")
+        .expect("block 'inner' must be child of 'mid'");
 }
 
 // ─── REQ-SYM-03: workspace symbol search ─────────────────────────────────────
@@ -266,8 +312,14 @@ fn sym03_empty_query_returns_all_macros_and_blocks() {
     ws.index_inline("t.html", src);
     let results = workspace_symbols("", &ws);
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"post_url"), "empty query must include macros");
-    assert!(names.contains(&"content"), "empty query must include blocks");
+    assert!(
+        names.contains(&"post_url"),
+        "empty query must include macros"
+    );
+    assert!(
+        names.contains(&"content"),
+        "empty query must include blocks"
+    );
 }
 
 #[test]
@@ -277,7 +329,10 @@ fn sym03_toplevel_variable_not_in_workspace_results() {
     ws.index_inline("t.html", src);
     let results = workspace_symbols("", &ws);
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(!names.contains(&"page_title"), "top-level set must not appear in workspace search");
+    assert!(
+        !names.contains(&"page_title"),
+        "top-level set must not appear in workspace search"
+    );
 }
 
 #[test]
@@ -287,8 +342,14 @@ fn sym03_imports_not_in_workspace_results() {
     ws.index_inline("t.html", src);
     let results = workspace_symbols("", &ws);
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(!names.contains(&"macros.html"), "from-import must not appear in workspace search");
-    assert!(!names.contains(&"post_url"), "imported name must not appear in workspace search");
+    assert!(
+        !names.contains(&"macros.html"),
+        "from-import must not appear in workspace search"
+    );
+    assert!(
+        !names.contains(&"post_url"),
+        "imported name must not appear in workspace search"
+    );
 }
 
 #[test]
@@ -298,7 +359,10 @@ fn sym03_workspace_results_have_container_name() {
     ws.index_inline("greetings.html", src);
     let results = workspace_symbols("greet", &ws);
     let r = results.first().expect("must find 'greet'");
-    assert_eq!(r.container_name, "greetings.html", "containerName is the template path");
+    assert_eq!(
+        r.container_name, "greetings.html",
+        "containerName is the template path"
+    );
 }
 
 // ─── REQ-SYM-04: fuzzy matching ──────────────────────────────────────────────
@@ -310,7 +374,10 @@ fn sym04_subsequence_match() {
     ws.index_inline("t.html", src);
     let results = workspace_symbols("pu", &ws);
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"post_url"), "'pu' must subsequence-match 'post_url'");
+    assert!(
+        names.contains(&"post_url"),
+        "'pu' must subsequence-match 'post_url'"
+    );
 }
 
 #[test]
@@ -320,7 +387,10 @@ fn sym04_case_insensitive_match() {
     ws.index_inline("t.html", src);
     let results = workspace_symbols("PU", &ws);
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"post_url"), "case-insensitive 'PU' must match 'post_url'");
+    assert!(
+        names.contains(&"post_url"),
+        "case-insensitive 'PU' must match 'post_url'"
+    );
 }
 
 #[test]
@@ -358,7 +428,10 @@ fn sym04_ranking_exact_before_prefix_before_contiguous_before_subsequence() {
         assert!(b < c, "prefix must rank before contiguous-substring");
     }
     if let (Some(c), Some(d)) = (pos_spun, pos_post) {
-        assert!(c < d, "contiguous-substring must rank before scattered-subsequence");
+        assert!(
+            c < d,
+            "contiguous-substring must rank before scattered-subsequence"
+        );
     }
 }
 
@@ -377,24 +450,35 @@ fn sym04_shorter_name_wins_within_same_tier() {
     }
 }
 
-
 #[test]
 fn debug_block_and_macro_spans() {
     let src = "{% block outer %}{% macro inner() %}{% endmacro %}{% endblock %}";
     let idx = extract(src);
     for b in &idx.blocks {
-        eprintln!("BLOCK '{}': span bytes {}..{}", b.name, b.span.start_byte, b.span.end_byte);
+        eprintln!(
+            "BLOCK '{}': span bytes {}..{}",
+            b.name, b.span.start_byte, b.span.end_byte
+        );
     }
     for m in &idx.macros {
-        eprintln!("MACRO '{}': span bytes {}..{}", m.name, m.span.start_byte, m.span.end_byte);
+        eprintln!(
+            "MACRO '{}': span bytes {}..{}",
+            m.name, m.span.start_byte, m.span.end_byte
+        );
     }
     let src2 = "{% block foo %}{% set inner = 1 %}{{ inner }}{% endblock %}";
     let idx2 = extract(src2);
     for b in &idx2.blocks {
-        eprintln!("BLOCK '{}': span bytes {}..{}", b.name, b.span.start_byte, b.span.end_byte);
+        eprintln!(
+            "BLOCK '{}': span bytes {}..{}",
+            b.name, b.span.start_byte, b.span.end_byte
+        );
     }
     for v in &idx2.variables {
-        eprintln!("VAR '{}' scope={:?}: span bytes {}..{}", v.name, v.scope, v.span.start_byte, v.span.end_byte);
+        eprintln!(
+            "VAR '{}' scope={:?}: span bytes {}..{}",
+            v.name, v.scope, v.span.start_byte, v.span.end_byte
+        );
     }
 }
 
@@ -410,6 +494,12 @@ fn sym04_same_tier_same_name_len_ordered_by_path_then_name() {
     ws.index_inline("a.html", macro_src);
     let results = workspace_symbols("foo", &ws);
     assert_eq!(results.len(), 2, "both macros must match");
-    assert_eq!(results[0].container_name, "a.html", "a.html must come first (alphabetical)");
-    assert_eq!(results[1].container_name, "b.html", "b.html must come second");
+    assert_eq!(
+        results[0].container_name, "a.html",
+        "a.html must come first (alphabetical)"
+    );
+    assert_eq!(
+        results[1].container_name, "b.html",
+        "b.html must come second"
+    );
 }

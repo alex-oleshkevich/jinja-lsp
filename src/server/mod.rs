@@ -6,41 +6,48 @@ pub mod state;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::*,
-    Client, LanguageServer, LspService, Server,
-};
+use tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*};
 
-use crate::features::code_actions::{code_actions, selection_code_actions, ActionKind, CodeAction as InternalCodeAction};
 use crate::diagnostic::DiagnosticSeverity as InternalSeverity;
-use tower_lsp::lsp_types::Diagnostic as LspDiagnostic;
-use crate::diagnostics::{filter_by_config, suppress_by_noqa};
 use crate::diagnostics::checks::run_checks;
-use crate::features::completions::{complete, resolve_doc, CompletionKind};
-use crate::features::definition::{go_to_definition, DefinitionLocation};
-use crate::features::references::{find_references, ReferenceLocation};
-use crate::features::document_highlight::{document_highlight, HighlightKind};
-use crate::features::folding::{fold_ranges, FoldKind};
-use crate::features::signature_help::signature_help as sig_help_feature;
-use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintData, InlayHintsConfig};
-use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resolve as code_lens_resolve_feature, CodeLensConfig, LensData, LensKind, LensSymbolKind};
-use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
-use crate::features::hover::hover as hover_feature;
-use crate::features::semantic_tokens::{
-    semantic_tokens_full as stok_full,
-    semantic_tokens_range as stok_range,
-    SemanticToken as InternalSemanticToken,
-    TOKEN_TYPES, TOKEN_MODIFIERS,
+use crate::diagnostics::{filter_by_config, suppress_by_noqa};
+use crate::features::call_hierarchy::{
+    CallHierarchyItem as InternalCallHierarchyItem, HierarchyRange, ItemKind, incoming_calls,
+    outgoing_calls, prepare_call_hierarchy,
 };
-use crate::features::symbols::{document_symbols, workspace_symbols, SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol};
-use crate::features::rename::{rename_at_cursor, compute_rename, check_rename_preconditions};
+use crate::features::code_actions::{
+    ActionKind, CodeAction as InternalCodeAction, code_actions, selection_code_actions,
+};
+use crate::features::code_lens::{
+    CodeLensConfig, LensData, LensKind, LensSymbolKind, code_lens as code_lens_feature,
+    code_lens_resolve as code_lens_resolve_feature,
+};
+use crate::features::completions::{CompletionKind, complete, resolve_doc};
+use crate::features::definition::{DefinitionLocation, go_to_definition};
+use crate::features::document_highlight::{HighlightKind, document_highlight};
+use crate::features::folding::{FoldKind, fold_ranges};
+use crate::features::hover::hover as hover_feature;
+use crate::features::inlay_hints::{
+    InlayHintData, InlayHintsConfig, inlay_hint_resolve, inlay_hints,
+};
+use crate::features::references::{ReferenceLocation, find_references};
+use crate::features::rename::{check_rename_preconditions, compute_rename, rename_at_cursor};
+use crate::features::semantic_tokens::{
+    SemanticToken as InternalSemanticToken, TOKEN_MODIFIERS, TOKEN_TYPES,
+    semantic_tokens_full as stok_full, semantic_tokens_range as stok_range,
+};
+use crate::features::signature_help::signature_help as sig_help_feature;
+use crate::features::symbols::{
+    SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol, document_symbols,
+    workspace_symbols,
+};
 use state::ServerState;
+use tower_lsp::lsp_types::Diagnostic as LspDiagnostic;
 
 /// REQ-ARCH-02: direct all tracing output to stderr; never stdout (stdout
 /// carries JSON-RPC framing).
 pub fn init_tracing() {
-    use tracing_subscriber::{fmt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt};
     let _ = fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::from_default_env())
@@ -93,11 +100,13 @@ impl Backend {
         let mut raw = run_checks(source, key, index, registry, workspace);
 
         // REQ-INLN-03: also check each inline sub-region and translate positions to host coords.
-        let inline_keys: Vec<_> = workspace.inline_ranges_for(key)
+        let inline_keys: Vec<_> = workspace
+            .inline_ranges_for(key)
             .map(|(k, r)| (k.to_owned(), r.clone()))
             .collect();
         for (ikey, range) in &inline_keys {
-            let inline_source = source.get(range.host_offset..range.host_offset + range.content_len)
+            let inline_source = source
+                .get(range.host_offset..range.host_offset + range.content_len)
                 .unwrap_or("");
             if let Some(iidx) = workspace.templates.get(ikey.as_str()) {
                 let mut inline_diags = run_checks(inline_source, ikey, iidx, registry, workspace);
@@ -114,16 +123,23 @@ impl Backend {
         let config = state.config_for(key);
         let select: Vec<&str> = config.lint.select.iter().map(|s| s.as_str()).collect();
         let ignore: Vec<&str> = config.lint.ignore.iter().map(|s| s.as_str()).collect();
-        let filtered: Vec<crate::diagnostic::Diagnostic> =
-            filter_by_config(&raw, &select, &ignore).into_iter().cloned().collect();
+        let filtered: Vec<crate::diagnostic::Diagnostic> = filter_by_config(&raw, &select, &ignore)
+            .into_iter()
+            .cloned()
+            .collect();
         let (kept, w107s) = suppress_by_noqa(&filtered, source);
         // REQ-DIAG-06/jinja-lsp-ibun: W107 (invalid-noqa) must respect the same
         // select/ignore filters as every other diagnostic code.
-        let w107s: Vec<crate::diagnostic::Diagnostic> =
-            filter_by_config(&w107s, &select, &ignore).into_iter().cloned().collect();
+        let w107s: Vec<crate::diagnostic::Diagnostic> = filter_by_config(&w107s, &select, &ignore)
+            .into_iter()
+            .cloned()
+            .collect();
         let utf8 = state.position_encoding_utf8;
-        let mut lsp_diags: Vec<LspDiagnostic> =
-            kept.into_iter().chain(w107s).map(|d| to_lsp_diagnostic(source, utf8, &d)).collect();
+        let mut lsp_diags: Vec<LspDiagnostic> = kept
+            .into_iter()
+            .chain(w107s)
+            .map(|d| to_lsp_diagnostic(source, utf8, &d))
+            .collect();
         lsp_diags.sort_by_key(|d| (d.range.start.line, d.range.start.character));
         let uri = path_to_uri(key);
         drop(state);
@@ -146,9 +162,14 @@ impl Backend {
         // Check if the config belongs to an extra folder (REQ-EXTR-08).
         let extra_idx = {
             let state = self.state.read().await;
-            state.extra_folders.iter().enumerate()
-                .filter(|(_, f)| f.config_file_path.as_deref() == Some(file_path)
-                    || state::key_under_root(file_path, f.root.to_str().unwrap_or("")))
+            state
+                .extra_folders
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| {
+                    f.config_file_path.as_deref() == Some(file_path)
+                        || state::key_under_root(file_path, f.root.to_str().unwrap_or(""))
+                })
                 .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
                 .map(|(i, _)| i)
         };
@@ -159,23 +180,28 @@ impl Backend {
                 state.extra_folders[ei].root.to_string_lossy().into_owned()
             };
             let root_path = std::path::Path::new(&root);
-            let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    let msg = format!("jinja-lsp: extra folder config reload error (previous retained): {e}");
-                    tracing::warn!("{msg}");
-                    self.client.show_message(MessageType::WARNING, msg).await;
-                    return;
-                }
-            };
+            let (new_config, new_config_path) =
+                match crate::config::JinjaConfig::discover_with_path(root_path) {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        let msg = format!(
+                            "jinja-lsp: extra folder config reload error (previous retained): {e}"
+                        );
+                        tracing::warn!("{msg}");
+                        self.client.show_message(MessageType::WARNING, msg).await;
+                        return;
+                    }
+                };
             let dirs = new_config.resolved_template_dirs(root_path);
             let exts = new_config.extensions.clone();
             let workspace_changed;
             {
                 let mut state = self.state.write().await;
-                state.extra_folders[ei].config_file_path = new_config_path.map(|p| p.to_string_lossy().into_owned());
+                state.extra_folders[ei].config_file_path =
+                    new_config_path.map(|p| p.to_string_lossy().into_owned());
                 let (registry_changed, ws_changed) = crate::server::state::config_delta(
-                    &state.extra_folders[ei].config, &new_config,
+                    &state.extra_folders[ei].config,
+                    &new_config,
                 );
                 workspace_changed = ws_changed;
                 if registry_changed {
@@ -185,7 +211,8 @@ impl Backend {
             }
             if workspace_changed {
                 let new_workspace = tokio::task::spawn_blocking(move || {
-                    let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+                    let dir_refs: Vec<&std::path::Path> =
+                        dirs.iter().map(|p| p.as_path()).collect();
                     let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
                     crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
                 })
@@ -205,16 +232,18 @@ impl Backend {
         };
         let Some(root) = root else { return };
         let root_path = std::path::Path::new(&root);
-        let (new_config, new_config_path) = match crate::config::JinjaConfig::discover_with_path(root_path) {
-            Ok(pair) => pair,
-            Err(e) => {
-                // REQ-CFG-10 / E15 §12.2: invalid config retains previous; user is notified.
-                let msg = format!("jinja-lsp: config reload error (previous config retained): {e}");
-                tracing::warn!("{msg}");
-                self.client.show_message(MessageType::WARNING, msg).await;
-                return;
-            }
-        };
+        let (new_config, new_config_path) =
+            match crate::config::JinjaConfig::discover_with_path(root_path) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    // REQ-CFG-10 / E15 §12.2: invalid config retains previous; user is notified.
+                    let msg =
+                        format!("jinja-lsp: config reload error (previous config retained): {e}");
+                    tracing::warn!("{msg}");
+                    self.client.show_message(MessageType::WARNING, msg).await;
+                    return;
+                }
+            };
         let workspace_changed;
         let dirs: Vec<std::path::PathBuf>;
         let exts: Vec<String>;
@@ -252,14 +281,20 @@ impl LanguageServer for Backend {
     /// REQ-ARCH-08: declare capabilities matching the feature set.
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         // REQ-DEF-07: record whether the client supports LocationLink for goto_definition.
-        let link_support = params.capabilities.text_document.as_ref()
+        let link_support = params
+            .capabilities
+            .text_document
+            .as_ref()
             .and_then(|td| td.definition.as_ref())
             .and_then(|d| d.link_support)
             .unwrap_or(false);
         // jinja-lsp-7b7s: negotiate UTF-8 position encoding when the client supports it.
         // Our internal offsets are byte-based (tree-sitter, Rust str), which equals
         // UTF-8 code units, so UTF-8 clients need no conversion at all.
-        let utf8 = params.capabilities.general.as_ref()
+        let utf8 = params
+            .capabilities
+            .general
+            .as_ref()
             .and_then(|g| g.position_encodings.as_ref())
             .map(|encs| encs.contains(&PositionEncodingKind::UTF8))
             .unwrap_or(false);
@@ -307,14 +342,16 @@ impl LanguageServer for Backend {
         // REQ-EXTR-08: build an isolated FolderState for each additional workspace folder.
         let mut extra_folders: Vec<state::FolderState> = Vec::new();
         for extra_root in all_folder_paths.iter().skip(1) {
-            let (extra_cfg, extra_cfg_path) = crate::config::JinjaConfig::discover_with_path(extra_root)
-                .ok()
-                .unwrap_or_default();
+            let (extra_cfg, extra_cfg_path) =
+                crate::config::JinjaConfig::discover_with_path(extra_root)
+                    .ok()
+                    .unwrap_or_default();
             let extra_registry = ServerState::build_registry(&extra_cfg);
             let extra_dirs = extra_cfg.resolved_template_dirs(extra_root);
             let extra_exts: Vec<String> = extra_cfg.extensions.clone();
             let extra_workspace = tokio::task::spawn_blocking(move || {
-                let dir_refs: Vec<&std::path::Path> = extra_dirs.iter().map(|p| p.as_path()).collect();
+                let dir_refs: Vec<&std::path::Path> =
+                    extra_dirs.iter().map(|p| p.as_path()).collect();
                 let ext_refs: Vec<&str> = extra_exts.iter().map(|s| s.as_str()).collect();
                 crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
             })
@@ -361,7 +398,11 @@ impl LanguageServer for Backend {
                 version: Some(env!("CARGO_PKG_VERSION").to_owned()),
             }),
             capabilities: ServerCapabilities {
-                position_encoding: if utf8 { Some(PositionEncodingKind::UTF8) } else { None },
+                position_encoding: if utf8 {
+                    Some(PositionEncodingKind::UTF8)
+                } else {
+                    None
+                },
                 // REQ-ARCH-05: full-text sync (didOpen, didChange, didSave, didClose)
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
@@ -375,8 +416,14 @@ impl LanguageServer for Backend {
                     resolve_provider: Some(true),
                     // REQ-CMP-01: trigger chars that match TRIGGER_CHARS in features::completions.
                     trigger_characters: Some(vec![
-                        "{".into(), "%".into(), " ".into(), "|".into(),
-                        ".".into(), "(".into(), ",".into(), "\"".into(),
+                        "{".into(),
+                        "%".into(),
+                        " ".into(),
+                        "|".into(),
+                        ".".into(),
+                        "(".into(),
+                        ",".into(),
+                        "\"".into(),
                     ]),
                     ..Default::default()
                 }),
@@ -395,8 +442,14 @@ impl LanguageServer for Backend {
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
                             legend: SemanticTokensLegend {
-                                token_types: TOKEN_TYPES.iter().map(|s| SemanticTokenType::new(s)).collect(),
-                                token_modifiers: TOKEN_MODIFIERS.iter().map(|s| SemanticTokenModifier::new(s)).collect(),
+                                token_types: TOKEN_TYPES
+                                    .iter()
+                                    .map(|s| SemanticTokenType::new(s))
+                                    .collect(),
+                                token_modifiers: TOKEN_MODIFIERS
+                                    .iter()
+                                    .map(|s| SemanticTokenModifier::new(s))
+                                    .collect(),
                             },
                             full: Some(SemanticTokensFullOptions::Bool(true)),
                             range: Some(true),
@@ -477,7 +530,8 @@ impl LanguageServer for Backend {
     /// REQ-EDIT-02 / REQ-CFG-11: editor settings changes re-apply the config overlay
     /// and republish diagnostics so open files immediately reflect the new lint config.
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
-        if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings) {
+        if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings)
+        {
             // jinja-lsp-isj4: ConfigOverlay is all-Option with unknown fields ignored,
             // so any JSON payload unrelated to jinja-lsp (or `{}`) deserializes to an
             // empty overlay. Applying it would permanently discard the real
@@ -534,7 +588,9 @@ impl LanguageServer for Backend {
                 if !state.sources.contains_key(&key) {
                     false
                 } else {
-                    state.doc_versions.entry(key.clone())
+                    state
+                        .doc_versions
+                        .entry(key.clone())
                         .and_modify(|v| *v = (*v).max(version))
                         .or_insert(version);
                     true
@@ -544,7 +600,8 @@ impl LanguageServer for Backend {
                 return;
             }
             self.pass1(&key, &change.text).await;
-            let is_latest = self.state.read().await.doc_versions.get(&key).copied() == Some(version);
+            let is_latest =
+                self.state.read().await.doc_versions.get(&key).copied() == Some(version);
             if !is_latest {
                 return;
             }
@@ -605,8 +662,16 @@ impl LanguageServer for Backend {
                     {
                         let mut state = self.state.write().await;
                         // REQ-EXTR-08: remove from the correct folder's workspace.
-                        let extra_idx = state.extra_folders.iter().enumerate()
-                            .filter(|(_, f)| crate::server::state::key_under_root(&key, f.root.to_str().unwrap_or("")))
+                        let extra_idx = state
+                            .extra_folders
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, f)| {
+                                crate::server::state::key_under_root(
+                                    &key,
+                                    f.root.to_str().unwrap_or(""),
+                                )
+                            })
                             .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
                             .map(|(i, _)| i);
                         // jinja-lsp-7f0o: a deleted file must lose ALL its per-file state, not
@@ -632,28 +697,40 @@ impl LanguageServer for Backend {
                 _ => {}
             }
         }
-
     }
 
     // REQ-ARCH-07: feature handlers are pure reads — stubs for now; each
     // delegates to features::<module>::<fn>(state, params) when implemented.
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> Result<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let key = Self::uri_to_key(&params.text_document_position.text_document.uri);
         let pos = params.text_document_position.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
-        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, state.position_encoding_utf8);
-        let (items, is_incomplete) = complete(source, pos.line, byte_col, index, state.registry_for(&key), workspace);
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
+        let byte_col = lsp_char_to_byte_col(
+            source_line(source, pos.line),
+            pos.character,
+            state.position_encoding_utf8,
+        );
+        let (items, is_incomplete) = complete(
+            source,
+            pos.line,
+            byte_col,
+            index,
+            state.registry_for(&key),
+            workspace,
+        );
         if items.is_empty() {
             return Ok(None);
         }
-        let lsp_items: Vec<CompletionItem> = items.into_iter().map(to_lsp_completion_item).collect();
+        let lsp_items: Vec<CompletionItem> =
+            items.into_iter().map(to_lsp_completion_item).collect();
         if is_incomplete {
             Ok(Some(CompletionResponse::List(CompletionList {
                 is_incomplete: true,
@@ -684,12 +761,22 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(result) = hover_feature(source, pos.line, byte_col, index, state.registry_for(&key), workspace)
-        else {
+        let Some(result) = hover_feature(
+            source,
+            pos.line,
+            byte_col,
+            index,
+            state.registry_for(&key),
+            workspace,
+        ) else {
             return Ok(None);
         };
         Ok(Some(Hover {
@@ -700,38 +787,62 @@ impl LanguageServer for Backend {
             range: Some(Range {
                 start: Position {
                     line: result.start_line,
-                    character: byte_col_to_lsp_char(source_line(source, result.start_line), result.start_col, utf8),
+                    character: byte_col_to_lsp_char(
+                        source_line(source, result.start_line),
+                        result.start_col,
+                        utf8,
+                    ),
                 },
                 end: Position {
                     line: result.end_line,
-                    character: byte_col_to_lsp_char(source_line(source, result.end_line), result.end_col, utf8),
+                    character: byte_col_to_lsp_char(
+                        source_line(source, result.end_line),
+                        result.end_col,
+                        utf8,
+                    ),
                 },
             }),
         }))
     }
 
-    async fn signature_help(
-        &self,
-        params: SignatureHelpParams,
-    ) -> Result<Option<SignatureHelp>> {
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let key = Self::uri_to_key(&params.text_document_position_params.text_document.uri);
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(help) = sig_help_feature(source, pos.line, byte_col, index, state.registry_for(&key), workspace) else {
+        let Some(help) = sig_help_feature(
+            source,
+            pos.line,
+            byte_col,
+            index,
+            state.registry_for(&key),
+            workspace,
+        ) else {
             return Ok(None);
         };
         let sig_info = SignatureInformation {
             label: help.label,
             documentation: None,
-            parameters: Some(help.params.iter().map(|p| ParameterInformation {
-                label: ParameterLabel::Simple(p.label.clone()),
-                documentation: p.documentation.as_deref().map(|d| Documentation::String(d.to_owned())),
-            }).collect()),
+            parameters: Some(
+                help.params
+                    .iter()
+                    .map(|p| ParameterInformation {
+                        label: ParameterLabel::Simple(p.label.clone()),
+                        documentation: p
+                            .documentation
+                            .as_deref()
+                            .map(|d| Documentation::String(d.to_owned())),
+                    })
+                    .collect(),
+            ),
             active_parameter: help.active_parameter.map(|i| i as u32),
         };
         Ok(Some(SignatureHelp {
@@ -749,20 +860,39 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
-        let utf8 = state.position_encoding_utf8;
-        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let Some(loc) = go_to_definition(source, pos.line, byte_col, &key, index, state.registry_for(&key), workspace)
-        else {
+        let Some(source) = state.sources.get(&key) else {
             return Ok(None);
         };
-        let target_source = state.sources.get(&loc.target_path).map(|s| s.as_str()).unwrap_or("");
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
+        let utf8 = state.position_encoding_utf8;
+        let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
+        let Some(loc) = go_to_definition(
+            source,
+            pos.line,
+            byte_col,
+            &key,
+            index,
+            state.registry_for(&key),
+            workspace,
+        ) else {
+            return Ok(None);
+        };
+        let target_source = state
+            .sources
+            .get(&loc.target_path)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if state.definition_link_support {
             let origin = lsp_range_at_cursor(source, pos.line, pos.character, utf8);
-            Ok(Some(GotoDefinitionResponse::Link(vec![definition_to_link(target_source, &loc, utf8, Some(origin))])))
+            Ok(Some(GotoDefinitionResponse::Link(vec![
+                definition_to_link(target_source, &loc, utf8, Some(origin)),
+            ])))
         } else {
-            Ok(Some(GotoDefinitionResponse::Scalar(definition_to_location(target_source, &loc, utf8))))
+            Ok(Some(GotoDefinitionResponse::Scalar(
+                definition_to_location(target_source, &loc, utf8),
+            )))
         }
     }
 
@@ -772,13 +902,31 @@ impl LanguageServer for Backend {
         let include_decl = params.context.include_declaration;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let locs = find_references(source, pos.line, byte_col, &key, include_decl, index, state.registry_for(&key), workspace);
-        if locs.is_empty() { return Ok(None); }
-        let locations: Vec<Location> = locs.iter().map(|r| ref_to_location(r, &state.sources, utf8)).collect();
+        let locs = find_references(
+            source,
+            pos.line,
+            byte_col,
+            &key,
+            include_decl,
+            index,
+            state.registry_for(&key),
+            workspace,
+        );
+        if locs.is_empty() {
+            return Ok(None);
+        }
+        let locations: Vec<Location> = locs
+            .iter()
+            .map(|r| ref_to_location(r, &state.sources, utf8))
+            .collect();
         Ok(Some(locations))
     }
 
@@ -788,8 +936,12 @@ impl LanguageServer for Backend {
     ) -> Result<Option<DocumentSymbolResponse>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace_for(&key).templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = state.workspace_for(&key).templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let syms = document_symbols(source, index);
         if syms.is_empty() {
@@ -798,7 +950,9 @@ impl LanguageServer for Backend {
         let source = source.clone(); // release borrow on state
         drop(state);
         Ok(Some(DocumentSymbolResponse::Nested(
-            syms.into_iter().map(|s| to_lsp_document_symbol(&source, utf8, s)).collect(),
+            syms.into_iter()
+                .map(|s| to_lsp_document_symbol(&source, utf8, s))
+                .collect(),
         )))
     }
 
@@ -810,8 +964,13 @@ impl LanguageServer for Backend {
         let utf8 = state.position_encoding_utf8;
         // workspace_symbols searches the primary folder; multi-folder symbol search is a future enhancement.
         let syms = workspace_symbols(&params.query, &state.workspace);
-        if syms.is_empty() { return Ok(None); }
-        let result = syms.iter().map(|s| ws_to_lsp_symbol(s, &state.sources, utf8)).collect();
+        if syms.is_empty() {
+            return Ok(None);
+        }
+        let result = syms
+            .iter()
+            .map(|s| ws_to_lsp_symbol(s, &state.sources, utf8))
+            .collect();
         Ok(Some(result))
     }
 
@@ -823,95 +982,137 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let highlights = document_highlight(source, pos.line, byte_col, index, state.registry_for(&key));
-        if highlights.is_empty() { return Ok(None); }
-        let result = highlights.iter().map(|h| {
-            let kind = match h.kind {
-                HighlightKind::Read => DocumentHighlightKind::READ,
-                HighlightKind::Write => DocumentHighlightKind::WRITE,
-            };
-            DocumentHighlight {
-                range: span_to_lsp_range(source, &h.range, utf8),
-                kind: Some(kind),
-            }
-        }).collect();
+        let highlights =
+            document_highlight(source, pos.line, byte_col, index, state.registry_for(&key));
+        if highlights.is_empty() {
+            return Ok(None);
+        }
+        let result = highlights
+            .iter()
+            .map(|h| {
+                let kind = match h.kind {
+                    HighlightKind::Read => DocumentHighlightKind::READ,
+                    HighlightKind::Write => DocumentHighlightKind::WRITE,
+                };
+                DocumentHighlight {
+                    range: span_to_lsp_range(source, &h.range, utf8),
+                    kind: Some(kind),
+                }
+            })
+            .collect();
         Ok(Some(result))
     }
 
-    async fn folding_range(
-        &self,
-        params: FoldingRangeParams,
-    ) -> Result<Option<Vec<FoldingRange>>> {
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
         let ranges = fold_ranges(source);
-        if ranges.is_empty() { return Ok(None); }
-        let result = ranges.iter().map(|r| FoldingRange {
-            start_line: r.start_line,
-            start_character: None,
-            end_line: r.end_line,
-            end_character: None,
-            kind: Some(match r.kind {
-                FoldKind::Region => FoldingRangeKind::Region,
-                FoldKind::Comment => FoldingRangeKind::Comment,
-            }),
-            collapsed_text: None,
-        }).collect();
+        if ranges.is_empty() {
+            return Ok(None);
+        }
+        let result = ranges
+            .iter()
+            .map(|r| FoldingRange {
+                start_line: r.start_line,
+                start_character: None,
+                end_line: r.end_line,
+                end_character: None,
+                kind: Some(match r.kind {
+                    FoldKind::Region => FoldingRangeKind::Region,
+                    FoldKind::Comment => FoldingRangeKind::Comment,
+                }),
+                collapsed_text: None,
+            })
+            .collect();
         Ok(Some(result))
     }
 
-    async fn inlay_hint(
-        &self,
-        params: InlayHintParams,
-    ) -> Result<Option<Vec<InlayHint>>> {
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let cfg = InlayHintsConfig::default();
-        let hints = inlay_hints(source, &key, index, state.registry_for(&key), workspace, &cfg);
-        if hints.is_empty() { return Ok(None); }
-        let result = hints.iter().map(|h| {
-            let data = inlay_hint_data_to_json(&h.data);
-            InlayHint {
-                position: Position {
-                    line: h.line,
-                    character: byte_col_to_lsp_char(source_line(source, h.line), h.col, utf8),
-                },
-                label: InlayHintLabel::String(h.label.clone()),
-                kind: h.kind.as_ref().map(|_| tower_lsp::lsp_types::InlayHintKind::PARAMETER),
-                tooltip: h.tooltip.as_deref().map(|t| InlayHintTooltip::String(t.to_owned())),
-                text_edits: None,
-                padding_left: Some(true),
-                padding_right: None,
-                data: Some(data),
-            }
-        }).collect();
+        let hints = inlay_hints(
+            source,
+            &key,
+            index,
+            state.registry_for(&key),
+            workspace,
+            &cfg,
+        );
+        if hints.is_empty() {
+            return Ok(None);
+        }
+        let result = hints
+            .iter()
+            .map(|h| {
+                let data = inlay_hint_data_to_json(&h.data);
+                InlayHint {
+                    position: Position {
+                        line: h.line,
+                        character: byte_col_to_lsp_char(source_line(source, h.line), h.col, utf8),
+                    },
+                    label: InlayHintLabel::String(h.label.clone()),
+                    kind: h
+                        .kind
+                        .as_ref()
+                        .map(|_| tower_lsp::lsp_types::InlayHintKind::PARAMETER),
+                    tooltip: h
+                        .tooltip
+                        .as_deref()
+                        .map(|t| InlayHintTooltip::String(t.to_owned())),
+                    text_edits: None,
+                    padding_left: Some(true),
+                    padding_right: None,
+                    data: Some(data),
+                }
+            })
+            .collect();
         Ok(Some(result))
     }
 
     async fn inlay_hint_resolve(&self, mut params: InlayHint) -> Result<InlayHint> {
-        let Some(data_val) = &params.data else { return Ok(params) };
-        let Some(hint_data) = inlay_hint_data_from_json(data_val) else { return Ok(params) };
+        let Some(data_val) = &params.data else {
+            return Ok(params);
+        };
+        let Some(hint_data) = inlay_hint_data_from_json(data_val) else {
+            return Ok(params);
+        };
         let path = match &hint_data {
             InlayHintData::Parameter { template_path, .. } => template_path.clone(),
             InlayHintData::EndBlock { template_path, .. } => template_path.clone(),
         };
         let state = self.state.read().await;
         let workspace = state.workspace_for(&path);
-        let Some(index) = workspace.templates.get(&path) else { return Ok(params) };
+        let Some(index) = workspace.templates.get(&path) else {
+            return Ok(params);
+        };
         // Reconstruct an internal InlayHint with only the data field; resolve fills tooltip.
         let internal = crate::features::inlay_hints::InlayHint {
             line: params.position.line,
             col: 0,
-            label: match &params.label { InlayHintLabel::String(s) => s.clone(), _ => String::new() },
+            label: match &params.label {
+                InlayHintLabel::String(s) => s.clone(),
+                _ => String::new(),
+            },
             kind: None,
             tooltip: None,
             data: hint_data,
@@ -929,34 +1130,53 @@ impl LanguageServer for Backend {
     async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = state.workspace_for(&key).templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = state.workspace_for(&key).templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let cfg = CodeLensConfig::default();
         let lenses = code_lens_feature(&key, index, &cfg);
-        if lenses.is_empty() { return Ok(None); }
-        let result = lenses.into_iter().map(|l| {
-            let data = lens_data_to_json(&l.data);
-            let character = byte_col_to_lsp_char(source_line(source, l.line), l.col, utf8);
-            CodeLens {
-                range: Range {
-                    start: Position { line: l.line, character },
-                    end: Position { line: l.line, character },
-                },
-                command: l.title.map(|title| Command {
-                    title,
-                    command: String::new(),
-                    arguments: None,
-                }),
-                data: Some(data),
-            }
-        }).collect();
+        if lenses.is_empty() {
+            return Ok(None);
+        }
+        let result = lenses
+            .into_iter()
+            .map(|l| {
+                let data = lens_data_to_json(&l.data);
+                let character = byte_col_to_lsp_char(source_line(source, l.line), l.col, utf8);
+                CodeLens {
+                    range: Range {
+                        start: Position {
+                            line: l.line,
+                            character,
+                        },
+                        end: Position {
+                            line: l.line,
+                            character,
+                        },
+                    },
+                    command: l.title.map(|title| Command {
+                        title,
+                        command: String::new(),
+                        arguments: None,
+                    }),
+                    data: Some(data),
+                }
+            })
+            .collect();
         Ok(Some(result))
     }
 
     async fn code_lens_resolve(&self, mut params: CodeLens) -> Result<CodeLens> {
-        let Some(data_val) = &params.data else { return Ok(params) };
-        let Some(lens_data) = lens_data_from_json(data_val) else { return Ok(params) };
+        let Some(data_val) = &params.data else {
+            return Ok(params);
+        };
+        let Some(lens_data) = lens_data_from_json(data_val) else {
+            return Ok(params);
+        };
         let path = lens_data.file_path.clone();
         let state = self.state.read().await;
         let internal = crate::features::code_lens::CodeLens {
@@ -968,29 +1188,36 @@ impl LanguageServer for Backend {
         let resolved = code_lens_resolve_feature(internal, state.workspace_for(&path));
         if let Some(title) = resolved.title {
             if !title.is_empty() {
-                params.command = Some(Command { title, command: String::new(), arguments: None });
+                params.command = Some(Command {
+                    title,
+                    command: String::new(),
+                    arguments: None,
+                });
             }
         }
         Ok(params)
     }
 
-    async fn code_action(
-        &self,
-        params: CodeActionParams,
-    ) -> Result<Option<CodeActionResponse>> {
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let key = Self::uri_to_key(&params.text_document.uri);
 
         // Synchronous, read-only work — hold the read guard throughout instead of
         // cloning sources/workspace/registry per request (jinja-lsp-0ar1).
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let registry = state.registry_for(&key);
 
         // Convert LSP diagnostics to internal ones.
-        let diags: Vec<crate::diagnostic::Diagnostic> = params.context.diagnostics
+        let diags: Vec<crate::diagnostic::Diagnostic> = params
+            .context
+            .diagnostics
             .iter()
             .filter_map(|d| from_lsp_diagnostic(d, &key, source, utf8))
             .collect();
@@ -1001,12 +1228,7 @@ impl LanguageServer for Backend {
         // also emit refactor actions for wrap and extract-to-macro.
         let range = &params.range;
         if range.start != range.end {
-            let sel = selection_code_actions(
-                source,
-                &key,
-                range.start.line,
-                range.end.line,
-            );
+            let sel = selection_code_actions(source, &key, range.start.line, range.end.line);
             actions.extend(sel);
         }
 
@@ -1022,19 +1244,42 @@ impl LanguageServer for Backend {
         Ok(Some(lsp_actions))
     }
 
-    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<serde_json::Value>> {
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> Result<Option<serde_json::Value>> {
         match params.command.as_str() {
             "jinja-lsp.extract-macro" => {
                 // args[0]: {path, start_line, end_line, name}
-                let Some(arg) = params.arguments.first() else { return Ok(None) };
-                let Some(obj) = arg.as_object() else { return Ok(None) };
-                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
-                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let Some(name) = obj.get("name").and_then(|v| v.as_str()) else { return Ok(None) };
+                let Some(arg) = params.arguments.first() else {
+                    return Ok(None);
+                };
+                let Some(obj) = arg.as_object() else {
+                    return Ok(None);
+                };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
+                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let Some(name) = obj.get("name").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
                 let state = self.state.read().await;
-                let Some(source) = state.sources.get(path) else { return Ok(None) };
-                let Some(workspace_edit) = crate::features::extract_macro::compute_extract_macro(source, path, start_line as u32, end_line as u32, name) else {
+                let Some(source) = state.sources.get(path) else {
+                    return Ok(None);
+                };
+                let Some(workspace_edit) = crate::features::extract_macro::compute_extract_macro(
+                    source,
+                    path,
+                    start_line as u32,
+                    end_line as u32,
+                    name,
+                ) else {
                     return Ok(None);
                 };
                 let utf8 = state.position_encoding_utf8;
@@ -1048,16 +1293,34 @@ impl LanguageServer for Backend {
             }
             // REQ-ACT-07: args[0]: {path, start_line, end_line, name}
             "jinja-lsp.wrap-block" => {
-                let Some(arg) = params.arguments.first() else { return Ok(None) };
-                let Some(obj) = arg.as_object() else { return Ok(None) };
-                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
-                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("new_block");
+                let Some(arg) = params.arguments.first() else {
+                    return Ok(None);
+                };
+                let Some(obj) = arg.as_object() else {
+                    return Ok(None);
+                };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
+                let Some(start_line) = obj.get("start_line").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let Some(end_line) = obj.get("end_line").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let name = obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("new_block");
                 let state = self.state.read().await;
-                let Some(source) = state.sources.get(path) else { return Ok(None) };
+                let Some(source) = state.sources.get(path) else {
+                    return Ok(None);
+                };
                 let Some(workspace_edit) = crate::features::wrap::wrap_selection(
-                    source, path, start_line as u32, end_line as u32,
+                    source,
+                    path,
+                    start_line as u32,
+                    end_line as u32,
                     crate::features::wrap::WrapKind::Block(name.to_owned()),
                 ) else {
                     return Ok(None);
@@ -1071,17 +1334,35 @@ impl LanguageServer for Backend {
             }
             // REQ-ACT-11: args[0]: {path, line, col, new_name}
             "jinja-lsp.rename" => {
-                let Some(arg) = params.arguments.first() else { return Ok(None) };
-                let Some(obj) = arg.as_object() else { return Ok(None) };
-                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else { return Ok(None) };
-                let Some(line) = obj.get("line").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let Some(col) = obj.get("col").and_then(|v| v.as_u64()) else { return Ok(None) };
-                let Some(new_name) = obj.get("new_name").and_then(|v| v.as_str()) else { return Ok(None) };
+                let Some(arg) = params.arguments.first() else {
+                    return Ok(None);
+                };
+                let Some(obj) = arg.as_object() else {
+                    return Ok(None);
+                };
+                let Some(path) = obj.get("path").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
+                let Some(line) = obj.get("line").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let Some(col) = obj.get("col").and_then(|v| v.as_u64()) else {
+                    return Ok(None);
+                };
+                let Some(new_name) = obj.get("new_name").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
                 let state = self.state.read().await;
                 let workspace = state.workspace_for(path);
-                let Some(source) = state.sources.get(path) else { return Ok(None) };
-                let Some(index) = workspace.templates.get(path) else { return Ok(None) };
-                let Some((target, old_name)) = rename_at_cursor(source, path, line as u32, col as u32, index, workspace) else {
+                let Some(source) = state.sources.get(path) else {
+                    return Ok(None);
+                };
+                let Some(index) = workspace.templates.get(path) else {
+                    return Ok(None);
+                };
+                let Some((target, old_name)) =
+                    rename_at_cursor(source, path, line as u32, col as u32, index, workspace)
+                else {
                     return Ok(None);
                 };
                 // REQ-ACT-11: validate identifier and check for scope collision before applying.
@@ -1089,7 +1370,15 @@ impl LanguageServer for Backend {
                     self.client.show_message(MessageType::WARNING, reason).await;
                     return Ok(None);
                 }
-                let Some(workspace_edit) = compute_rename(&state.sources, path, &old_name, new_name, target, index, workspace) else {
+                let Some(workspace_edit) = compute_rename(
+                    &state.sources,
+                    path,
+                    &old_name,
+                    new_name,
+                    target,
+                    index,
+                    workspace,
+                ) else {
                     return Ok(None);
                 };
                 let utf8 = state.position_encoding_utf8;
@@ -1116,13 +1405,30 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position_params.position;
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let utf8 = state.position_encoding_utf8;
         let byte_col = lsp_char_to_byte_col(source_line(source, pos.line), pos.character, utf8);
-        let items = prepare_call_hierarchy(source, pos.line, byte_col, &key, index, workspace, state.registry_for(&key));
-        if items.is_empty() { return Ok(None); }
-        let result = items.iter().map(|i| internal_item_to_lsp(i, &state.sources, utf8)).collect();
+        let items = prepare_call_hierarchy(
+            source,
+            pos.line,
+            byte_col,
+            &key,
+            index,
+            workspace,
+            state.registry_for(&key),
+        );
+        if items.is_empty() {
+            return Ok(None);
+        }
+        let result = items
+            .iter()
+            .map(|i| internal_item_to_lsp(i, &state.sources, utf8))
+            .collect();
         Ok(Some(result))
     }
 
@@ -1130,19 +1436,34 @@ impl LanguageServer for Backend {
         &self,
         params: CallHierarchyIncomingCallsParams,
     ) -> Result<Option<Vec<CallHierarchyIncomingCall>>> {
-        let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
+        let Some(item) = lsp_item_to_internal(&params.item) else {
+            return Ok(None);
+        };
         let state = self.state.read().await;
         // incoming/outgoing_calls work on the primary workspace; multi-folder call hierarchy is a future enhancement.
         let calls = incoming_calls(&item, &state.workspace);
-        if calls.is_empty() { return Ok(None); }
+        if calls.is_empty() {
+            return Ok(None);
+        }
         let utf8 = state.position_encoding_utf8;
-        let result = calls.iter().map(|c| {
-            let src = state.sources.get(&c.from.uri).map(|s| s.as_str()).unwrap_or("");
-            CallHierarchyIncomingCall {
-                from: internal_item_to_lsp(&c.from, &state.sources, utf8),
-                from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r, src, utf8)).collect(),
-            }
-        }).collect();
+        let result = calls
+            .iter()
+            .map(|c| {
+                let src = state
+                    .sources
+                    .get(&c.from.uri)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                CallHierarchyIncomingCall {
+                    from: internal_item_to_lsp(&c.from, &state.sources, utf8),
+                    from_ranges: c
+                        .from_ranges
+                        .iter()
+                        .map(|r| hr_to_range(r, src, utf8))
+                        .collect(),
+                }
+            })
+            .collect();
         Ok(Some(result))
     }
 
@@ -1150,17 +1471,33 @@ impl LanguageServer for Backend {
         &self,
         params: CallHierarchyOutgoingCallsParams,
     ) -> Result<Option<Vec<CallHierarchyOutgoingCall>>> {
-        let Some(item) = lsp_item_to_internal(&params.item) else { return Ok(None) };
+        let Some(item) = lsp_item_to_internal(&params.item) else {
+            return Ok(None);
+        };
         let state = self.state.read().await;
         let calls = outgoing_calls(&item, &state.workspace, &state.registry); // primary workspace
-        if calls.is_empty() { return Ok(None); }
+        if calls.is_empty() {
+            return Ok(None);
+        }
         let utf8 = state.position_encoding_utf8;
         // from_ranges are call sites within item.uri (the caller template).
-        let caller_src = state.sources.get(&item.uri).map(|s| s.as_str()).unwrap_or("").to_owned();
-        let result = calls.iter().map(|c| CallHierarchyOutgoingCall {
-            to: internal_item_to_lsp(&c.to, &state.sources, utf8),
-            from_ranges: c.from_ranges.iter().map(|r| hr_to_range(r, &caller_src, utf8)).collect(),
-        }).collect();
+        let caller_src = state
+            .sources
+            .get(&item.uri)
+            .map(|s| s.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let result = calls
+            .iter()
+            .map(|c| CallHierarchyOutgoingCall {
+                to: internal_item_to_lsp(&c.to, &state.sources, utf8),
+                from_ranges: c
+                    .from_ranges
+                    .iter()
+                    .map(|r| hr_to_range(r, &caller_src, utf8))
+                    .collect(),
+            })
+            .collect();
         Ok(Some(result))
     }
 
@@ -1171,12 +1508,21 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
         let tokens = stok_full(source, index, state.registry_for(&key), workspace);
-        if tokens.is_empty() { return Ok(None); }
+        if tokens.is_empty() {
+            return Ok(None);
+        }
         let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
-        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data,
+        })))
     }
 
     async fn semantic_tokens_range(
@@ -1186,21 +1532,36 @@ impl LanguageServer for Backend {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
         let workspace = state.workspace_for(&key);
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
-        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
-        let tokens = stok_range(source, params.range.start.line, params.range.end.line, index, state.registry_for(&key), workspace);
-        if tokens.is_empty() { return Ok(None); }
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
+        let Some(index) = workspace.templates.get(&key) else {
+            return Ok(None);
+        };
+        let tokens = stok_range(
+            source,
+            params.range.start.line,
+            params.range.end.line,
+            index,
+            state.registry_for(&key),
+            workspace,
+        );
+        if tokens.is_empty() {
+            return Ok(None);
+        }
         let data = tokens_to_lsp_data(&tokens, source, state.position_encoding_utf8);
-        Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens { result_id: None, data })))
+        Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens {
+            result_id: None,
+            data,
+        })))
     }
 
-    async fn formatting(
-        &self,
-        params: DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
         let opts = crate::features::formatting::FormatOptions {
             tab_size: params.options.tab_size,
             insert_spaces: params.options.insert_spaces,
@@ -1210,8 +1571,15 @@ impl LanguageServer for Backend {
         let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
         let edits = crate::features::formatting::format_document_with_config(source, &config);
-        if edits.is_empty() { return Ok(None); }
-        Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
+        if edits.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(
+            edits
+                .into_iter()
+                .map(|e| to_lsp_edit(e, source, utf8))
+                .collect(),
+        ))
     }
 
     async fn range_formatting(
@@ -1220,7 +1588,9 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<TextEdit>>> {
         let key = Self::uri_to_key(&params.text_document.uri);
         let state = self.state.read().await;
-        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(source) = state.sources.get(&key) else {
+            return Ok(None);
+        };
         let range = params.range;
         let opts = crate::features::formatting::FormatOptions {
             tab_size: params.options.tab_size,
@@ -1228,9 +1598,21 @@ impl LanguageServer for Backend {
         };
         let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
-        let edits = crate::features::formatting::format_range_with_config(source, range.start.line, range.end.line, &config);
-        if edits.is_empty() { return Ok(None); }
-        Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
+        let edits = crate::features::formatting::format_range_with_config(
+            source,
+            range.start.line,
+            range.end.line,
+            &config,
+        );
+        if edits.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(
+            edits
+                .into_iter()
+                .map(|e| to_lsp_edit(e, source, utf8))
+                .collect(),
+        ))
     }
 }
 
@@ -1285,9 +1667,13 @@ fn source_line(source: &str, line: u32) -> &str {
 pub fn path_to_uri(path: &str) -> Url {
     Url::from_file_path(path).unwrap_or_else(|_| {
         if path.starts_with('/') {
-            Url::parse(&format!("file://{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
+            Url::parse(&format!("file://{path}")).unwrap_or_else(|_| {
+                Url::parse("file:///unknown").expect("constant fallback URL must parse")
+            })
         } else {
-            Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| Url::parse("file:///unknown").expect("constant fallback URL must parse"))
+            Url::parse(&format!("file:///{path}")).unwrap_or_else(|_| {
+                Url::parse("file:///unknown").expect("constant fallback URL must parse")
+            })
         }
     })
 }
@@ -1299,29 +1685,45 @@ fn internal_workspace_edit_to_lsp(
 ) -> WorkspaceEdit {
     let empty = String::new();
     if we.create_files.is_empty() {
-        let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> = std::collections::HashMap::new();
+        let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> =
+            std::collections::HashMap::new();
         for (path, edits) in we.changes {
             let src = sources.get(&path).unwrap_or(&empty);
-            let lsp = edits.into_iter().map(|e| to_lsp_edit(e, src, utf8)).collect();
+            let lsp = edits
+                .into_iter()
+                .map(|e| to_lsp_edit(e, src, utf8))
+                .collect();
             changes.insert(path_to_uri(&path), lsp);
         }
-        WorkspaceEdit { changes: Some(changes), document_changes: None, change_annotations: None }
+        WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }
     } else {
         let mut ops: Vec<DocumentChangeOperation> = Vec::new();
         for (path, content) in we.create_files {
             let uri = path_to_uri(&path);
-            ops.push(DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
-                uri: uri.clone(),
-                options: None,
-                annotation_id: None,
-            })));
+            ops.push(DocumentChangeOperation::Op(ResourceOp::Create(
+                CreateFile {
+                    uri: uri.clone(),
+                    options: None,
+                    annotation_id: None,
+                },
+            )));
             if !content.is_empty() {
                 ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
                     edits: vec![OneOf::Left(TextEdit {
                         range: Range {
-                            start: Position { line: 0, character: 0 },
-                            end: Position { line: 0, character: 0 },
+                            start: Position {
+                                line: 0,
+                                character: 0,
+                            },
+                            end: Position {
+                                line: 0,
+                                character: 0,
+                            },
                         },
                         new_text: content,
                     })],
@@ -1333,12 +1735,19 @@ fn internal_workspace_edit_to_lsp(
             let src = sources.get(&path).unwrap_or(&empty);
             for e in edits {
                 ops.push(DocumentChangeOperation::Edit(TextDocumentEdit {
-                    text_document: OptionalVersionedTextDocumentIdentifier { uri: uri.clone(), version: None },
+                    text_document: OptionalVersionedTextDocumentIdentifier {
+                        uri: uri.clone(),
+                        version: None,
+                    },
                     edits: vec![OneOf::Left(to_lsp_edit(e, src, utf8))],
                 }));
             }
         }
-        WorkspaceEdit { changes: None, document_changes: Some(DocumentChanges::Operations(ops)), change_annotations: None }
+        WorkspaceEdit {
+            changes: None,
+            document_changes: Some(DocumentChanges::Operations(ops)),
+            change_annotations: None,
+        }
     }
 }
 
@@ -1354,12 +1763,16 @@ fn to_lsp_action(
         ActionKind::RefactorRewrite => CodeActionKind::REFACTOR_REWRITE,
     });
 
-    let edit = action.edit.map(|we| internal_workspace_edit_to_lsp(we, sources, utf8));
+    let edit = action
+        .edit
+        .map(|we| internal_workspace_edit_to_lsp(we, sources, utf8));
 
     let diagnostics = if action.diagnostics.is_empty() {
         None
     } else {
-        let lsp_diags: Vec<LspDiagnostic> = action.diagnostics.iter()
+        let lsp_diags: Vec<LspDiagnostic> = action
+            .diagnostics
+            .iter()
             .map(|d| {
                 let source = sources.get(&d.file).map(|s| s.as_str()).unwrap_or("");
                 to_lsp_diagnostic(source, utf8, d)
@@ -1399,7 +1812,11 @@ fn from_lsp_diagnostic(
         Some(NumberOrString::String(s)) => s.clone(),
         _ => return None,
     };
-    let byte_col = lsp_char_to_byte_col(source_line(source, d.range.start.line), d.range.start.character, utf8);
+    let byte_col = lsp_char_to_byte_col(
+        source_line(source, d.range.start.line),
+        d.range.start.character,
+        utf8,
+    );
     Some(crate::diagnostic::Diagnostic {
         code,
         slug: String::new(),
@@ -1421,8 +1838,14 @@ fn to_lsp_diagnostic(source: &str, utf8: bool, d: &crate::diagnostic::Diagnostic
     let col = byte_col_to_lsp_char(source_line(source, d.line), d.col, utf8);
     LspDiagnostic {
         range: Range {
-            start: Position { line: d.line, character: col },
-            end: Position { line: d.line, character: col + 1 },
+            start: Position {
+                line: d.line,
+                character: col,
+            },
+            end: Position {
+                line: d.line,
+                character: col + 1,
+            },
         },
         severity,
         code: Some(NumberOrString::String(d.code.clone())),
@@ -1448,10 +1871,12 @@ fn to_lsp_completion_item(item: crate::features::completions::CompletionItem) ->
         label: item.label,
         kind,
         detail: item.detail,
-        documentation: item.documentation.map(|d| Documentation::MarkupContent(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: d,
-        })),
+        documentation: item.documentation.map(|d| {
+            Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: d,
+            })
+        }),
         data: item.data.map(serde_json::Value::String),
         ..Default::default()
     }
@@ -1461,20 +1886,36 @@ fn def_range(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> Range
     Range {
         start: Position {
             line: loc.target_start_line,
-            character: byte_col_to_lsp_char(source_line(target_source, loc.target_start_line), loc.target_start_col, utf8),
+            character: byte_col_to_lsp_char(
+                source_line(target_source, loc.target_start_line),
+                loc.target_start_col,
+                utf8,
+            ),
         },
         end: Position {
             line: loc.target_end_line,
-            character: byte_col_to_lsp_char(source_line(target_source, loc.target_end_line), loc.target_end_col, utf8),
+            character: byte_col_to_lsp_char(
+                source_line(target_source, loc.target_end_line),
+                loc.target_end_col,
+                utf8,
+            ),
         },
     }
 }
 
 fn definition_to_location(target_source: &str, loc: &DefinitionLocation, utf8: bool) -> Location {
-    Location { uri: path_to_uri(&loc.target_path), range: def_range(target_source, loc, utf8) }
+    Location {
+        uri: path_to_uri(&loc.target_path),
+        range: def_range(target_source, loc, utf8),
+    }
 }
 
-fn definition_to_link(target_source: &str, loc: &DefinitionLocation, utf8: bool, origin: Option<Range>) -> LocationLink {
+fn definition_to_link(
+    target_source: &str,
+    loc: &DefinitionLocation,
+    utf8: bool,
+    origin: Option<Range>,
+) -> LocationLink {
     let range = def_range(target_source, loc, utf8);
     LocationLink {
         origin_selection_range: origin,
@@ -1490,11 +1931,18 @@ fn lsp_range_at_cursor(source: &str, line: u32, character: u32, utf8: bool) -> R
     let end_col = byte_col_to_lsp_char(line_text, col + 1, utf8);
     Range {
         start: Position { line, character },
-        end: Position { line, character: end_col },
+        end: Position {
+            line,
+            character: end_col,
+        },
     }
 }
 
-fn ref_to_location(r: &ReferenceLocation, sources: &std::collections::HashMap<String, String>, utf8: bool) -> Location {
+fn ref_to_location(
+    r: &ReferenceLocation,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> Location {
     let empty = String::new();
     let src = sources.get(&r.path).unwrap_or(&empty);
     Location {
@@ -1516,7 +1964,11 @@ fn span_to_lsp_range(source: &str, span: &crate::workspace::symbols::Span, utf8:
     Range {
         start: Position {
             line: span.start_line,
-            character: byte_col_to_lsp_char(source_line(source, span.start_line), span.start_col, utf8),
+            character: byte_col_to_lsp_char(
+                source_line(source, span.start_line),
+                span.start_col,
+                utf8,
+            ),
         },
         end: Position {
             line: span.end_line,
@@ -1525,7 +1977,11 @@ fn span_to_lsp_range(source: &str, span: &crate::workspace::symbols::Span, utf8:
     }
 }
 
-fn to_lsp_document_symbol(source: &str, utf8: bool, s: crate::features::symbols::DocumentSymbol) -> DocumentSymbol {
+fn to_lsp_document_symbol(
+    source: &str,
+    utf8: bool,
+    s: crate::features::symbols::DocumentSymbol,
+) -> DocumentSymbol {
     let kind = match s.kind {
         InternalSymbolKind::Class => SymbolKind::CLASS,
         InternalSymbolKind::Function => SymbolKind::FUNCTION,
@@ -1545,7 +2001,12 @@ fn to_lsp_document_symbol(source: &str, utf8: bool, s: crate::features::symbols:
         children: if s.children.is_empty() {
             None
         } else {
-            Some(s.children.into_iter().map(|c| to_lsp_document_symbol(source, utf8, c)).collect())
+            Some(
+                s.children
+                    .into_iter()
+                    .map(|c| to_lsp_document_symbol(source, utf8, c))
+                    .collect(),
+            )
         },
     }
 }
@@ -1555,14 +2016,24 @@ fn to_lsp_edit(e: crate::edit::TextEdit, source: &str, utf8: bool) -> TextEdit {
     let end_char = byte_col_to_lsp_char(source_line(source, e.end_line), e.end_col, utf8);
     TextEdit {
         range: Range {
-            start: Position { line: e.start_line, character: start_char },
-            end: Position { line: e.end_line, character: end_char },
+            start: Position {
+                line: e.start_line,
+                character: start_char,
+            },
+            end: Position {
+                line: e.end_line,
+                character: end_char,
+            },
         },
         new_text: e.new_text,
     }
 }
 
-fn ws_to_lsp_symbol(sym: &InternalWorkspaceSymbol, sources: &std::collections::HashMap<String, String>, utf8: bool) -> SymbolInformation {
+fn ws_to_lsp_symbol(
+    sym: &InternalWorkspaceSymbol,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> SymbolInformation {
     let kind = match sym.kind {
         InternalSymbolKind::Class => SymbolKind::CLASS,
         InternalSymbolKind::Function => SymbolKind::FUNCTION,
@@ -1614,21 +2085,37 @@ fn internal_item_to_lsp(
         range: Range {
             start: Position {
                 line: item.range.start_line,
-                character: byte_col_to_lsp_char(source_line(src, item.range.start_line), item.range.start_col, utf8),
+                character: byte_col_to_lsp_char(
+                    source_line(src, item.range.start_line),
+                    item.range.start_col,
+                    utf8,
+                ),
             },
             end: Position {
                 line: item.range.end_line,
-                character: byte_col_to_lsp_char(source_line(src, item.range.end_line), item.range.end_col, utf8),
+                character: byte_col_to_lsp_char(
+                    source_line(src, item.range.end_line),
+                    item.range.end_col,
+                    utf8,
+                ),
             },
         },
         selection_range: Range {
             start: Position {
                 line: item.selection_range.start_line,
-                character: byte_col_to_lsp_char(source_line(src, item.selection_range.start_line), item.selection_range.start_col, utf8),
+                character: byte_col_to_lsp_char(
+                    source_line(src, item.selection_range.start_line),
+                    item.selection_range.start_col,
+                    utf8,
+                ),
             },
             end: Position {
                 line: item.selection_range.end_line,
-                character: byte_col_to_lsp_char(source_line(src, item.selection_range.end_line), item.selection_range.end_col, utf8),
+                character: byte_col_to_lsp_char(
+                    source_line(src, item.selection_range.end_line),
+                    item.selection_range.end_col,
+                    utf8,
+                ),
             },
         },
         data: Some(data),
@@ -1678,7 +2165,10 @@ fn hr_to_range(r: &HierarchyRange, source: &str, utf8: bool) -> Range {
 }
 
 fn lens_data_to_json(data: &LensData) -> serde_json::Value {
-    let sym = match data.symbol_kind { LensSymbolKind::Macro => "macro", LensSymbolKind::Block => "block" };
+    let sym = match data.symbol_kind {
+        LensSymbolKind::Macro => "macro",
+        LensSymbolKind::Block => "block",
+    };
     let kind = match data.lens_kind {
         LensKind::ReferenceCount => "ref_count",
         LensKind::InheritanceOverrides => "overrides",
@@ -1719,13 +2209,20 @@ fn lens_data_from_json(val: &serde_json::Value) -> Option<LensData> {
 
 fn inlay_hint_data_to_json(data: &InlayHintData) -> serde_json::Value {
     match data {
-        InlayHintData::Parameter { template_path, symbol_name, param_index } => serde_json::json!({
+        InlayHintData::Parameter {
+            template_path,
+            symbol_name,
+            param_index,
+        } => serde_json::json!({
             "type": "parameter",
             "template_path": template_path,
             "symbol_name": symbol_name,
             "param_index": param_index,
         }),
-        InlayHintData::EndBlock { template_path, block_name } => serde_json::json!({
+        InlayHintData::EndBlock {
+            template_path,
+            block_name,
+        } => serde_json::json!({
             "type": "endblock",
             "template_path": template_path,
             "block_name": block_name,
@@ -1753,7 +2250,11 @@ fn inlay_hint_data_from_json(val: &serde_json::Value) -> Option<InlayHintData> {
 ///
 /// The LSP protocol requires delta-encoded positions in the negotiated encoding (UTF-16 by
 /// default, UTF-8 when negotiated). `tokens` must already be sorted by (line, start_char).
-fn tokens_to_lsp_data(tokens: &[InternalSemanticToken], source: &str, utf8: bool) -> Vec<SemanticToken> {
+fn tokens_to_lsp_data(
+    tokens: &[InternalSemanticToken],
+    source: &str,
+    utf8: bool,
+) -> Vec<SemanticToken> {
     // jinja-lsp-5qqy: split the document into lines once instead of calling
     // source_line (which re-scans from byte 0) per token — O(lines + tokens)
     // instead of O(lines * tokens).
@@ -1769,12 +2270,18 @@ fn tokens_to_lsp_data(tokens: &[InternalSemanticToken], source: &str, utf8: bool
             let wc = byte_col_to_lsp_char(line_str, tok.start_char, false);
             let byte_start = tok.start_char as usize;
             let byte_end = (tok.start_char + tok.length) as usize;
-            let name_text = line_str.get(byte_start..byte_end.min(line_str.len())).unwrap_or("");
+            let name_text = line_str
+                .get(byte_start..byte_end.min(line_str.len()))
+                .unwrap_or("");
             let wl: u32 = name_text.chars().map(|c| c.len_utf16() as u32).sum();
             (wc, wl)
         };
         let delta_line = tok.line - prev_line;
-        let delta_start = if delta_line == 0 { wire_char - prev_wire_char } else { wire_char };
+        let delta_start = if delta_line == 0 {
+            wire_char - prev_wire_char
+        } else {
+            wire_char
+        };
         data.push(SemanticToken {
             delta_line,
             delta_start,
@@ -1797,22 +2304,49 @@ mod server_tests {
     fn delta_encoding_two_tokens_same_line() {
         // Two tokens on line 0: x at col 3 (len 1), y at col 7 (len 1).
         let tokens = vec![
-            IST { line: 0, start_char: 3, length: 1, token_type: 1, token_modifiers: 0 },
-            IST { line: 0, start_char: 7, length: 1, token_type: 1, token_modifiers: 0 },
+            IST {
+                line: 0,
+                start_char: 3,
+                length: 1,
+                token_type: 1,
+                token_modifiers: 0,
+            },
+            IST {
+                line: 0,
+                start_char: 7,
+                length: 1,
+                token_type: 1,
+                token_modifiers: 0,
+            },
         ];
         let data = tokens_to_lsp_data(&tokens, "{{ x }} {{ y }}", true);
         assert_eq!(data[0].delta_line, 0);
         assert_eq!(data[0].delta_start, 3, "first token at col 3");
         assert_eq!(data[0].length, 1);
         assert_eq!(data[1].delta_line, 0);
-        assert_eq!(data[1].delta_start, 4, "second token: delta 7-3=4 from first");
+        assert_eq!(
+            data[1].delta_start, 4,
+            "second token: delta 7-3=4 from first"
+        );
     }
 
     #[test]
     fn delta_encoding_two_tokens_diff_lines() {
         let tokens = vec![
-            IST { line: 0, start_char: 3, length: 1, token_type: 1, token_modifiers: 0 },
-            IST { line: 1, start_char: 5, length: 2, token_type: 3, token_modifiers: 4 },
+            IST {
+                line: 0,
+                start_char: 3,
+                length: 1,
+                token_type: 1,
+                token_modifiers: 0,
+            },
+            IST {
+                line: 1,
+                start_char: 5,
+                length: 2,
+                token_type: 3,
+                token_modifiers: 4,
+            },
         ];
         let src = "{{ x }}\n{{ ab | f }}";
         let data = tokens_to_lsp_data(&tokens, src, true);
@@ -1826,23 +2360,28 @@ mod server_tests {
 
     #[test]
     fn utf16_length_for_ascii_equals_byte_length() {
-        let tokens = vec![
-            IST { line: 0, start_char: 3, length: 5, token_type: 0, token_modifiers: 0 },
-        ];
+        let tokens = vec![IST {
+            line: 0,
+            start_char: 3,
+            length: 5,
+            token_type: 0,
+            token_modifiers: 0,
+        }];
         let src = "{{ hello }}";
         let data_utf8 = tokens_to_lsp_data(&tokens, src, true);
         let data_utf16 = tokens_to_lsp_data(&tokens, src, false);
         assert_eq!(data_utf8[0].length, 5, "UTF-8 mode: length=5 (bytes)");
-        assert_eq!(data_utf16[0].length, 5, "UTF-16 mode: ASCII length same as byte length");
+        assert_eq!(
+            data_utf16[0].length, 5,
+            "UTF-16 mode: ASCII length same as byte length"
+        );
     }
 
     // REQ-ACT-10: to_lsp_action must propagate diagnostics from internal action.
     #[test]
     fn oeph_to_lsp_action_propagates_diagnostics() {
-        use crate::features::code_actions::{
-            ActionKind, CodeAction as InternalAction,
-        };
         use crate::diagnostic::{Diagnostic as InternalDiag, DiagnosticSeverity};
+        use crate::features::code_actions::{ActionKind, CodeAction as InternalAction};
         use std::collections::HashMap;
 
         let src = "{{ content }}".to_owned();
@@ -1851,7 +2390,8 @@ mod server_tests {
 
         let diag = InternalDiag {
             file: "t.html".to_owned(),
-            line: 0, col: 3,
+            line: 0,
+            col: 3,
             code: "JINJA-W203".to_owned(),
             slug: "unused-import".to_owned(),
             severity: DiagnosticSeverity::Warning,
@@ -1868,11 +2408,15 @@ mod server_tests {
         };
 
         let lsp = to_lsp_action(action, "t.html", &sources, true);
-        let linked = lsp.diagnostics.expect("diagnostics must be Some for a QuickFix");
+        let linked = lsp
+            .diagnostics
+            .expect("diagnostics must be Some for a QuickFix");
         assert_eq!(linked.len(), 1, "must carry one linked diagnostic");
         assert_eq!(
             linked[0].code,
-            Some(tower_lsp::lsp_types::NumberOrString::String("JINJA-W203".to_owned())),
+            Some(tower_lsp::lsp_types::NumberOrString::String(
+                "JINJA-W203".to_owned()
+            )),
             "linked diagnostic code must match"
         );
     }
@@ -1893,7 +2437,10 @@ mod server_tests {
         };
 
         let lsp = to_lsp_action(action, "t.html", &HashMap::new(), true);
-        assert!(lsp.diagnostics.is_none(), "refactor actions must not carry diagnostics");
+        assert!(
+            lsp.diagnostics.is_none(),
+            "refactor actions must not carry diagnostics"
+        );
     }
 
     // jinja-lsp-c8b7: from_lsp_diagnostic must convert the UTF-16 `character` column
@@ -1906,15 +2453,25 @@ mod server_tests {
         let source = "café foo";
         let lsp_diag = LspDiagnostic {
             range: Range {
-                start: Position { line: 0, character: 5 },
-                end: Position { line: 0, character: 8 },
+                start: Position {
+                    line: 0,
+                    character: 5,
+                },
+                end: Position {
+                    line: 0,
+                    character: 8,
+                },
             },
             code: Some(NumberOrString::String("JINJA-E103".to_owned())),
             message: "undefined function 'foo'".to_owned(),
             ..Default::default()
         };
-        let diag = from_lsp_diagnostic(&lsp_diag, "t.html", source, false).expect("code must be Some");
-        assert_eq!(diag.col, 6, "byte col for 'foo' after non-ASCII 'café ' must be 6, not the raw UTF-16 char 5");
+        let diag =
+            from_lsp_diagnostic(&lsp_diag, "t.html", source, false).expect("code must be Some");
+        assert_eq!(
+            diag.col, 6,
+            "byte col for 'foo' after non-ASCII 'café ' must be 6, not the raw UTF-16 char 5"
+        );
     }
 }
 

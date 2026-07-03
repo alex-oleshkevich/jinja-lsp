@@ -25,7 +25,11 @@ fn discovers_jinja_toml_before_pyproject() {
     .unwrap();
 
     let cfg = JinjaConfig::discover(&root).unwrap();
-    assert_eq!(cfg.extensions, vec!["html"], "jinja.toml must win over pyproject.toml");
+    assert_eq!(
+        cfg.extensions,
+        vec!["html"],
+        "jinja.toml must win over pyproject.toml"
+    );
 }
 
 #[test]
@@ -89,8 +93,14 @@ fn sentinel_merges_discovered_dirs() {
 
     let cfg = JinjaConfig::discover(&root).unwrap();
     let dirs = cfg.resolved_template_dirs(&root);
-    assert!(dirs.iter().any(|d| d.ends_with("custom_tpl")), "custom_tpl must appear");
-    assert!(dirs.iter().any(|d| d.ends_with("templates")), "auto-discovered templates/ must appear");
+    assert!(
+        dirs.iter().any(|d| d.ends_with("custom_tpl")),
+        "custom_tpl must appear"
+    );
+    assert!(
+        dirs.iter().any(|d| d.ends_with("templates")),
+        "auto-discovered templates/ must appear"
+    );
 }
 
 #[test]
@@ -122,7 +132,10 @@ fn defaults_when_all_keys_absent() {
     assert!(cfg.extras.is_empty());
     assert!(cfg.custom_builtins.is_empty());
     assert!(cfg.hints.is_empty());
-    assert!(cfg.inline_patterns.contains(&"render_template_string".to_owned()));
+    assert!(
+        cfg.inline_patterns
+            .contains(&"render_template_string".to_owned())
+    );
 }
 
 // ---------- REQ-CFG-05: lint filter validation ------------------------------
@@ -130,7 +143,11 @@ fn defaults_when_all_keys_absent() {
 #[test]
 fn lint_select_accepts_full_code() {
     let root = tmpdir("cfg05_code");
-    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-E101\"]\n").unwrap();
+    fs::write(
+        root.join("jinja.toml"),
+        "[lint]\nselect = [\"JINJA-E101\"]\n",
+    )
+    .unwrap();
     let cfg = JinjaConfig::discover(&root).unwrap();
     assert!(cfg.validate().is_ok());
 }
@@ -146,9 +163,16 @@ fn lint_select_accepts_class_prefix() {
 #[test]
 fn lint_select_rejects_slug() {
     let root = tmpdir("cfg05_slug");
-    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"unused-variable\"]\n").unwrap();
+    fs::write(
+        root.join("jinja.toml"),
+        "[lint]\nselect = [\"unused-variable\"]\n",
+    )
+    .unwrap();
     let cfg = JinjaConfig::discover(&root).unwrap();
-    assert!(cfg.validate().is_err(), "slug in lint.select must be a config error");
+    assert!(
+        cfg.validate().is_err(),
+        "slug in lint.select must be a config error"
+    );
 }
 
 // ---------- REQ-CFG-07: validation ------------------------------------------
@@ -158,7 +182,10 @@ fn unknown_extras_name_is_error() {
     let root = tmpdir("cfg07_extras");
     fs::write(root.join("jinja.toml"), r#"extras = ["nonexistent-pack"]"#).unwrap();
     let cfg = JinjaConfig::discover(&root).unwrap();
-    assert!(cfg.validate().is_err(), "unknown extras name must be a config error");
+    assert!(
+        cfg.validate().is_err(),
+        "unknown extras name must be a config error"
+    );
 }
 
 #[test]
@@ -172,7 +199,10 @@ fn overlapping_select_ignore_is_warning() {
     let cfg = JinjaConfig::discover(&root).unwrap();
     let result = cfg.validate();
     // must succeed but produce a warning (not an error)
-    assert!(result.is_ok(), "overlap should be a warning, not an error: {result:?}");
+    assert!(
+        result.is_ok(),
+        "overlap should be a warning, not an error: {result:?}"
+    );
 }
 
 // ---------- REQ-CFG-11: initializationOptions overlay ----------------------
@@ -190,7 +220,11 @@ fn overlay_overrides_per_key() {
     };
     cfg.apply_overlay(overlay);
 
-    assert_eq!(cfg.extensions, vec!["jinja"], "overlay must override extensions");
+    assert_eq!(
+        cfg.extensions,
+        vec!["jinja"],
+        "overlay must override extensions"
+    );
 }
 
 #[test]
@@ -206,7 +240,11 @@ fn overlay_absent_key_keeps_file_value() {
     };
     cfg.apply_overlay(overlay);
 
-    assert_eq!(cfg.extensions, vec!["html"], "absent overlay key must keep file value");
+    assert_eq!(
+        cfg.extensions,
+        vec!["html"],
+        "absent overlay key must keep file value"
+    );
     assert_eq!(cfg.extras, vec!["starlette"]);
 }
 
@@ -219,16 +257,28 @@ fn jinja_lsp_isj4_unrelated_json_deserializes_to_empty_overlay() {
     // to clear every setting.
     let json = r#"{"someOtherExtension": {"unrelatedSetting": true}}"#;
     let overlay: ConfigOverlay = serde_json::from_str(json).unwrap();
-    assert!(overlay.is_empty(), "an unrelated settings payload must deserialize to an empty overlay");
+    assert!(
+        overlay.is_empty(),
+        "an unrelated settings payload must deserialize to an empty overlay"
+    );
 
     let empty: ConfigOverlay = serde_json::from_str("{}").unwrap();
-    assert!(empty.is_empty(), "{{}} must deserialize to an empty overlay");
+    assert!(
+        empty.is_empty(),
+        "{{}} must deserialize to an empty overlay"
+    );
 }
 
 #[test]
 fn jinja_lsp_isj4_overlay_with_any_field_is_not_empty() {
-    let overlay = ConfigOverlay { extensions: Some(vec!["html".to_owned()]), ..Default::default() };
-    assert!(!overlay.is_empty(), "an overlay with a real field set must not be empty");
+    let overlay = ConfigOverlay {
+        extensions: Some(vec!["html".to_owned()]),
+        ..Default::default()
+    };
+    assert!(
+        !overlay.is_empty(),
+        "an overlay with a real field set must not be empty"
+    );
 }
 
 #[test]
@@ -249,7 +299,10 @@ fn discover_with_path_returns_jinja_toml_path() {
     let (cfg, path) = JinjaConfig::discover_with_path(&root).unwrap();
     assert_eq!(cfg.extensions, vec!["html"]);
     assert!(path.is_some(), "must return jinja.toml path");
-    assert!(path.unwrap().ends_with("jinja.toml"), "path must point to jinja.toml");
+    assert!(
+        path.unwrap().ends_with("jinja.toml"),
+        "path must point to jinja.toml"
+    );
 }
 
 #[test]
@@ -262,7 +315,11 @@ fn discover_with_path_returns_none_when_no_config_file() {
 #[test]
 fn discover_with_path_returns_pyproject_path() {
     let root = tmpdir("cfg10_path_pyproject");
-    fs::write(root.join("pyproject.toml"), "[tool.jinja]\nextensions = [\"jinja\"]\n").unwrap();
+    fs::write(
+        root.join("pyproject.toml"),
+        "[tool.jinja]\nextensions = [\"jinja\"]\n",
+    )
+    .unwrap();
     let (cfg, path) = JinjaConfig::discover_with_path(&root).unwrap();
     assert_eq!(cfg.extensions, vec!["jinja"]);
     assert!(path.is_some());
@@ -278,17 +335,27 @@ fn th0l_jinja_bare_prefix_alone_is_invalid() {
     fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-\"]\n").unwrap();
     let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
     let result = cfg.validate();
-    assert!(matches!(result, Err(ConfigError::InvalidLintFilter(_))), "JINJA- alone must be invalid");
+    assert!(
+        matches!(result, Err(ConfigError::InvalidLintFilter(_))),
+        "JINJA- alone must be invalid"
+    );
 }
 
 #[test]
 fn th0l_jinja_lowercase_suffix_is_invalid() {
     use jinja_lsp::config::ConfigError;
     let root = tmpdir("th0l_lowercase");
-    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-zzz\"]\n").unwrap();
+    fs::write(
+        root.join("jinja.toml"),
+        "[lint]\nselect = [\"JINJA-zzz\"]\n",
+    )
+    .unwrap();
     let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
     let result = cfg.validate();
-    assert!(matches!(result, Err(ConfigError::InvalidLintFilter(_))), "JINJA-zzz must be invalid");
+    assert!(
+        matches!(result, Err(ConfigError::InvalidLintFilter(_))),
+        "JINJA-zzz must be invalid"
+    );
 }
 
 #[test]
@@ -302,7 +369,11 @@ fn th0l_jinja_valid_class_prefix_accepted() {
 #[test]
 fn th0l_jinja_full_code_accepted() {
     let root = tmpdir("th0l_full");
-    fs::write(root.join("jinja.toml"), "[lint]\nselect = [\"JINJA-W203\"]\n").unwrap();
+    fs::write(
+        root.join("jinja.toml"),
+        "[lint]\nselect = [\"JINJA-W203\"]\n",
+    )
+    .unwrap();
     let (cfg, _) = JinjaConfig::discover_with_path(&root).unwrap();
     assert!(cfg.validate().is_ok(), "JINJA-W203 must be valid");
 }
@@ -323,12 +394,18 @@ fn overlay_survives_reload_base_config() {
     assert_eq!(state.config.extensions, vec!["jinja2"]);
 
     // Now reload with a fresh file-based config (extensions = ["html"]).
-    let file_config = JinjaConfig { extensions: vec!["html".to_owned()], ..Default::default() };
+    let file_config = JinjaConfig {
+        extensions: vec!["html".to_owned()],
+        ..Default::default()
+    };
     state.reload_base_config(file_config);
 
     // The overlay must win over the file config.
-    assert_eq!(state.config.extensions, vec!["jinja2"],
-        "overlay must survive reload_base_config");
+    assert_eq!(
+        state.config.extensions,
+        vec!["jinja2"],
+        "overlay must survive reload_base_config"
+    );
 }
 
 #[test]
@@ -344,13 +421,22 @@ fn absent_overlay_key_stays_file_value_after_reload() {
     state.apply_init_options(overlay).unwrap();
 
     // Reload with a file that changes extensions but NOT extras.
-    let file_config = JinjaConfig { extensions: vec!["html".to_owned()], ..Default::default() };
+    let file_config = JinjaConfig {
+        extensions: vec!["html".to_owned()],
+        ..Default::default()
+    };
     state.reload_base_config(file_config);
 
-    assert_eq!(state.config.extensions, vec!["html"],
-        "file value must win for keys absent in overlay");
-    assert_eq!(state.config.extras, vec!["starlette"],
-        "overlay value must win for keys present in overlay");
+    assert_eq!(
+        state.config.extensions,
+        vec!["html"],
+        "file value must win for keys absent in overlay"
+    );
+    assert_eq!(
+        state.config.extras,
+        vec!["starlette"],
+        "overlay value must win for keys present in overlay"
+    );
 }
 
 // ─── ci5n: from_file loads config from an explicit path ──────────────────────
@@ -361,7 +447,10 @@ fn ci5n_from_file_loads_explicit_config() {
     let cfg_path = root.join("jinja.toml");
     fs::write(&cfg_path, "extensions = [\"jinja\"]\n").unwrap();
     let result = jinja_lsp::config::JinjaConfig::from_file(&cfg_path);
-    assert!(result.is_ok(), "from_file must succeed for a valid jinja.toml");
+    assert!(
+        result.is_ok(),
+        "from_file must succeed for a valid jinja.toml"
+    );
     assert_eq!(result.unwrap().extensions, vec!["jinja"]);
 }
 
@@ -369,7 +458,10 @@ fn ci5n_from_file_loads_explicit_config() {
 fn ci5n_from_file_returns_error_for_missing_file() {
     let root = tmpdir("ci5n_missing");
     let result = jinja_lsp::config::JinjaConfig::from_file(&root.join("nonexistent.toml"));
-    assert!(result.is_err(), "from_file must return error for a missing file");
+    assert!(
+        result.is_err(),
+        "from_file must return error for a missing file"
+    );
 }
 
 // ─── ADR-005 / REQ-CFG-10: config_delta diff logic ───────────────────────────
@@ -381,7 +473,10 @@ fn config_delta_registry_changed_when_extras_differ() {
     new.extras = vec!["starlette".to_owned()];
     let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(registry_changed, "extras change must set registry_changed");
-    assert!(!workspace_changed, "extras change must not set workspace_changed");
+    assert!(
+        !workspace_changed,
+        "extras change must not set workspace_changed"
+    );
 }
 
 #[test]
@@ -390,7 +485,10 @@ fn config_delta_registry_changed_when_custom_builtins_differ() {
     let mut new = JinjaConfig::default();
     new.custom_builtins = vec!["/some/dir".to_owned()];
     let (registry_changed, _) = jinja_lsp::server::state::config_delta(&old, &new);
-    assert!(registry_changed, "custom_builtins change must set registry_changed");
+    assert!(
+        registry_changed,
+        "custom_builtins change must set registry_changed"
+    );
 }
 
 #[test]
@@ -408,8 +506,14 @@ fn config_delta_workspace_changed_when_templates_differ() {
     let mut new = JinjaConfig::default();
     new.templates_raw = vec!["templates".to_owned()];
     let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
-    assert!(workspace_changed, "templates change must set workspace_changed");
-    assert!(!registry_changed, "templates change must not set registry_changed");
+    assert!(
+        workspace_changed,
+        "templates change must set workspace_changed"
+    );
+    assert!(
+        !registry_changed,
+        "templates change must not set registry_changed"
+    );
 }
 
 #[test]
@@ -418,7 +522,10 @@ fn config_delta_workspace_changed_when_extensions_differ() {
     let mut new = JinjaConfig::default();
     new.extensions = vec!["html".to_owned(), "jinja".to_owned()];
     let (_, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
-    assert!(workspace_changed, "extensions change must set workspace_changed");
+    assert!(
+        workspace_changed,
+        "extensions change must set workspace_changed"
+    );
 }
 
 #[test]
@@ -426,17 +533,26 @@ fn config_delta_no_change_when_only_lint_differs() {
     use jinja_lsp::config::LintConfig;
     let old = JinjaConfig::default();
     let mut new = JinjaConfig::default();
-    new.lint = LintConfig { select: vec!["JINJA-E101".to_owned()], ignore: vec![] };
+    new.lint = LintConfig {
+        select: vec!["JINJA-E101".to_owned()],
+        ignore: vec![],
+    };
     let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
-    assert!(!registry_changed, "lint-only change must not set registry_changed");
-    assert!(!workspace_changed, "lint-only change must not set workspace_changed");
+    assert!(
+        !registry_changed,
+        "lint-only change must not set registry_changed"
+    );
+    assert!(
+        !workspace_changed,
+        "lint-only change must not set workspace_changed"
+    );
 }
 
 #[test]
 fn reload_config_selective_skips_registry_rebuild_for_lint_only_change() {
+    use jinja_lsp::builtins::registry::{Category, DocEntry, Source};
     use jinja_lsp::config::LintConfig;
     use jinja_lsp::server::state::ServerState;
-    use jinja_lsp::builtins::registry::{Category, Source, DocEntry};
 
     let mut state = ServerState::with_config(JinjaConfig::default());
     // Insert a sentinel entry that a real registry rebuild would NOT contain.
@@ -452,25 +568,44 @@ fn reload_config_selective_skips_registry_rebuild_for_lint_only_change() {
         template: None,
     };
     state.registry.insert(sentinel);
-    assert!(state.registry.get(Category::Filter, "my_sentinel").is_some(), "sentinel must be inserted");
+    assert!(
+        state
+            .registry
+            .get(Category::Filter, "my_sentinel")
+            .is_some(),
+        "sentinel must be inserted"
+    );
 
     // Reload with a config that only changes lint (not extras/custom_builtins/hints).
     let mut new_cfg = JinjaConfig::default();
-    new_cfg.lint = LintConfig { select: vec!["JINJA-E101".to_owned()], ignore: vec![] };
+    new_cfg.lint = LintConfig {
+        select: vec!["JINJA-E101".to_owned()],
+        ignore: vec![],
+    };
     let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
 
-    assert!(!registry_rebuilt, "registry must NOT be rebuilt for lint-only change");
     assert!(
-        state.registry.get(Category::Filter, "my_sentinel").is_some(),
+        !registry_rebuilt,
+        "registry must NOT be rebuilt for lint-only change"
+    );
+    assert!(
+        state
+            .registry
+            .get(Category::Filter, "my_sentinel")
+            .is_some(),
         "sentinel must survive a lint-only reload (registry not rebuilt)"
     );
-    assert_eq!(state.config.lint.select, vec!["JINJA-E101"], "lint must be updated");
+    assert_eq!(
+        state.config.lint.select,
+        vec!["JINJA-E101"],
+        "lint must be updated"
+    );
 }
 
 #[test]
 fn reload_config_selective_rebuilds_registry_when_extras_change() {
+    use jinja_lsp::builtins::registry::{Category, DocEntry, Source};
     use jinja_lsp::server::state::ServerState;
-    use jinja_lsp::builtins::registry::{Category, Source, DocEntry};
 
     let mut state = ServerState::with_config(JinjaConfig::default());
     let sentinel = DocEntry {
@@ -490,13 +625,23 @@ fn reload_config_selective_rebuilds_registry_when_extras_change() {
     new_cfg.extras = vec!["starlette".to_owned()];
     let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
 
-    assert!(registry_rebuilt, "registry must be rebuilt when extras change");
+    assert!(
+        registry_rebuilt,
+        "registry must be rebuilt when extras change"
+    );
     // Sentinel is gone since registry was rebuilt from scratch.
     assert!(
-        state.registry.get(Category::Filter, "my_sentinel_extras").is_none(),
+        state
+            .registry
+            .get(Category::Filter, "my_sentinel_extras")
+            .is_none(),
         "sentinel must be gone after registry rebuild"
     );
-    assert_eq!(state.config.extras, vec!["starlette"], "extras must be updated");
+    assert_eq!(
+        state.config.extras,
+        vec!["starlette"],
+        "extras must be updated"
+    );
 }
 
 // ─── [format] section ────────────────────────────────────────────────────────
@@ -529,5 +674,8 @@ newline_at_eof = false
     assert!(cfg.format.space_around_pipe);
     assert!(!cfg.format.space_after_comma);
     assert!(!cfg.format.newline_at_eof);
-    assert!(cfg.format.trim_trailing_whitespace, "unset keys use default");
+    assert!(
+        cfg.format.trim_trailing_whitespace,
+        "unset keys use default"
+    );
 }

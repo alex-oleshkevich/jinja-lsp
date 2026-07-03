@@ -58,29 +58,47 @@ async fn main() {
             jinja_lsp::server::run_lsp_server().await;
             0
         }
-        Commands::Check { paths, format, verbose, config, select, ignore } => {
-            run_check(paths, &format, verbose, config.as_deref(), &select, &ignore)
-        }
-        Commands::Format { paths, config, check, diff, output } => {
-            run_format(paths, config.as_deref(), check, diff, output.as_deref())
-        }
+        Commands::Check {
+            paths,
+            format,
+            verbose,
+            config,
+            select,
+            ignore,
+        } => run_check(paths, &format, verbose, config.as_deref(), &select, &ignore),
+        Commands::Format {
+            paths,
+            config,
+            check,
+            diff,
+            output,
+        } => run_format(paths, config.as_deref(), check, diff, output.as_deref()),
     };
     std::process::exit(code);
 }
 
 /// REQ-LINT-01..11: check command implementation.
 /// Returns exit code: 0 = no findings, 1 = findings found, 2 = config/usage error.
-fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Option<&str>, select: &[String], ignore: &[String]) -> i32 {
-    use std::path::Path;
+fn run_check(
+    paths: Vec<String>,
+    format: &str,
+    verbose: bool,
+    config_path: Option<&str>,
+    select: &[String],
+    ignore: &[String],
+) -> i32 {
     use jinja_lsp::config::JinjaConfig;
     use jinja_lsp::diagnostic::Diagnostic;
     use jinja_lsp::diagnostics::filter_by_config;
     use jinja_lsp::workspace::build_workspace;
+    use std::path::Path;
 
     // REQ-LINT-03: reject slugs in --select/--ignore (must be codes or class prefixes)
     for f in select.iter().chain(ignore.iter()) {
         if !f.starts_with("JINJA-") {
-            eprintln!("error: invalid filter {f:?}: expected a diagnostic code or prefix (e.g. JINJA-E101, JINJA-W), not a slug");
+            eprintln!(
+                "error: invalid filter {f:?}: expected a diagnostic code or prefix (e.g. JINJA-E101, JINJA-W), not a slug"
+            );
             return 2;
         }
     }
@@ -98,10 +116,16 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     let (cfg, cfg_root) = match config_path {
         Some(p) => {
             let file = Path::new(p);
-            let root = file.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+            let root = file
+                .parent()
+                .map(|d| d.to_owned())
+                .unwrap_or_else(|| cwd.clone());
             match JinjaConfig::from_file(file) {
                 Ok(c) => (c, root),
-                Err(e) => { eprintln!("error: config: {e}"); return 2; }
+                Err(e) => {
+                    eprintln!("error: config: {e}");
+                    return 2;
+                }
             }
         }
         None => {
@@ -109,10 +133,16 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
             // per-fixture jinja.toml files are respected when running `check <dir>`.
             let (cfg, found_at) = match JinjaConfig::discover_with_path(&cwd) {
                 Ok(pair) => pair,
-                Err(e) => { eprintln!("error: config: {e}"); return 2; }
+                Err(e) => {
+                    eprintln!("error: config: {e}");
+                    return 2;
+                }
             };
             if let Some(ref conf_path) = found_at {
-                let root = conf_path.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+                let root = conf_path
+                    .parent()
+                    .map(|d| d.to_owned())
+                    .unwrap_or_else(|| cwd.clone());
                 (cfg, root)
             } else if paths.is_empty() {
                 (cfg, cwd.clone())
@@ -121,11 +151,19 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
                 let mut result = (cfg, cwd.clone());
                 for path_str in &paths {
                     let search = Path::new(path_str);
-                    let search = if search.is_dir() { search.to_owned() } else {
-                        search.parent().map(|p| p.to_owned()).unwrap_or_else(|| cwd.clone())
+                    let search = if search.is_dir() {
+                        search.to_owned()
+                    } else {
+                        search
+                            .parent()
+                            .map(|p| p.to_owned())
+                            .unwrap_or_else(|| cwd.clone())
                     };
                     if let Ok((c, Some(conf_path))) = JinjaConfig::discover_with_path(&search) {
-                        let root = conf_path.parent().map(|d| d.to_owned()).unwrap_or_else(|| cwd.clone());
+                        let root = conf_path
+                            .parent()
+                            .map(|d| d.to_owned())
+                            .unwrap_or_else(|| cwd.clone());
                         result = (c, root);
                         break;
                     }
@@ -144,7 +182,8 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     };
 
     // REQ-LINT-10: pre-canonicalize roots for path normalization
-    let roots_canon: Vec<std::path::PathBuf> = dirs.iter()
+    let roots_canon: Vec<std::path::PathBuf> = dirs
+        .iter()
         .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
         .collect();
 
@@ -154,13 +193,16 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     let t0 = std::time::Instant::now();
     let workspace = build_workspace(&dir_refs, &ext_strs);
     if verbose {
-        eprintln!("info: discovered {} template(s) in {:.2}s",
-            workspace.templates.len(), t0.elapsed().as_secs_f64());
+        eprintln!(
+            "info: discovered {} template(s) in {:.2}s",
+            workspace.templates.len(),
+            t0.elapsed().as_secs_f64()
+        );
     }
 
     // REQ-LINT-09: run all per-file checks across every indexed template.
-    use jinja_lsp::builtins::registry::Registry;
     use jinja_lsp::builtins::hints::load_sidecar;
+    use jinja_lsp::builtins::registry::Registry;
     use jinja_lsp::diagnostics::checks::run_checks;
     use jinja_lsp::diagnostics::suppress_by_noqa;
     // Build registry the same way the LSP server does — core + extras + custom_builtins + hints.
@@ -178,7 +220,8 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     // jinja-lsp-54gh: read each template's source once and reuse it for checks,
     // noqa scanning, and rich-formatter rendering — previously each was re-read
     // from disk independently, and the rich formatter re-read once PER DIAGNOSTIC.
-    let mut source_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut source_cache: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     let t1 = std::time::Instant::now();
     let mut all_diags: Vec<Diagnostic> = Vec::new();
@@ -189,21 +232,26 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         // most templates have none, and the clone dwarfs the per-file check cost.
         let path = std::path::Path::new(&idx.path);
         let overlay;
-        let effective_registry: &Registry = if jinja_lsp::builtins::hints::find_sidecar(path).is_some() {
-            let mut reg = base_registry.clone();
-            load_sidecar(path, &mut reg);
-            overlay = reg;
-            &overlay
-        } else {
-            &base_registry
-        };
+        let effective_registry: &Registry =
+            if jinja_lsp::builtins::hints::find_sidecar(path).is_some() {
+                let mut reg = base_registry.clone();
+                load_sidecar(path, &mut reg);
+                overlay = reg;
+                &overlay
+            } else {
+                &base_registry
+            };
         let raw = run_checks(&source, &idx.path, idx, effective_registry, &workspace);
         all_diags.extend(raw);
         source_cache.insert(idx.path.clone(), source);
     }
     if verbose {
-        eprintln!("info: checked {} template(s) in {:.2}s, {} raw finding(s)",
-            workspace.templates.len(), t1.elapsed().as_secs_f64(), all_diags.len());
+        eprintln!(
+            "info: checked {} template(s) in {:.2}s, {} raw finding(s)",
+            workspace.templates.len(),
+            t1.elapsed().as_secs_f64(),
+            all_diags.len()
+        );
     }
 
     // REQ-LINT-03: apply select/ignore filters (CLI overrides config; merge both)
@@ -220,8 +268,11 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     let mut post_noqa: Vec<Diagnostic> = Vec::new();
     let mut w107_diags: Vec<Diagnostic> = Vec::new();
     {
-        let mut per_file: std::collections::HashMap<&str, Vec<&Diagnostic>> = std::collections::HashMap::new();
-        for d in &filtered { per_file.entry(d.file.as_str()).or_default().push(d); }
+        let mut per_file: std::collections::HashMap<&str, Vec<&Diagnostic>> =
+            std::collections::HashMap::new();
+        for d in &filtered {
+            per_file.entry(d.file.as_str()).or_default().push(d);
+        }
         // REQ-DIAG-06: scan every discovered template, not just files with existing
         // findings — a file whose only problem is an invalid `noqa` directive must
         // still surface its W107, even though it has no other diagnostics.
@@ -233,12 +284,18 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
             let file_vec: Vec<Diagnostic> = file_diags.iter().map(|d| (*d).clone()).collect();
             let (kept, w107s) = suppress_by_noqa(&file_vec, source);
             post_noqa.extend(kept);
-            w107_diags.extend(w107s.into_iter().map(|mut d| { d.file = file_path.to_owned(); d }));
+            w107_diags.extend(w107s.into_iter().map(|mut d| {
+                d.file = file_path.to_owned();
+                d
+            }));
         }
     }
     // REQ-DIAG-06/jinja-lsp-ibun: W107 (invalid-noqa) must respect the same
     // select/ignore filters as every other diagnostic code.
-    let w107_diags: Vec<Diagnostic> = filter_by_config(&w107_diags, &sel, &ign).into_iter().cloned().collect();
+    let w107_diags: Vec<Diagnostic> = filter_by_config(&w107_diags, &sel, &ign)
+        .into_iter()
+        .cloned()
+        .collect();
     post_noqa.extend(w107_diags);
     // Shadow `filtered` so the rest of the function uses the noqa-suppressed set.
     let filtered = post_noqa;
@@ -246,7 +303,8 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     // REQ-LINT-07: order by file, line, col (sort on absolute paths for stable order)
     let mut sorted: Vec<Diagnostic> = filtered.into_iter().collect();
     sorted.sort_by(|a, b| {
-        a.file.cmp(&b.file)
+        a.file
+            .cmp(&b.file)
             .then(a.line.cmp(&b.line))
             .then(a.col.cmp(&b.col))
     });
@@ -265,14 +323,21 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
 
     // REQ-LINT-04/05/06: output format — reject unknown values (exit 2).
     if !matches!(format, "rich" | "compact" | "json") {
-        eprintln!("error: invalid --format value {:?}: expected one of rich, compact, json", format);
+        eprintln!(
+            "error: invalid --format value {:?}: expected one of rich, compact, json",
+            format
+        );
         return 2;
     }
     match format {
         "json" => {
             // REQ-LINT-06/07: JSON array with 7-key shape, workspace-relative paths
-            let display: Vec<Diagnostic> = sorted.iter()
-                .map(|d| Diagnostic { file: normalize_path(&d.file), ..d.clone() })
+            let display: Vec<Diagnostic> = sorted
+                .iter()
+                .map(|d| Diagnostic {
+                    file: normalize_path(&d.file),
+                    ..d.clone()
+                })
                 .collect();
             let json = serde_json::to_string_pretty(&display).expect("serialization must not fail");
             println!("{json}");
@@ -280,23 +345,35 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         "compact" => {
             // REQ-LINT-05: one line per finding, 1-based line:col
             for d in &sorted {
-                println!("{}:{}:{}: {} {}: {}",
-                    normalize_path(&d.file), d.line + 1, d.col + 1,
-                    d.code, d.slug, d.message);
+                println!(
+                    "{}:{}:{}: {} {}: {}",
+                    normalize_path(&d.file),
+                    d.line + 1,
+                    d.col + 1,
+                    d.code,
+                    d.slug,
+                    d.message
+                );
             }
         }
         _ => {
             // REQ-LINT-04: rich rustc-style report
             use std::io::IsTerminal;
-            let use_color = std::io::stdout().is_terminal()
-                && std::env::var_os("NO_COLOR").is_none();
+            let use_color =
+                std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
             let empty = String::new();
             for d in &sorted {
                 let display_path = normalize_path(&d.file);
                 let source = source_cache.get(&d.file).unwrap_or(&empty);
                 let src_line = source.lines().nth(d.line as usize).unwrap_or("");
-                let display_d = Diagnostic { file: display_path, ..d.clone() };
-                print!("{}", format_rich_diagnostic_colored(&display_d, src_line, use_color));
+                let display_d = Diagnostic {
+                    file: display_path,
+                    ..d.clone()
+                };
+                print!(
+                    "{}",
+                    format_rich_diagnostic_colored(&display_d, src_line, use_color)
+                );
             }
             if sorted.is_empty() {
                 println!("No problems found.");
@@ -310,19 +387,31 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
 
 /// REQ-FMT-08 / REQ-FMT-09: format command.
 /// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
-fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: bool, output: Option<&str>) -> i32 {
-    use std::path::Path;
+fn run_format(
+    paths: Vec<String>,
+    config_path: Option<&str>,
+    check: bool,
+    diff: bool,
+    output: Option<&str>,
+) -> i32 {
     use jinja_lsp::config::JinjaConfig;
+    use std::path::Path;
 
     let cwd = std::env::current_dir().unwrap_or_default();
     let cfg = match config_path {
         Some(p) => match JinjaConfig::from_file(Path::new(p)) {
             Ok(c) => c,
-            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+            Err(e) => {
+                eprintln!("error: config: {e}");
+                return 2;
+            }
         },
         None => match JinjaConfig::discover(&cwd) {
             Ok(c) => c,
-            Err(e) => { eprintln!("error: config: {e}"); return 2; }
+            Err(e) => {
+                eprintln!("error: config: {e}");
+                return 2;
+            }
         },
     };
     let ext_strs: Vec<&str> = cfg.extensions.iter().map(|s| s.as_str()).collect();
@@ -338,7 +427,11 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
     // Absolute paths are always accepted — the user explicitly chose them.
     let template_roots: Vec<std::path::PathBuf> = {
         let config_roots = cfg.resolved_template_dirs(&cwd);
-        if config_roots.is_empty() { vec![cwd.clone()] } else { config_roots }
+        if config_roots.is_empty() {
+            vec![cwd.clone()]
+        } else {
+            config_roots
+        }
     };
     let is_relative_escape = |p: &std::path::Path| -> bool {
         if p.is_absolute() {
@@ -404,8 +497,11 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
                     return 2;
                 }
             }
-            if formatted != source { changed_count += 1; }
-            else { unchanged_count += 1; }
+            if formatted != source {
+                changed_count += 1;
+            } else {
+                unchanged_count += 1;
+            }
             continue;
         }
 
@@ -465,11 +561,23 @@ mod cli_tests {
         let formatted = "line1\nnew_line\nline2\nline3\n";
         let out = build_unified_diff(Path::new("t.html"), original, formatted);
         assert!(out.contains("@@ -1,"), "must have hunk header");
-        assert!(out.contains("+new_line"), "inserted line must appear with +");
-        assert!(out.contains(" line2"), "unchanged line2 must appear as context");
-        assert!(out.contains(" line3"), "unchanged line3 must appear as context");
+        assert!(
+            out.contains("+new_line"),
+            "inserted line must appear with +"
+        );
+        assert!(
+            out.contains(" line2"),
+            "unchanged line2 must appear as context"
+        );
+        assert!(
+            out.contains(" line3"),
+            "unchanged line3 must appear as context"
+        );
         // The naive impl would have shown -line2, +new_line, -line3, +line2 — check that doesn't happen.
-        assert!(!out.contains("-line2\n+new_line"), "must not misalign existing lines as deletions");
+        assert!(
+            !out.contains("-line2\n+new_line"),
+            "must not misalign existing lines as deletions"
+        );
     }
 
     #[test]
@@ -478,7 +586,10 @@ mod cli_tests {
         let formatted = "line1\nline3\n";
         let out = build_unified_diff(Path::new("t.html"), original, formatted);
         assert!(out.contains("-line2"), "deleted line must appear with -");
-        assert!(out.contains(" line3"), "unchanged line3 must appear as context, not as changed");
+        assert!(
+            out.contains(" line3"),
+            "unchanged line3 must appear as context, not as changed"
+        );
     }
 
     #[test]
@@ -489,11 +600,21 @@ mod cli_tests {
     }
 
     // REQ-LINT-04: rich format tests
-    fn make_diag(file: &str, line: u32, col: u32, code: &str, slug: &str, msg: &str) -> jinja_lsp::diagnostic::Diagnostic {
+    fn make_diag(
+        file: &str,
+        line: u32,
+        col: u32,
+        code: &str,
+        slug: &str,
+        msg: &str,
+    ) -> jinja_lsp::diagnostic::Diagnostic {
         use jinja_lsp::diagnostic::DiagnosticSeverity;
         jinja_lsp::diagnostic::Diagnostic {
-            file: file.to_owned(), line, col,
-            code: code.to_owned(), slug: slug.to_owned(),
+            file: file.to_owned(),
+            line,
+            col,
+            code: code.to_owned(),
+            slug: slug.to_owned(),
             severity: DiagnosticSeverity::Error,
             message: msg.to_owned(),
         }
@@ -501,17 +622,37 @@ mod cli_tests {
 
     #[test]
     fn jl43_rich_header_matches_spec_format() {
-        let d = make_diag("blog/post.html", 3, 8, "JINJA-E101", "undefined-variable", "'post.titel' is not defined");
+        let d = make_diag(
+            "blog/post.html",
+            3,
+            8,
+            "JINJA-E101",
+            "undefined-variable",
+            "'post.titel' is not defined",
+        );
         let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
-        assert!(out.starts_with("JINJA-E101 undefined-variable: 'post.titel' is not defined\n"), "header format must match spec");
+        assert!(
+            out.starts_with("JINJA-E101 undefined-variable: 'post.titel' is not defined\n"),
+            "header format must match spec"
+        );
     }
 
     #[test]
     fn jl43_rich_location_line_is_1_based() {
-        let d = make_diag("blog/post.html", 3, 8, "JINJA-E101", "undefined-variable", "msg");
+        let d = make_diag(
+            "blog/post.html",
+            3,
+            8,
+            "JINJA-E101",
+            "undefined-variable",
+            "msg",
+        );
         let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
         // line 3 (0-based) → display line 4; col 8 (0-based) → display col 9
-        assert!(out.contains(" --> blog/post.html:4:9"), "line and col must be 1-based: {out}");
+        assert!(
+            out.contains(" --> blog/post.html:4:9"),
+            "line and col must be 1-based: {out}"
+        );
     }
 
     #[test]
@@ -520,7 +661,10 @@ mod cli_tests {
         let d = make_diag("t.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
         let out = format_rich_diagnostic_for_source(&d, "{{ post.titel }}");
         // col=3 → after = "post.titel }}" → word = "post.titel" → 10 carets
-        assert!(out.contains("^^^^^^^^^^"), "caret must underline 'post.titel' (10 chars): {out}");
+        assert!(
+            out.contains("^^^^^^^^^^"),
+            "caret must underline 'post.titel' (10 chars): {out}"
+        );
     }
 
     #[test]
@@ -538,14 +682,31 @@ mod cli_tests {
             "{%if%}\n",
             "{% if %}\n",
         );
-        assert!(out.starts_with("--- templates/blog/post.html\n"), "--- header must match spec");
-        assert!(out.contains("+++ templates/blog/post.html (formatted)\n"), "+++ header must match spec");
+        assert!(
+            out.starts_with("--- templates/blog/post.html\n"),
+            "--- header must match spec"
+        );
+        assert!(
+            out.contains("+++ templates/blog/post.html (formatted)\n"),
+            "+++ header must match spec"
+        );
     }
 
-    fn make_diag_with_sev(file: &str, line: u32, col: u32, code: &str, slug: &str, msg: &str, sev: jinja_lsp::diagnostic::DiagnosticSeverity) -> jinja_lsp::diagnostic::Diagnostic {
+    fn make_diag_with_sev(
+        file: &str,
+        line: u32,
+        col: u32,
+        code: &str,
+        slug: &str,
+        msg: &str,
+        sev: jinja_lsp::diagnostic::DiagnosticSeverity,
+    ) -> jinja_lsp::diagnostic::Diagnostic {
         jinja_lsp::diagnostic::Diagnostic {
-            file: file.to_owned(), line, col,
-            code: code.to_owned(), slug: slug.to_owned(),
+            file: file.to_owned(),
+            line,
+            col,
+            code: code.to_owned(),
+            slug: slug.to_owned(),
             severity: sev,
             message: msg.to_owned(),
         }
@@ -554,35 +715,79 @@ mod cli_tests {
     // T-18/T-19: color=false must produce no ANSI escape codes
     #[test]
     fn t18_rich_no_color_produces_no_ansi_escapes() {
-        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
+        let d = make_diag(
+            "blog/post.html",
+            0,
+            3,
+            "JINJA-E101",
+            "undefined-variable",
+            "msg",
+        );
         let out = format_rich_diagnostic_colored(&d, "{{ post.titel }}", false);
-        assert!(!out.contains(''), "color=false must produce no ANSI escapes: {:?}", out);
+        assert!(
+            !out.contains(''),
+            "color=false must produce no ANSI escapes: {:?}",
+            out
+        );
     }
 
     // T-17: color=true must produce ANSI escape codes for error (red)
     #[test]
     fn t17_rich_color_produces_ansi_escapes_for_error() {
-        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "msg");
+        let d = make_diag(
+            "blog/post.html",
+            0,
+            3,
+            "JINJA-E101",
+            "undefined-variable",
+            "msg",
+        );
         let out = format_rich_diagnostic_colored(&d, "{{ post.titel }}", true);
-        assert!(out.contains(''), "color=true must produce ANSI escapes: {:?}", out);
+        assert!(
+            out.contains(''),
+            "color=true must produce ANSI escapes: {:?}",
+            out
+        );
     }
 
     // T-17: warning severity must use yellow ANSI color
     #[test]
     fn t17_rich_color_warning_uses_ansi() {
         use jinja_lsp::diagnostic::DiagnosticSeverity;
-        let d = make_diag_with_sev("t.html", 0, 0, "JINJA-W203", "unused-import", "msg", DiagnosticSeverity::Warning);
+        let d = make_diag_with_sev(
+            "t.html",
+            0,
+            0,
+            "JINJA-W203",
+            "unused-import",
+            "msg",
+            DiagnosticSeverity::Warning,
+        );
         let out = format_rich_diagnostic_colored(&d, "some line", true);
-        assert!(out.contains(''), "warning with color=true must have ANSI escapes: {:?}", out);
+        assert!(
+            out.contains(''),
+            "warning with color=true must have ANSI escapes: {:?}",
+            out
+        );
     }
 
     // T-18: no-color output must still contain code, slug, message
     #[test]
     fn t18_no_color_output_has_code_and_message() {
-        let d = make_diag("blog/post.html", 0, 3, "JINJA-E101", "undefined-variable", "my message");
+        let d = make_diag(
+            "blog/post.html",
+            0,
+            3,
+            "JINJA-E101",
+            "undefined-variable",
+            "my message",
+        );
         let out = format_rich_diagnostic_colored(&d, "line content", false);
         assert!(out.contains("JINJA-E101"), "code must be present: {out}");
-        assert!(out.contains("undefined-variable"), "slug must be present: {out}");
+        assert!(
+            out.contains("undefined-variable"),
+            "slug must be present: {out}"
+        );
         assert!(out.contains("my message"), "message must be present: {out}");
         assert!(!out.contains(''), "must not have ANSI escapes: {:?}", out);
     }
@@ -607,20 +812,35 @@ fn format_rich_diagnostic_colored(
             return s.to_owned();
         }
         match d.severity {
-            DiagnosticSeverity::Error   => s.red().bold().to_string(),
+            DiagnosticSeverity::Error => s.red().bold().to_string(),
             DiagnosticSeverity::Warning => s.yellow().bold().to_string(),
-            DiagnosticSeverity::Info    => s.cyan().bold().to_string(),
-            DiagnosticSeverity::Hint    => s.dimmed().to_string(),
+            DiagnosticSeverity::Info => s.cyan().bold().to_string(),
+            DiagnosticSeverity::Hint => s.dimmed().to_string(),
         }
     };
     let blue = |s: &str| -> String {
-        if color { s.blue().to_string() } else { s.to_owned() }
+        if color {
+            s.blue().to_string()
+        } else {
+            s.to_owned()
+        }
     };
-    let msg_styled = if color { d.message.bold().to_string() } else { d.message.clone() };
+    let msg_styled = if color {
+        d.message.bold().to_string()
+    } else {
+        d.message.clone()
+    };
 
     let mut out = String::new();
-    out.push_str(&format!("{}: {}\n", sev_color(&format!("{} {}", d.code, d.slug)), msg_styled));
-    out.push_str(&format!(" --> {}:{}:{}\n", d.file, display_line, display_col));
+    out.push_str(&format!(
+        "{}: {}\n",
+        sev_color(&format!("{} {}", d.code, d.slug)),
+        msg_styled
+    ));
+    out.push_str(&format!(
+        " --> {}:{}:{}\n",
+        d.file, display_line, display_col
+    ));
 
     if !src_line.is_empty() {
         let line_num = display_line.to_string();
@@ -653,7 +873,9 @@ fn format_rich_diagnostic_for_source(
 }
 
 fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -679,19 +901,23 @@ fn build_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -
         let new_range = first.new_range().start..last.new_range().end;
         out.push_str(&format!(
             "@@ -{},{} +{},{} @@\n",
-            old_range.start + 1, old_range.len(),
-            new_range.start + 1, new_range.len(),
+            old_range.start + 1,
+            old_range.len(),
+            new_range.start + 1,
+            new_range.len(),
         ));
         for op in &group {
             for change in diff.iter_changes(op) {
                 let prefix = match change.tag() {
                     ChangeTag::Delete => '-',
                     ChangeTag::Insert => '+',
-                    ChangeTag::Equal  => ' ',
+                    ChangeTag::Equal => ' ',
                 };
                 out.push(prefix);
                 out.push_str(&change.to_string());
-                if change.missing_newline() { out.push('\n'); }
+                if change.missing_newline() {
+                    out.push('\n');
+                }
             }
         }
     }

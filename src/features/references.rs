@@ -53,7 +53,11 @@ pub fn find_references(
     let mut results: HashSet<ReferenceLocation> = HashSet::new();
 
     match symbol {
-        Symbol::Macro { name, def_path, def_span } => {
+        Symbol::Macro {
+            name,
+            def_path,
+            def_span,
+        } => {
             // Add declaration if requested (REQ-REF-03).
             if include_declaration {
                 results.insert(span_to_ref(&def_path, &def_span));
@@ -116,17 +120,29 @@ pub fn find_references(
             let mut pos = 0usize;
             while pos + name_bytes.len() <= src_bytes.len() {
                 if &src_bytes[pos..pos + name_bytes.len()] == name_bytes {
-                    let before_ok = pos == 0 || !(src_bytes[pos - 1].is_ascii_alphanumeric() || src_bytes[pos - 1] == b'_');
+                    let before_ok = pos == 0
+                        || !(src_bytes[pos - 1].is_ascii_alphanumeric()
+                            || src_bytes[pos - 1] == b'_');
                     let after = pos + name_bytes.len();
-                    let after_ok = after >= src_bytes.len() || !(src_bytes[after].is_ascii_alphanumeric() || src_bytes[after] == b'_');
+                    let after_ok = after >= src_bytes.len()
+                        || !(src_bytes[after].is_ascii_alphanumeric() || src_bytes[after] == b'_');
                     // Skip the declaration site when include_declaration=false (REQ-REF-03).
                     let is_decl = decl_byte == Some(pos);
-                    if before_ok && after_ok && inside_jinja(source, pos) && !pos_in_string_literal(source, pos)
+                    if before_ok
+                        && after_ok
+                        && inside_jinja(source, pos)
+                        && !pos_in_string_literal(source, pos)
                         && (include_declaration || !is_decl)
                     {
                         let (sl, sc) = super::byte_to_line_col(source, pos);
                         let (el, ec) = super::byte_to_line_col(source, after);
-                        results.insert(ReferenceLocation { path: current_path.to_owned(), start_line: sl, start_col: sc, end_line: el, end_col: ec });
+                        results.insert(ReferenceLocation {
+                            path: current_path.to_owned(),
+                            start_line: sl,
+                            start_col: sc,
+                            end_line: el,
+                            end_col: ec,
+                        });
                     }
                 }
                 pos += 1;
@@ -152,8 +168,7 @@ pub fn find_references(
             // Optionally include the declaration (variable binding) matching this scope.
             if include_declaration {
                 let var = index.variables.iter().find(|v| {
-                    v.name == name
-                        && scope.as_ref().is_none_or(|vr| v.valid_range == *vr)
+                    v.name == name && scope.as_ref().is_none_or(|vr| v.valid_range == *vr)
                 });
                 if let Some(var) = var {
                     if var.span.start_byte < var.span.end_byte {
@@ -169,7 +184,8 @@ pub fn find_references(
     // Sort by path then by position (REQ-REF-02).
     let mut sorted: Vec<ReferenceLocation> = results.into_iter().collect();
     sorted.sort_by(|a, b| {
-        a.path.cmp(&b.path)
+        a.path
+            .cmp(&b.path)
             .then(a.start_line.cmp(&b.start_line))
             .then(a.start_col.cmp(&b.start_col))
     });
@@ -179,10 +195,21 @@ pub fn find_references(
 // ── Symbol identification ─────────────────────────────────────────────────────
 
 enum Symbol {
-    Macro { name: String, def_path: String, def_span: Span },
-    Block { name: String },
-    Alias { name: String },
-    ScopeLocal { name: String, scope: Option<Span> },
+    Macro {
+        name: String,
+        def_path: String,
+        def_span: Span,
+    },
+    Block {
+        name: String,
+    },
+    Alias {
+        name: String,
+    },
+    ScopeLocal {
+        name: String,
+        scope: Option<Span>,
+    },
     HostOwned,
 }
 
@@ -219,14 +246,18 @@ fn symbol_at(
     // Check block definition spans.
     for b in &index.blocks {
         if super::byte_in_span(byte, &b.span) {
-            return Some(Symbol::Block { name: b.name.clone() });
+            return Some(Symbol::Block {
+                name: b.name.clone(),
+            });
         }
     }
 
     // Check import alias spans (cursor ON the alias declaration).
     for a in &index.import_aliases {
         if super::byte_in_span(byte, &a.span) {
-            return Some(Symbol::Alias { name: a.alias.clone() });
+            return Some(Symbol::Alias {
+                name: a.alias.clone(),
+            });
         }
     }
 
@@ -239,7 +270,9 @@ fn symbol_at(
         if !word.is_empty() {
             // Import alias used as namespace (e.g. `macros` in `{{ macros.fn() }}`).
             if index.import_aliases.iter().any(|a| a.alias == word) {
-                return Some(Symbol::Alias { name: word.to_owned() });
+                return Some(Symbol::Alias {
+                    name: word.to_owned(),
+                });
             }
             if index.variables.iter().any(|v| v.name == word) {
                 return Some(Symbol::ScopeLocal {
@@ -269,9 +302,17 @@ fn pos_in_string_literal(source: &str, pos: usize) -> bool {
     let mut escaped = false;
     for c in source[start..pos].chars() {
         if in_string {
-            if escaped { escaped = false; continue; }
-            if c == '\\' { escaped = true; continue; }
-            if c == string_char { in_string = false; }
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == string_char {
+                in_string = false;
+            }
         } else if c == '"' || c == '\'' {
             in_string = true;
             string_char = c;
@@ -283,14 +324,20 @@ fn pos_in_string_literal(source: &str, pos: usize) -> bool {
 /// Find the narrowest (smallest valid_range) VariableDefinition binding
 /// whose name == `name` and whose valid_range contains `byte`.
 fn tightest_binding_scope(name: &str, byte: usize, index: &TemplateIndex) -> Option<Span> {
-    index.variables.iter()
+    index
+        .variables
+        .iter()
         .filter(|v| {
             v.name == name
                 && v.valid_range.start_byte < v.valid_range.end_byte
                 && v.valid_range.start_byte <= byte
                 && byte <= v.valid_range.end_byte
         })
-        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+        .min_by_key(|v| {
+            v.valid_range
+                .end_byte
+                .saturating_sub(v.valid_range.start_byte)
+        })
         .map(|v| v.valid_range.clone())
 }
 
@@ -313,7 +360,11 @@ fn classify_reference(
 
     // From-imported macro (including `import foo as bar` aliases).
     for fi in &index.from_imports {
-        if let Some(imported) = fi.names.iter().find(|n| n.name == name || n.alias.as_deref() == Some(name)) {
+        if let Some(imported) = fi
+            .names
+            .iter()
+            .find(|n| n.name == name || n.alias.as_deref() == Some(name))
+        {
             // Resolve fi.source (always relative) against the workspace's absolute keys.
             let original_name = &imported.name;
             let src_key = workspace.resolve_key(&fi.source).unwrap_or(&fi.source);
@@ -333,7 +384,9 @@ fn classify_reference(
 
     // Import alias (namespace usage like {{ macros.post_url() }}).
     if index.import_aliases.iter().any(|a| a.alias == name) {
-        return Some(Symbol::Alias { name: name.to_owned() });
+        return Some(Symbol::Alias {
+            name: name.to_owned(),
+        });
     }
 
     // Scope-local variable.

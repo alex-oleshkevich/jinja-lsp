@@ -1,6 +1,6 @@
 // F05 — completion + completionItem/resolve LSP handler wiring (jinja-lsp-3san).
 
-use jinja_lsp::features::completions::{complete, resolve_doc, CompletionKind, TRIGGER_CHARS};
+use jinja_lsp::features::completions::{CompletionKind, TRIGGER_CHARS, complete, resolve_doc};
 use jinja_lsp::server::state::ServerState;
 
 // ─── Wiring contract: handler must delegate to feature function ───────────────
@@ -48,9 +48,19 @@ fn complete_returns_filters_in_filter_context() {
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
     // Cursor after "| " — filter context
-    let (items, _) = complete(source, 0, source.len() as u32, index, &state.registry, &state.workspace);
+    let (items, _) = complete(
+        source,
+        0,
+        source.len() as u32,
+        index,
+        &state.registry,
+        &state.workspace,
+    );
     assert!(!items.is_empty(), "filter context must produce completions");
-    assert!(items.iter().all(|i| i.kind == CompletionKind::Filter), "all items must be Filter kind");
+    assert!(
+        items.iter().all(|i| i.kind == CompletionKind::Filter),
+        "all items must be Filter kind"
+    );
 }
 
 #[test]
@@ -61,7 +71,10 @@ fn complete_returns_keywords_in_statement_context() {
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
     let (items, _) = complete(source, 0, 3, index, &state.registry, &state.workspace);
-    assert!(!items.is_empty(), "statement context must produce keyword completions");
+    assert!(
+        !items.is_empty(),
+        "statement context must produce keyword completions"
+    );
     let has_for = items.iter().any(|i| i.label == "for");
     let has_if = items.iter().any(|i| i.label == "if");
     assert!(has_for, "statement completions must include 'for'");
@@ -73,9 +86,15 @@ fn resolve_doc_returns_markdown_for_known_filter() {
     let state = ServerState::with_config(Default::default());
     // "upper" is a core Jinja2 filter — always in the registry.
     let doc = resolve_doc("filter:upper", &state.registry);
-    assert!(doc.is_some(), "resolve_doc must return Some for known filter 'upper'");
+    assert!(
+        doc.is_some(),
+        "resolve_doc must return Some for known filter 'upper'"
+    );
     let doc = doc.unwrap();
-    assert!(doc.contains("upper"), "resolved doc must mention the filter name");
+    assert!(
+        doc.contains("upper"),
+        "resolved doc must mention the filter name"
+    );
 }
 
 #[test]

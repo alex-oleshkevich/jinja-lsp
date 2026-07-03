@@ -19,7 +19,10 @@ fn pass1_updates_only_changed_file() {
     let b_macros_before = state.workspace.templates["b.html"].macros.len();
 
     // Pass 1: update only a.html with new content
-    state.update_file("a.html", "{% macro greet(name) %}Hi{{ name }}{% endmacro %}");
+    state.update_file(
+        "a.html",
+        "{% macro greet(name) %}Hi{{ name }}{% endmacro %}",
+    );
 
     // a.html should now have the macro
     assert_eq!(
@@ -44,7 +47,10 @@ fn generation_increments_on_update() {
     let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
     let gen0 = state.generation;
     state.update_file("x.html", "{% set a = 1 %}");
-    assert!(state.generation > gen0, "generation must increment after update_file");
+    assert!(
+        state.generation > gen0,
+        "generation must increment after update_file"
+    );
 }
 
 // ---------- jinja-lsp-q0aw: stale-diagnostics-publish guard via doc_versions ----
@@ -62,7 +68,9 @@ fn jinja_lsp_q0aw_stale_publish_is_detected_after_interleaved_pass1() {
 
     // did_change(A): record version 1, then run pass1.
     let version_a = 1;
-    state.doc_versions.entry("t.html".to_owned())
+    state
+        .doc_versions
+        .entry("t.html".to_owned())
         .and_modify(|v| *v = (*v).max(version_a))
         .or_insert(version_a);
     state.update_file("t.html", "{{ a }}");
@@ -70,18 +78,26 @@ fn jinja_lsp_q0aw_stale_publish_is_detected_after_interleaved_pass1() {
     // did_change(B) interleaves and fully completes before A checks in: record
     // version 2, run pass1 with the newer text.
     let version_b = 2;
-    state.doc_versions.entry("t.html".to_owned())
+    state
+        .doc_versions
+        .entry("t.html".to_owned())
         .and_modify(|v| *v = (*v).max(version_b))
         .or_insert(version_b);
     state.update_file("t.html", "{{ b }}");
 
     // Now A finally checks whether it's still the latest version — it must not be.
     let a_is_latest = state.doc_versions.get("t.html").copied() == Some(version_a);
-    assert!(!a_is_latest, "the older edit (A) must detect it is stale and skip publishing");
+    assert!(
+        !a_is_latest,
+        "the older edit (A) must detect it is stale and skip publishing"
+    );
 
     // B, checking immediately after its own pass1, must see itself as latest.
     let b_is_latest = state.doc_versions.get("t.html").copied() == Some(version_b);
-    assert!(b_is_latest, "the newer edit (B) must see itself as the latest version");
+    assert!(
+        b_is_latest,
+        "the newer edit (B) must see itself as the latest version"
+    );
 }
 
 // ---------- jinja-lsp-wgi7: doc_versions must not survive close/reopen -------
@@ -100,7 +116,9 @@ fn jinja_lsp_wgi7_stale_high_water_mark_does_not_freeze_diagnostics_after_reopen
 
     // Many edits before close drive the version high.
     for v in 1..=20i32 {
-        state.doc_versions.entry("t.html".to_owned())
+        state
+            .doc_versions
+            .entry("t.html".to_owned())
             .and_modify(|cur| *cur = (*cur).max(v))
             .or_insert(v);
     }
@@ -112,7 +130,9 @@ fn jinja_lsp_wgi7_stale_high_water_mark_does_not_freeze_diagnostics_after_reopen
 
     // Reopen restarts the client's version counter at 1, then the user edits again.
     let restarted_version = 1;
-    state.doc_versions.entry("t.html".to_owned())
+    state
+        .doc_versions
+        .entry("t.html".to_owned())
         .and_modify(|cur| *cur = (*cur).max(restarted_version))
         .or_insert(restarted_version);
 
@@ -131,21 +151,34 @@ fn jinja_lsp_wgi7_did_open_and_did_close_clear_doc_versions() {
     let src = include_str!("../src/server/mod.rs");
 
     let open_start = src.find("async fn did_open(").expect("did_open must exist");
-    let open_end = open_start + src[open_start..].find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: change triggers").expect("did_change doc must follow did_open");
+    let open_end = open_start
+        + src[open_start..]
+            .find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: change triggers")
+            .expect("did_change doc must follow did_open");
     assert!(
         src[open_start..open_end].contains("doc_versions.remove"),
         "did_open must clear any stale doc_versions high-water mark from before a close/reopen cycle"
     );
 
-    let close_start = src.find("async fn did_close(").expect("did_close must exist");
-    let close_end = close_start + src[close_start..].find("\n    async fn did_change_watched_files").expect("did_change_watched_files must follow did_close");
+    let close_start = src
+        .find("async fn did_close(")
+        .expect("did_close must exist");
+    let close_end = close_start
+        + src[close_start..]
+            .find("\n    async fn did_change_watched_files")
+            .expect("did_change_watched_files must follow did_close");
     assert!(
         src[close_start..close_end].contains("doc_versions.remove"),
         "did_close must clear this document's doc_versions entry"
     );
 
-    let deleted_start = src.find("FileChangeType::DELETED =>").expect("DELETED arm must exist");
-    let deleted_end = deleted_start + src[deleted_start..].find("\n                _ => {}").expect("catch-all arm must follow DELETED");
+    let deleted_start = src
+        .find("FileChangeType::DELETED =>")
+        .expect("DELETED arm must exist");
+    let deleted_end = deleted_start
+        + src[deleted_start..]
+            .find("\n                _ => {}")
+            .expect("catch-all arm must follow DELETED");
     assert!(
         src[deleted_start..deleted_end].contains("doc_versions.remove"),
         "the DELETED watched-file branch must also clear doc_versions"
@@ -157,7 +190,13 @@ fn jinja_lsp_wgi7_did_open_and_did_close_clear_doc_versions() {
 fn textedit_and_workspaceedit_defined_in_edit_module() {
     // Verify types are accessible from edit/ (not code_actions).
     use jinja_lsp::edit::{TextEdit, WorkspaceEdit};
-    let edit = TextEdit { start_line: 0, start_col: 0, end_line: 0, end_col: 0, new_text: String::new() };
+    let edit = TextEdit {
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        end_col: 0,
+        new_text: String::new(),
+    };
     let we = WorkspaceEdit::single("f.html", edit);
     assert!(we.changes.contains_key("f.html"));
 }
@@ -188,8 +227,13 @@ fn jinja_lsp_0ar1_code_action_handler_does_not_clone_workspace_state() {
     // clones only added cost with no benefit. The handler must borrow from the
     // held read guard instead of calling .clone() on workspace/registry_for.
     let src = include_str!("../src/server/mod.rs");
-    let start = src.find("async fn code_action(").expect("code_action handler must exist");
-    let end = start + src[start..].find("\n    async fn code_action_resolve").expect("code_action_resolve must follow code_action");
+    let start = src
+        .find("async fn code_action(")
+        .expect("code_action handler must exist");
+    let end = start
+        + src[start..]
+            .find("\n    async fn code_action_resolve")
+            .expect("code_action_resolve must follow code_action");
     let handler = &src[start..end];
     assert!(
         !handler.contains("ws.clone()") && !handler.contains("workspace.clone()"),
@@ -213,8 +257,13 @@ fn jinja_lsp_5qqy_tokens_to_lsp_data_does_not_rescan_source_per_token() {
     // which fires on every edit. It must instead split the source into lines once
     // and index into that per token.
     let src = include_str!("../src/server/mod.rs");
-    let start = src.find("fn tokens_to_lsp_data(").expect("tokens_to_lsp_data must exist");
-    let end = start + src[start..].find("\n#[cfg(test)]").expect("test module must follow tokens_to_lsp_data");
+    let start = src
+        .find("fn tokens_to_lsp_data(")
+        .expect("tokens_to_lsp_data must exist");
+    let end = start
+        + src[start..]
+            .find("\n#[cfg(test)]")
+            .expect("test module must follow tokens_to_lsp_data");
     let func = &src[start..end];
     assert!(
         !func.contains("source_line(source, tok.line)"),
@@ -234,8 +283,13 @@ fn jinja_lsp_0zz7_update_file_does_not_clone_registry_when_no_sidecar() {
     // `.hints.md` sidecar actually exists for the template. It must check
     // find_sidecar first and only clone when a sidecar is present.
     let src = include_str!("../src/server/state.rs");
-    let start = src.find("pub fn update_file(").expect("update_file must exist");
-    let end = start + src[start..].find("\n    /// Check for `{key}.hints.md`").expect("refresh_sidecar doc comment must follow update_file");
+    let start = src
+        .find("pub fn update_file(")
+        .expect("update_file must exist");
+    let end = start
+        + src[start..]
+            .find("\n    /// Check for `{key}.hints.md`")
+            .expect("refresh_sidecar doc comment must follow update_file");
     let func = &src[start..end];
     assert!(
         func.contains("find_sidecar"),
@@ -253,8 +307,13 @@ fn jinja_lsp_0zz7_cli_lint_loop_does_not_clone_registry_when_no_sidecar() {
     // jinja-lsp-0zz7: the CLI check loop cloned base_registry for every template
     // unconditionally. It must only clone when a sidecar file actually exists.
     let src = include_str!("../src/main.rs");
-    let start = src.find("for idx in workspace.templates.values()").expect("CLI lint loop must exist");
-    let end = start + src[start..].find("all_diags.extend(raw);").expect("loop body must extend all_diags");
+    let start = src
+        .find("for idx in workspace.templates.values()")
+        .expect("CLI lint loop must exist");
+    let end = start
+        + src[start..]
+            .find("all_diags.extend(raw);")
+            .expect("loop body must extend all_diags");
     let loop_body = &src[start..end];
     assert!(
         loop_body.contains("find_sidecar"),
@@ -270,7 +329,10 @@ fn jinja_lsp_md8e_check_w202_early_returns_when_no_macros() {
     // never produce a diagnostic. It must bail out before the workspace scan.
     let src = include_str!("../src/diagnostics/checks/mod.rs");
     let start = src.find("fn check_w202(").expect("check_w202 must exist");
-    let end = start + src[start..].find("\n// ── W203").expect("W203 section must follow check_w202");
+    let end = start
+        + src[start..]
+            .find("\n// ── W203")
+            .expect("W203 section must follow check_w202");
     let func = &src[start..end];
     assert!(
         func.contains("index.macros.is_empty()"),
@@ -303,8 +365,13 @@ fn jinja_lsp_bv6m_index_file_into_does_not_full_scan_templates() {
     // update_file call (every keystroke) just to evict a handful of one file's
     // inline sub-entries. Must instead track and remove exactly those keys.
     let src = include_str!("../src/server/state.rs");
-    let start = src.find("fn index_file_into(").expect("index_file_into must exist");
-    let end = start + src[start..].find("\n    fn is_host_file_for_config").expect("is_host_file_for_config must follow index_file_into");
+    let start = src
+        .find("fn index_file_into(")
+        .expect("index_file_into must exist");
+    let end = start
+        + src[start..]
+            .find("\n    fn is_host_file_for_config")
+            .expect("is_host_file_for_config must follow index_file_into");
     let func = &src[start..end];
     assert!(
         !func.contains("templates.retain") && !func.contains("inline_ranges.retain"),
@@ -323,9 +390,13 @@ fn jinja_lsp_54gh_rich_formatter_does_not_reread_source_per_diagnostic() {
     // already being read once for checks and once for noqa. Sources must be cached
     // per file and reused for rendering instead.
     let src = include_str!("../src/main.rs");
-    let start = src.find("_ => {\n            // REQ-LINT-04: rich rustc-style report")
+    let start = src
+        .find("_ => {\n            // REQ-LINT-04: rich rustc-style report")
         .expect("rich formatter branch must exist");
-    let end = start + src[start..].find("if sorted.is_empty()").expect("rich branch must end before the empty-report check");
+    let end = start
+        + src[start..]
+            .find("if sorted.is_empty()")
+            .expect("rich branch must end before the empty-report check");
     let rich_branch = &src[start..end];
     assert!(
         !rich_branch.contains("std::fs::read_to_string"),
@@ -345,8 +416,13 @@ fn jinja_lsp_isj4_did_change_configuration_skips_empty_overlay() {
     // initializationOptions overlay — the handler must check ConfigOverlay::is_empty()
     // and skip before calling apply_init_options.
     let src = include_str!("../src/server/mod.rs");
-    let start = src.find("async fn did_change_configuration(").expect("did_change_configuration must exist");
-    let end = start + src[start..].find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers").expect("did_open must follow did_change_configuration");
+    let start = src
+        .find("async fn did_change_configuration(")
+        .expect("did_change_configuration must exist");
+    let end = start
+        + src[start..]
+            .find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers")
+            .expect("did_open must follow did_change_configuration");
     let handler = &src[start..end];
     assert!(
         handler.contains("overlay.is_empty()"),
@@ -362,13 +438,30 @@ fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
     // references/symbols via stale inline indexes, sources grew unboundedly, and
     // republish_all_diagnostics kept publishing for files that no longer exist.
     let src = include_str!("../src/server/mod.rs");
-    let start = src.find("FileChangeType::DELETED =>").expect("DELETED arm must exist");
-    let end = start + src[start..].find("\n                _ => {}").expect("DELETED arm must be followed by the catch-all match arm");
+    let start = src
+        .find("FileChangeType::DELETED =>")
+        .expect("DELETED arm must exist");
+    let end = start
+        + src[start..]
+            .find("\n                _ => {}")
+            .expect("DELETED arm must be followed by the catch-all match arm");
     let arm = &src[start..end];
-    assert!(arm.contains("clear_inline_entries_for"), "DELETED must evict the file's inline sub-entries: {arm}");
-    assert!(arm.contains("state.sources.remove"), "DELETED must remove the file's source: {arm}");
-    assert!(arm.contains("state.sidecar_registries.remove"), "DELETED must remove the file's sidecar registry: {arm}");
-    assert!(arm.contains("publish_diagnostics"), "DELETED must clear diagnostics for the deleted file: {arm}");
+    assert!(
+        arm.contains("clear_inline_entries_for"),
+        "DELETED must evict the file's inline sub-entries: {arm}"
+    );
+    assert!(
+        arm.contains("state.sources.remove"),
+        "DELETED must remove the file's source: {arm}"
+    );
+    assert!(
+        arm.contains("state.sidecar_registries.remove"),
+        "DELETED must remove the file's sidecar registry: {arm}"
+    );
+    assert!(
+        arm.contains("publish_diagnostics"),
+        "DELETED must clear diagnostics for the deleted file: {arm}"
+    );
 }
 
 #[test]
@@ -376,10 +469,22 @@ fn jinja_lsp_v944_unused_submodule_layer_name_stubs_removed() {
     // jinja-lsp-v944: layer_name() in rename.rs/formatting.rs/wrap.rs/extract_macro.rs
     // had no callers anywhere — only the top-level module layer_names (features::,
     // parsing::, etc.) are exercised by tests/fold.rs. Delete the four dead stubs.
-    assert!(!include_str!("../src/features/rename.rs").contains("fn layer_name"), "rename.rs must not define an unused layer_name() stub");
-    assert!(!include_str!("../src/features/formatting.rs").contains("fn layer_name"), "formatting.rs must not define an unused layer_name() stub");
-    assert!(!include_str!("../src/features/wrap.rs").contains("fn layer_name"), "wrap.rs must not define an unused layer_name() stub");
-    assert!(!include_str!("../src/features/extract_macro.rs").contains("fn layer_name"), "extract_macro.rs must not define an unused layer_name() stub");
+    assert!(
+        !include_str!("../src/features/rename.rs").contains("fn layer_name"),
+        "rename.rs must not define an unused layer_name() stub"
+    );
+    assert!(
+        !include_str!("../src/features/formatting.rs").contains("fn layer_name"),
+        "formatting.rs must not define an unused layer_name() stub"
+    );
+    assert!(
+        !include_str!("../src/features/wrap.rs").contains("fn layer_name"),
+        "wrap.rs must not define an unused layer_name() stub"
+    );
+    assert!(
+        !include_str!("../src/features/extract_macro.rs").contains("fn layer_name"),
+        "extract_macro.rs must not define an unused layer_name() stub"
+    );
 }
 
 #[test]
@@ -389,8 +494,13 @@ fn jinja_lsp_9cyy_resolve_signature_does_not_double_lookup_registry() {
     // a second time to fetch the same entry. One find_map over registry.get
     // directly returns the entry itself.
     let src = include_str!("../src/features/signature_help.rs");
-    let start = src.find("fn resolve_signature(").expect("resolve_signature must exist");
-    let end = start + src[start..].find("\nfn macro_signature(").expect("macro_signature must follow resolve_signature");
+    let start = src
+        .find("fn resolve_signature(")
+        .expect("resolve_signature must exist");
+    let end = start
+        + src[start..]
+            .find("\nfn macro_signature(")
+            .expect("macro_signature must follow resolve_signature");
     let func = &src[start..end];
     assert!(
         !func.contains("registry.get(category, callee)"),
@@ -405,13 +515,20 @@ fn jinja_lsp_7ug6_scope_regions_computed_once_per_extract() {
     // identical result. It must be computed once in extract() and threaded through.
     let src = include_str!("../src/parsing/extractor.rs");
     let calls = src.matches("build_scope_regions(").count();
-    assert_eq!(calls, 2, "build_scope_regions must have exactly 2 occurrences (its own fn def + one call site in extract()), not one per consumer: found {calls}");
+    assert_eq!(
+        calls, 2,
+        "build_scope_regions must have exactly 2 occurrences (its own fn def + one call site in extract()), not one per consumer: found {calls}"
+    );
     assert!(
-        !src.contains("fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"),
+        !src.contains(
+            "fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"
+        ),
         "do_blocks must take scope_regions as a parameter instead of recomputing it"
     );
     assert!(
-        !src.contains("fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"),
+        !src.contains(
+            "fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"
+        ),
         "do_variables must take scope_regions as a parameter instead of recomputing it"
     );
 }
@@ -496,7 +613,11 @@ fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // WorkspaceIndex::resolve_key, the unused and buggy module was deleted rather
     // than fixed in place.
     assert!(
-        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parsing/path_resolver.rs")).exists(),
+        !std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/parsing/path_resolver.rs"
+        ))
+        .exists(),
         "src/parsing/path_resolver.rs must be removed, not left as dead/buggy code"
     );
     let parsing_mod_src = include_str!("../src/parsing/mod.rs");
@@ -513,7 +634,11 @@ fn jinja_lsp_wam7_dead_set_block_query_removed() {
     // (tree-sitter's ERROR-node recovery can't find multiple block-set tags via a
     // query). The file was dead and misleadingly claimed to still do the capture.
     assert!(
-        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parsing/queries/set_block.scm")).exists(),
+        !std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/parsing/queries/set_block.scm"
+        ))
+        .exists(),
         "src/parsing/queries/set_block.scm must be removed, not left as dead/misleading code"
     );
 }
@@ -548,7 +673,10 @@ fn shared_build_workspace_indexes_templates_and_references() {
     let ws = build_workspace(&[&tmp], &["html"]);
 
     // Template was indexed.
-    assert!(ws.templates.contains_key("t.html"), "workspace must index t.html");
+    assert!(
+        ws.templates.contains_key("t.html"),
+        "workspace must index t.html"
+    );
     // Variable `x` was extracted.
     let idx = ws.templates.get("t.html").unwrap();
     assert!(
@@ -558,7 +686,8 @@ fn shared_build_workspace_indexes_templates_and_references() {
     // Calling it again with the same args produces an identical index — no hidden state.
     let ws2 = build_workspace(&[&tmp], &["html"]);
     assert_eq!(
-        ws.templates.len(), ws2.templates.len(),
+        ws.templates.len(),
+        ws2.templates.len(),
         "build_workspace must be deterministic (same call → same template count)"
     );
 }
@@ -600,10 +729,17 @@ fn host_file_inline_regions_are_indexed() {
         "host file must be indexed as itself"
     );
     // Each inline region must produce a separate index entry.
-    let inline_keys: Vec<_> = state.workspace.templates.keys()
+    let inline_keys: Vec<_> = state
+        .workspace
+        .templates
+        .keys()
         .filter(|k| k.starts_with("views.py::"))
         .collect();
-    assert_eq!(inline_keys.len(), 2, "expected 2 inline entries; got: {inline_keys:?}");
+    assert_eq!(
+        inline_keys.len(),
+        2,
+        "expected 2 inline entries; got: {inline_keys:?}"
+    );
 }
 
 #[test]
@@ -613,14 +749,24 @@ fn host_file_inline_entries_cleared_on_update() {
     let mut state = ServerState::with_config(Default::default());
     state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
     assert_eq!(
-        state.workspace.templates.keys().filter(|k| k.starts_with("views.py::")).count(),
+        state
+            .workspace
+            .templates
+            .keys()
+            .filter(|k| k.starts_with("views.py::"))
+            .count(),
         1,
         "initial: 1 inline entry"
     );
     // Update to a version with no inline templates.
     state.update_file("views.py", "# no jinja here");
     assert_eq!(
-        state.workspace.templates.keys().filter(|k| k.starts_with("views.py::")).count(),
+        state
+            .workspace
+            .templates
+            .keys()
+            .filter(|k| k.starts_with("views.py::"))
+            .count(),
         0,
         "after update with no inline templates: stale entries must be removed"
     );
@@ -633,10 +779,16 @@ fn jinja_template_file_does_not_trigger_inline_detection() {
     let mut state = ServerState::with_config(Default::default());
     state.update_file("template.html", r#"render_template_string("{{ user }}")"#);
     // .html is a Jinja extension → should NOT produce inline entries.
-    let inline_keys: Vec<_> = state.workspace.templates.keys()
+    let inline_keys: Vec<_> = state
+        .workspace
+        .templates
+        .keys()
         .filter(|k| k.starts_with("template.html::"))
         .collect();
-    assert!(inline_keys.is_empty(), "Jinja template must not produce inline entries; got: {inline_keys:?}");
+    assert!(
+        inline_keys.is_empty(),
+        "Jinja template must not produce inline entries; got: {inline_keys:?}"
+    );
 }
 
 #[test]
@@ -649,7 +801,11 @@ fn jinja_lsp_bv6m_stale_inline_entries_removed_when_host_status_changes() {
 
     let mut state = ServerState::with_config(Default::default());
     state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
-    assert_eq!(state.workspace.inline_ranges.len(), 1, "initial: 1 inline_ranges entry");
+    assert_eq!(
+        state.workspace.inline_ranges.len(),
+        1,
+        "initial: 1 inline_ranges entry"
+    );
 
     // Reconfigure so "py" is now a Jinja template extension — views.py is no longer a host file.
     let mut cfg = state.config.clone();
@@ -658,11 +814,16 @@ fn jinja_lsp_bv6m_stale_inline_entries_removed_when_host_status_changes() {
     state.update_file("views.py", r#"render_template_string("{{ old }}")"#);
 
     assert_eq!(
-        state.workspace.inline_ranges.len(), 0,
+        state.workspace.inline_ranges.len(),
+        0,
         "inline_ranges must not linger once the file is no longer classified as a host file"
     );
     assert!(
-        !state.workspace.templates.keys().any(|k| k.starts_with("views.py::")),
+        !state
+            .workspace
+            .templates
+            .keys()
+            .any(|k| k.starts_with("views.py::")),
         "templates must not retain stale inline entries once the file is no longer a host file"
     );
 }

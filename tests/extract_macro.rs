@@ -14,13 +14,21 @@ fn act07_t01_single_line_extract() {
 
     // Should contain an edit that replaces the selection with {{ greeting() }}
     let has_call = edits.iter().any(|e| e.new_text == "{{ greeting() }}");
-    assert!(has_call, "expected {{ greeting() }} replacement; edits: {:?}", edits);
+    assert!(
+        has_call,
+        "expected {{ greeting() }} replacement; edits: {:?}",
+        edits
+    );
 
     // Should contain an edit that appends the macro definition
     let has_macro = edits.iter().any(|e| {
         e.new_text.contains("{% macro greeting() %}") && e.new_text.contains("{% endmacro %}")
     });
-    assert!(has_macro, "expected macro definition appended; edits: {:?}", edits);
+    assert!(
+        has_macro,
+        "expected macro definition appended; edits: {:?}",
+        edits
+    );
 }
 
 // ─── T-02: multi-line extraction ─────────────────────────────────────────────
@@ -36,7 +44,9 @@ fn act07_t02_multi_line_extract() {
     let has_call = edits.iter().any(|e| e.new_text == "{{ body_content() }}");
     assert!(has_call, "expected call replacement; edits: {:?}", edits);
 
-    let has_macro = edits.iter().any(|e| e.new_text.contains("{% macro body_content() %}"));
+    let has_macro = edits
+        .iter()
+        .any(|e| e.new_text.contains("{% macro body_content() %}"));
     assert!(has_macro, "expected macro definition; edits: {:?}", edits);
 }
 
@@ -50,10 +60,15 @@ fn act07_t03_extracted_content_in_macro() {
     let we = we.unwrap();
     let edits = we.changes.get("/tpl.html").expect("file edits");
 
-    let macro_def = edits.iter().find(|e| e.new_text.contains("{% macro header_nav() %}"))
+    let macro_def = edits
+        .iter()
+        .find(|e| e.new_text.contains("{% macro header_nav() %}"))
         .expect("macro definition edit");
-    assert!(macro_def.new_text.contains("<nav>menu</nav>"),
-        "expected extracted content in macro body; got: {}", macro_def.new_text);
+    assert!(
+        macro_def.new_text.contains("<nav>menu</nav>"),
+        "expected extracted content in macro body; got: {}",
+        macro_def.new_text
+    );
 }
 
 // ─── jinja-lsp-ifrq: invalid ranges must return None, not a corrupt edit ─────
@@ -65,7 +80,10 @@ fn jinja_lsp_ifrq_inverted_range_returns_none() {
     // empty-body macro plus an edit addressing nonexistent lines.
     let source = "<p>hello</p>\n<p>world</p>";
     let we = compute_extract_macro(source, "/tpl.html", 1, 0, "greeting");
-    assert!(we.is_none(), "start_line > end_line must return None: {we:?}");
+    assert!(
+        we.is_none(),
+        "start_line > end_line must return None: {we:?}"
+    );
 }
 
 #[test]
@@ -79,7 +97,10 @@ fn jinja_lsp_ifrq_out_of_bounds_end_line_returns_none() {
 fn jinja_lsp_ifrq_out_of_bounds_start_line_returns_none() {
     let source = "<p>hello</p>\n<p>world</p>";
     let we = compute_extract_macro(source, "/tpl.html", 5, 6, "greeting");
-    assert!(we.is_none(), "start_line beyond EOF must return None: {we:?}");
+    assert!(
+        we.is_none(),
+        "start_line beyond EOF must return None: {we:?}"
+    );
 }
 
 #[test]
@@ -90,5 +111,8 @@ fn jinja_lsp_ifrq_selection_splitting_a_tag_returns_none() {
     // template if extracted as-is.
     let source = "{% if\nx %}\nhello\n{% endif %}";
     let we = compute_extract_macro(source, "/tpl.html", 0, 0, "partial");
-    assert!(we.is_none(), "selection splitting an open {{% tag must return None: {we:?}");
+    assert!(
+        we.is_none(),
+        "selection splitting an open {{% tag must return None: {we:?}"
+    );
 }

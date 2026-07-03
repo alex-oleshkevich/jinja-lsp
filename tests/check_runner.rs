@@ -1,8 +1,8 @@
 // F01 / REQ-DIAG — check runner tests (jinja-lsp-aznq + jinja-lsp-3ayw).
 
-use jinja_lsp::builtins::registry::{parse_doc_str, Registry, Source};
 #[allow(unused_imports)]
 use jinja_lsp::builtins::registry::AttrDoc;
+use jinja_lsp::builtins::registry::{Registry, Source, parse_doc_str};
 use jinja_lsp::diagnostic::DiagnosticSeverity;
 use jinja_lsp::diagnostics::checks::run_checks;
 use jinja_lsp::parsing::extract;
@@ -25,7 +25,7 @@ fn ws_with(pairs: &[(&str, &str)]) -> WorkspaceIndex {
 #[test]
 fn syntax_error_template_produces_only_e001_no_cascade() {
     // F01 §10: half-typed expression → only E001 fires, no W201 cascade.
-    let src = "{% for item in items";  // unclosed — tree-sitter ERROR
+    let src = "{% for item in items"; // unclosed — tree-sitter ERROR
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
@@ -37,13 +37,16 @@ fn syntax_error_template_produces_only_e001_no_cascade() {
             "syntax-error template must not emit secondary diagnostics: {:?}",
             non_e001
         );
-        assert!(diags.iter().any(|d| d.code == "JINJA-E001"), "E001 must still fire");
+        assert!(
+            diags.iter().any(|d| d.code == "JINJA-E001"),
+            "E001 must still fire"
+        );
     }
 }
 
 #[test]
 fn e001_emitted_for_syntax_error() {
-    let src = "{% if %} unclosed";       // malformed if
+    let src = "{% if %} unclosed"; // malformed if
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
@@ -75,7 +78,10 @@ fn e102_emitted_for_undefined_filter() {
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e102 = diags.iter().find(|d| d.code == "JINJA-E102");
     assert!(e102.is_some(), "E102 must be emitted for undefined filter");
-    assert!(e102.unwrap().message.contains("totally_fake_filter_xyz"), "message must name the filter");
+    assert!(
+        e102.unwrap().message.contains("totally_fake_filter_xyz"),
+        "message must name the filter"
+    );
 }
 
 #[test]
@@ -100,7 +106,10 @@ fn no_e101_cascade_for_undefined_filter() {
     let e102_count = diags.iter().filter(|d| d.code == "JINJA-E102").count();
     let e101_count = diags.iter().filter(|d| d.code == "JINJA-E101").count();
     assert_eq!(e102_count, 1, "exactly one E102 must be emitted: {diags:?}");
-    assert_eq!(e101_count, 0, "E101 must NOT cascade from an undefined filter: {diags:?}");
+    assert_eq!(
+        e101_count, 0,
+        "E101 must NOT cascade from an undefined filter: {diags:?}"
+    );
 }
 
 #[test]
@@ -111,12 +120,15 @@ fn no_e101_cascade_for_undefined_filter_after_variable() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    let e101_names: Vec<&str> = diags.iter()
+    let e101_names: Vec<&str> = diags
+        .iter()
         .filter(|d| d.code == "JINJA-E101")
         .map(|d| d.message.as_str())
         .collect();
     assert!(
-        !e101_names.iter().any(|m| m.contains("totally_fake_filter_xyz")),
+        !e101_names
+            .iter()
+            .any(|m| m.contains("totally_fake_filter_xyz")),
         "filter name must not cascade to E101: {diags:?}"
     );
 }
@@ -131,7 +143,10 @@ fn e104_emitted_for_undefined_test() {
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e104 = diags.iter().find(|d| d.code == "JINJA-E104");
     assert!(e104.is_some(), "E104 must be emitted for undefined test");
-    assert!(e104.unwrap().message.contains("totally_fake_test_xyz"), "message must name the test");
+    assert!(
+        e104.unwrap().message.contains("totally_fake_test_xyz"),
+        "message must name the test"
+    );
 }
 
 #[test]
@@ -153,8 +168,14 @@ fn w301_emitted_for_duplicate_block() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w301 = diags.iter().find(|d| d.code == "JINJA-W301");
-    assert!(w301.is_some(), "W301 must be emitted for duplicate block name");
-    assert!(w301.unwrap().message.contains("foo"), "message must name the duplicate block");
+    assert!(
+        w301.is_some(),
+        "W301 must be emitted for duplicate block name"
+    );
+    assert!(
+        w301.unwrap().message.contains("foo"),
+        "message must name the duplicate block"
+    );
 }
 
 #[test]
@@ -166,7 +187,10 @@ fn jinja_lsp_v43s_w301_emitted_for_third_duplicate_block() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w301_count = diags.iter().filter(|d| d.code == "JINJA-W301").count();
-    assert_eq!(w301_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+    assert_eq!(
+        w301_count, 2,
+        "the 2nd and 3rd occurrences must both be flagged: {diags:?}"
+    );
 }
 
 #[test]
@@ -187,8 +211,14 @@ fn w302_emitted_for_duplicate_macro() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w302 = diags.iter().find(|d| d.code == "JINJA-W302");
-    assert!(w302.is_some(), "W302 must be emitted for duplicate macro name");
-    assert!(w302.unwrap().message.contains("render"), "message must name the duplicate macro");
+    assert!(
+        w302.is_some(),
+        "W302 must be emitted for duplicate macro name"
+    );
+    assert!(
+        w302.unwrap().message.contains("render"),
+        "message must name the duplicate macro"
+    );
 }
 
 #[test]
@@ -198,7 +228,10 @@ fn jinja_lsp_v43s_w302_emitted_for_third_duplicate_macro() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w302_count = diags.iter().filter(|d| d.code == "JINJA-W302").count();
-    assert_eq!(w302_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+    assert_eq!(
+        w302_count, 2,
+        "the 2nd and 3rd occurrences must both be flagged: {diags:?}"
+    );
 }
 
 // ─── W201: unused-variable ───────────────────────────────────────────────────
@@ -210,8 +243,14 @@ fn w201_emitted_for_set_variable_never_used() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w201 = diags.iter().find(|d| d.code == "JINJA-W201");
-    assert!(w201.is_some(), "W201 must be emitted for unused set variable: {diags:?}");
-    assert!(w201.unwrap().message.contains('x'), "message must name the unused variable");
+    assert!(
+        w201.is_some(),
+        "W201 must be emitted for unused set variable: {diags:?}"
+    );
+    assert!(
+        w201.unwrap().message.contains('x'),
+        "message must name the unused variable"
+    );
 }
 
 #[test]
@@ -220,7 +259,11 @@ fn no_w201_when_variable_is_used() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W201").count(), 0, "used variable must not trigger W201");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W201").count(),
+        0,
+        "used variable must not trigger W201"
+    );
 }
 
 // ─── W202: unused-macro ───────────────────────────────────────────────────────
@@ -232,18 +275,26 @@ fn w202_emitted_for_macro_never_called() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w202 = diags.iter().find(|d| d.code == "JINJA-W202");
-    assert!(w202.is_some(), "W202 must fire for locally-unused macro: {diags:?}");
-    assert!(w202.unwrap().message.contains("greet"), "message must name the macro");
+    assert!(
+        w202.is_some(),
+        "W202 must fire for locally-unused macro: {diags:?}"
+    );
+    assert!(
+        w202.unwrap().message.contains("greet"),
+        "message must name the macro"
+    );
     // jinja-lsp-l6hk: the check treats a macro as used if called/imported from ANY
     // template in the workspace, so the message must not tell users to look only
     // in "this template" — that's wrong guidance for a cross-file check.
     assert!(
         !w202.unwrap().message.contains("in this template"),
-        "message must not claim the check is scoped to the current template: {:?}", w202.unwrap()
+        "message must not claim the check is scoped to the current template: {:?}",
+        w202.unwrap()
     );
     assert!(
         w202.unwrap().message.contains("workspace"),
-        "message must clarify the check is workspace-wide: {:?}", w202.unwrap()
+        "message must clarify the check is workspace-wide: {:?}",
+        w202.unwrap()
     );
 }
 
@@ -253,7 +304,11 @@ fn no_w202_when_macro_is_called() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0, "called macro must not trigger W202");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W202").count(),
+        0,
+        "called macro must not trigger W202"
+    );
 }
 
 // ─── jinja-lsp-vpd6: W202 is cross-file (Pass 2) ────────────────────────────
@@ -266,7 +321,8 @@ fn no_w202_when_macro_called_from_another_template() {
     let idx = extract(macro_src);
     let diags = run_checks(macro_src, "macros.html", &idx, &registry(), &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-W202").count(),
+        0,
         "macro used via from-import in another template must not trigger W202: {diags:?}"
     );
 }
@@ -281,7 +337,8 @@ fn no_w202_when_macro_imported_but_not_called() {
     let idx = extract(macro_src);
     let diags = run_checks(macro_src, "macros.html", &idx, &registry(), &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-W202").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-W202").count(),
+        0,
         "imported macro must not trigger W202 even if not called in the importer: {diags:?}"
     );
 }
@@ -295,8 +352,14 @@ fn w203_emitted_for_unused_import_alias() {
     let ws = ws_with(&[("macros.html", "{% macro fn() %}{% endmacro %}")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w203 = diags.iter().find(|d| d.code == "JINJA-W203");
-    assert!(w203.is_some(), "W203 must fire for unused import alias: {diags:?}");
-    assert!(w203.unwrap().message.contains('m'), "message must name the alias");
+    assert!(
+        w203.is_some(),
+        "W203 must fire for unused import alias: {diags:?}"
+    );
+    assert!(
+        w203.unwrap().message.contains('m'),
+        "message must name the alias"
+    );
 }
 
 #[test]
@@ -305,7 +368,11 @@ fn no_w203_when_import_alias_is_used() {
     let idx = extract(src);
     let ws = ws_with(&[("macros.html", "{% macro fn() %}{% endmacro %}")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W203").count(), 0, "used import alias must not trigger W203");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W203").count(),
+        0,
+        "used import alias must not trigger W203"
+    );
 }
 
 #[test]
@@ -315,8 +382,14 @@ fn w203_emitted_for_unused_from_import() {
     let ws = ws_with(&[("macros.html", "{% macro post_url() %}{% endmacro %}")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w203 = diags.iter().find(|d| d.code == "JINJA-W203");
-    assert!(w203.is_some(), "W203 must fire for unused from-import: {diags:?}");
-    assert!(w203.unwrap().message.contains("post_url"), "message must name the unused name");
+    assert!(
+        w203.is_some(),
+        "W203 must fire for unused from-import: {diags:?}"
+    );
+    assert!(
+        w203.unwrap().message.contains("post_url"),
+        "message must name the unused name"
+    );
 }
 
 // ─── W303: duplicate-import-alias ────────────────────────────────────────────
@@ -328,8 +401,14 @@ fn w303_emitted_when_same_alias_imported_twice() {
     let ws = ws_with(&[("a.html", ""), ("b.html", "")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w303 = diags.iter().find(|d| d.code == "JINJA-W303");
-    assert!(w303.is_some(), "W303 must be emitted when same alias is used twice: {diags:?}");
-    assert!(w303.unwrap().message.contains('m'), "message must name the duplicate alias");
+    assert!(
+        w303.is_some(),
+        "W303 must be emitted when same alias is used twice: {diags:?}"
+    );
+    assert!(
+        w303.unwrap().message.contains('m'),
+        "message must name the duplicate alias"
+    );
 }
 
 #[test]
@@ -339,7 +418,10 @@ fn jinja_lsp_v43s_w303_emitted_for_third_duplicate_alias() {
     let ws = ws_with(&[("a.html", ""), ("b.html", ""), ("c.html", "")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w303_count = diags.iter().filter(|d| d.code == "JINJA-W303").count();
-    assert_eq!(w303_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+    assert_eq!(
+        w303_count, 2,
+        "the 2nd and 3rd occurrences must both be flagged: {diags:?}"
+    );
 }
 
 #[test]
@@ -348,7 +430,11 @@ fn no_w303_when_aliases_are_distinct() {
     let idx = extract(src);
     let ws = ws_with(&[("a.html", ""), ("b.html", "")]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W303").count(), 0, "distinct aliases must not trigger W303");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W303").count(),
+        0,
+        "distinct aliases must not trigger W303"
+    );
 }
 
 // ─── W304: duplicate-from-import ─────────────────────────────────────────────
@@ -357,11 +443,21 @@ fn no_w303_when_aliases_are_distinct() {
 fn w304_emitted_when_same_name_imported_twice() {
     let src = r#"{% from "a.html" import foo %}{% from "b.html" import foo %}"#;
     let idx = extract(src);
-    let ws = ws_with(&[("a.html", "{% macro foo() %}{% endmacro %}"), ("b.html", "{% macro foo() %}{% endmacro %}")]);
+    let ws = ws_with(&[
+        ("a.html", "{% macro foo() %}{% endmacro %}"),
+        ("b.html", "{% macro foo() %}{% endmacro %}"),
+    ]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w304 = diags.iter().find(|d| d.code == "JINJA-W304");
-    assert!(w304.is_some(), "W304 must be emitted for duplicate from-import name: {diags:?}");
-    assert!(w304.unwrap().message.contains("foo"), "message must name the duplicate: {:?}", w304);
+    assert!(
+        w304.is_some(),
+        "W304 must be emitted for duplicate from-import name: {diags:?}"
+    );
+    assert!(
+        w304.unwrap().message.contains("foo"),
+        "message must name the duplicate: {:?}",
+        w304
+    );
 }
 
 #[test]
@@ -375,16 +471,26 @@ fn jinja_lsp_v43s_w304_emitted_for_third_duplicate_name() {
     ]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w304_count = diags.iter().filter(|d| d.code == "JINJA-W304").count();
-    assert_eq!(w304_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+    assert_eq!(
+        w304_count, 2,
+        "the 2nd and 3rd occurrences must both be flagged: {diags:?}"
+    );
 }
 
 #[test]
 fn no_w304_when_names_are_distinct() {
     let src = r#"{% from "a.html" import foo %}{% from "b.html" import bar %}"#;
     let idx = extract(src);
-    let ws = ws_with(&[("a.html", "{% macro foo() %}{% endmacro %}"), ("b.html", "{% macro bar() %}{% endmacro %}")]);
+    let ws = ws_with(&[
+        ("a.html", "{% macro foo() %}{% endmacro %}"),
+        ("b.html", "{% macro bar() %}{% endmacro %}"),
+    ]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W304").count(), 0, "distinct names must not trigger W304");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W304").count(),
+        0,
+        "distinct names must not trigger W304"
+    );
 }
 
 // ─── W305: name-shadowing ─────────────────────────────────────────────────────
@@ -397,8 +503,15 @@ fn w305_emitted_when_inner_var_shadows_outer() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let w305 = diags.iter().find(|d| d.code == "JINJA-W305");
-    assert!(w305.is_some(), "W305 must be emitted when inner var shadows outer: {diags:?}");
-    assert!(w305.unwrap().message.contains('x'), "message must name the shadowing variable: {:?}", w305);
+    assert!(
+        w305.is_some(),
+        "W305 must be emitted when inner var shadows outer: {diags:?}"
+    );
+    assert!(
+        w305.unwrap().message.contains('x'),
+        "message must name the shadowing variable: {:?}",
+        w305
+    );
 }
 
 #[test]
@@ -407,7 +520,11 @@ fn no_w305_when_no_shadowing() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W305").count(), 0, "distinct names must not trigger W305");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W305").count(),
+        0,
+        "distinct names must not trigger W305"
+    );
 }
 
 // ─── E403: missing-required-block ─────────────────────────────────────────────
@@ -421,8 +538,14 @@ fn e403_emitted_when_required_block_not_overridden() {
     let ws = ws_with(&[("base.html", base)]);
     let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
     let e403 = diags.iter().find(|d| d.code == "JINJA-E403");
-    assert!(e403.is_some(), "E403 must fire when required block is missing: {diags:?}");
-    assert!(e403.unwrap().message.contains("title"), "message must name the missing block");
+    assert!(
+        e403.is_some(),
+        "E403 must fire when required block is missing: {diags:?}"
+    );
+    assert!(
+        e403.unwrap().message.contains("title"),
+        "message must name the missing block"
+    );
 }
 
 #[test]
@@ -432,7 +555,11 @@ fn no_e403_when_required_block_is_overridden() {
     let idx = extract(child);
     let ws = ws_with(&[("base.html", base)]);
     let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E403").count(), 0, "overridden required block must not trigger E403");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E403").count(),
+        0,
+        "overridden required block must not trigger E403"
+    );
 }
 
 #[test]
@@ -441,7 +568,11 @@ fn no_e403_for_non_extends_template() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E403").count(), 0, "non-extends template must not trigger E403");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E403").count(),
+        0,
+        "non-extends template must not trigger E403"
+    );
 }
 
 // ─── W402: unreachable-content ────────────────────────────────────────────────
@@ -453,7 +584,10 @@ fn w402_set_outside_block_in_extends_template() {
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     let w402 = diags.iter().find(|d| d.code == "JINJA-W402");
-    assert!(w402.is_some(), "W402 must be emitted for set outside block in extends template: {diags:?}");
+    assert!(
+        w402.is_some(),
+        "W402 must be emitted for set outside block in extends template: {diags:?}"
+    );
 }
 
 #[test]
@@ -462,7 +596,11 @@ fn no_w402_for_non_extends_template() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W402").count(), 0, "non-extends template must not trigger W402");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W402").count(),
+        0,
+        "non-extends template must not trigger W402"
+    );
 }
 
 #[test]
@@ -477,7 +615,10 @@ fn jinja_lsp_p3o7_no_w402_for_set_inside_top_level_macro_in_extends_template() {
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     let w402: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-W402").collect();
-    assert!(w402.is_empty(), "set inside a top-level macro body must not trigger W402: {w402:?}");
+    assert!(
+        w402.is_empty(),
+        "set inside a top-level macro body must not trigger W402: {w402:?}"
+    );
 }
 
 // ─── E401: invalid-super ──────────────────────────────────────────────────────
@@ -489,7 +630,10 @@ fn e401_super_outside_block() {
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     let e401 = diags.iter().find(|d| d.code == "JINJA-E401");
-    assert!(e401.is_some(), "E401 must be emitted for super() outside block: {diags:?}");
+    assert!(
+        e401.is_some(),
+        "E401 must be emitted for super() outside block: {diags:?}"
+    );
 }
 
 #[test]
@@ -498,7 +642,11 @@ fn no_e401_super_inside_block() {
     let idx = extract(src);
     let ws = ws_with(&[("base.html", "{% block content %}base{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E401").count(), 0, "super() inside block must not trigger E401");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E401").count(),
+        0,
+        "super() inside block must not trigger E401"
+    );
 }
 
 #[test]
@@ -515,7 +663,10 @@ fn jinja_lsp_96oh_no_e401_for_literal_super_text_outside_jinja() {
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     let e401: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-E401").collect();
-    assert!(e401.is_empty(), "literal 'super()' text outside a Jinja expression must not trigger E401: {e401:?}");
+    assert!(
+        e401.is_empty(),
+        "literal 'super()' text outside a Jinja expression must not trigger E401: {e401:?}"
+    );
 }
 
 #[test]
@@ -529,10 +680,16 @@ fn jinja_lsp_96oh_e401_col_is_byte_col_not_char_col_on_multibyte_line() {
     let idx = extract(src);
     let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
-    let e401 = diags.iter().find(|d| d.code == "JINJA-E401").expect("E401 must fire for super() outside block");
+    let e401 = diags
+        .iter()
+        .find(|d| d.code == "JINJA-E401")
+        .expect("E401 must fire for super() outside block");
     // "café " is 5 chars / 6 bytes (é is 2 bytes) — "{{ super" starts at byte 6, char 5.
     let expected_byte_col = src.lines().nth(1).unwrap().find("super").unwrap() as u32;
-    assert_eq!(e401.col, expected_byte_col, "E401 col must be a byte offset, not a char offset: {e401:?}");
+    assert_eq!(
+        e401.col, expected_byte_col,
+        "E401 col must be a byte offset, not a char offset: {e401:?}"
+    );
 }
 
 // ─── E601: template-does-not-exist ───────────────────────────────────────────
@@ -544,8 +701,14 @@ fn e601_emitted_for_extends_with_unknown_path() {
     let ws = WorkspaceIndex::default(); // ghost.html not in workspace
     let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
     let e601 = diags.iter().find(|d| d.code == "JINJA-E601");
-    assert!(e601.is_some(), "E601 must be emitted for unknown extends path");
-    assert!(e601.unwrap().message.contains("ghost.html"), "message must name the missing template");
+    assert!(
+        e601.is_some(),
+        "E601 must be emitted for unknown extends path"
+    );
+    assert!(
+        e601.unwrap().message.contains("ghost.html"),
+        "message must name the missing template"
+    );
 }
 
 #[test]
@@ -564,13 +727,21 @@ fn no_e601_for_valid_extends_with_abs_keyed_workspace() {
     // Simulates the server path: build_workspace_abs keys templates by absolute path.
     // Template references use relative paths ("base.html").
     // E601 must NOT fire when the referred template exists in the workspace.
+    use jinja_lsp::workspace::build_workspace_abs;
     use std::fs;
     use tempfile::TempDir;
-    use jinja_lsp::workspace::build_workspace_abs;
 
     let dir = TempDir::new().unwrap();
-    fs::write(dir.path().join("base.html"), "{% block content %}{% endblock %}").unwrap();
-    fs::write(dir.path().join("child.html"), r#"{% extends "base.html" %}"#).unwrap();
+    fs::write(
+        dir.path().join("base.html"),
+        "{% block content %}{% endblock %}",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("child.html"),
+        r#"{% extends "base.html" %}"#,
+    )
+    .unwrap();
 
     let ws = build_workspace_abs(&[dir.path()], &["html"]);
     let child_abs = dir.path().join("child.html").to_string_lossy().into_owned();
@@ -579,20 +750,29 @@ fn no_e601_for_valid_extends_with_abs_keyed_workspace() {
 
     let diags = run_checks(&source, &child_abs, &idx, &registry(), &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-E601").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-E601").count(),
+        0,
         "E601 must not fire for a valid extends when workspace uses absolute keys: {diags:?}"
     );
 }
 
 #[test]
 fn no_e404_for_non_cyclic_extends_with_abs_keyed_workspace() {
+    use jinja_lsp::workspace::build_workspace_abs;
     use std::fs;
     use tempfile::TempDir;
-    use jinja_lsp::workspace::build_workspace_abs;
 
     let dir = TempDir::new().unwrap();
-    fs::write(dir.path().join("base.html"), "{% block content %}{% endblock %}").unwrap();
-    fs::write(dir.path().join("child.html"), r#"{% extends "base.html" %}"#).unwrap();
+    fs::write(
+        dir.path().join("base.html"),
+        "{% block content %}{% endblock %}",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("child.html"),
+        r#"{% extends "base.html" %}"#,
+    )
+    .unwrap();
 
     let ws = build_workspace_abs(&[dir.path()], &["html"]);
     let child_abs = dir.path().join("child.html").to_string_lossy().into_owned();
@@ -601,7 +781,8 @@ fn no_e404_for_non_cyclic_extends_with_abs_keyed_workspace() {
 
     let diags = run_checks(&source, &child_abs, &idx, &registry(), &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-E404").count(),
+        0,
         "E404 must not fire for non-cyclic extends with abs-keyed workspace: {diags:?}"
     );
 }
@@ -619,7 +800,9 @@ fn registry_with_context_var(name: &str) -> Registry {
 
 fn registry_with_scoped_context_var(name: &str, template: &str) -> Registry {
     let mut reg = Registry::load_core();
-    let src = format!("---\nname: {name}\ncategory: context_variable\ntemplate: {template}\n---\nA hinted variable.");
+    let src = format!(
+        "---\nname: {name}\ncategory: context_variable\ntemplate: {template}\n---\nA hinted variable."
+    );
     if let Some((entry, _)) = parse_doc_str(&src, Source::Hint) {
         reg.insert(entry);
     }
@@ -643,8 +826,11 @@ fn no_e101_for_locally_set_variable() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "locally-set variable must not trigger E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "locally-set variable must not trigger E101"
+    );
 }
 
 #[test]
@@ -653,8 +839,11 @@ fn no_e101_for_for_loop_variable() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "for-loop variable must not trigger E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "for-loop variable must not trigger E101"
+    );
 }
 
 #[test]
@@ -664,8 +853,11 @@ fn no_e101_for_jinja2_global_variable() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "Jinja2 global 'loop' must not trigger E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "Jinja2 global 'loop' must not trigger E101"
+    );
 }
 
 #[test]
@@ -676,8 +868,11 @@ fn no_e101_for_hinted_context_variable() {
     let ws = ws_with(&[("t.html", src)]);
     let reg = registry_with_context_var("post");
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "hinted context_variable must suppress E101 (REQ-HINT-04)");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "hinted context_variable must suppress E101 (REQ-HINT-04)"
+    );
 }
 
 #[test]
@@ -688,8 +883,11 @@ fn no_e101_for_scoped_hint_matching_template() {
     let ws = ws_with(&[("detail.html", src)]);
     let reg = registry_with_scoped_context_var("user", "detail.html");
     let diags = run_checks(src, "detail.html", &idx, &reg, &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "template-scoped hint matching template must suppress E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "template-scoped hint matching template must suppress E101"
+    );
 }
 
 #[test]
@@ -701,7 +899,10 @@ fn e101_for_scoped_hint_not_matching_template() {
     let reg = registry_with_scoped_context_var("user", "detail.html");
     let diags = run_checks(src, "other.html", &idx, &reg, &ws);
     let e101 = diags.iter().find(|d| d.code == "JINJA-E101");
-    assert!(e101.is_some(), "template-scoped hint for 'detail.html' must not suppress E101 in 'other.html'");
+    assert!(
+        e101.is_some(),
+        "template-scoped hint for 'detail.html' must not suppress E101 in 'other.html'"
+    );
 }
 
 #[test]
@@ -710,8 +911,11 @@ fn no_e101_for_import_alias() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "import alias must not trigger E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "import alias must not trigger E101"
+    );
 }
 
 #[test]
@@ -720,14 +924,21 @@ fn no_e101_for_local_macro_name() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
-        "local macro name used as identifier must not trigger E101");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
+        "local macro name used as identifier must not trigger E101"
+    );
 }
 
 // ─── W106: unknown-attribute ─────────────────────────────────────────────────
 
 fn registry_with_context_var_attrs(name: &str, attrs: &[&str]) -> Registry {
-    let attrs_yaml = attrs.iter().map(|a| format!("  - name: {a}")).collect::<Vec<_>>().join("\n");
+    let attrs_yaml = attrs
+        .iter()
+        .map(|a| format!("  - name: {a}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let src = format!(
         "---\nname: {name}\ncategory: context_variable\nattributes:\n{attrs_yaml}\n---\nA hinted variable."
     );
@@ -750,8 +961,14 @@ fn w106_emitted_for_unknown_attribute_on_hinted_var() {
     let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
     let w106 = diags.iter().find(|d| d.code == "JINJA-W106");
-    assert!(w106.is_some(), "W106 must fire for an unknown attribute on a hinted context_variable");
-    assert!(w106.unwrap().message.contains("autor"), "message must name the unknown attribute");
+    assert!(
+        w106.is_some(),
+        "W106 must fire for an unknown attribute on a hinted context_variable"
+    );
+    assert!(
+        w106.unwrap().message.contains("autor"),
+        "message must name the unknown attribute"
+    );
 }
 
 #[test]
@@ -761,8 +978,11 @@ fn no_w106_for_known_attribute() {
     let ws = ws_with(&[("t.html", src)]);
     let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
-        "known attribute must not trigger W106");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W106").count(),
+        0,
+        "known attribute must not trigger W106"
+    );
 }
 
 #[test]
@@ -773,8 +993,11 @@ fn no_w106_when_no_attrs_declared() {
     let ws = ws_with(&[("t.html", src)]);
     let reg = registry_with_context_var("post"); // no attrs
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
-        "variable with no attrs declaration must not trigger W106");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W106").count(),
+        0,
+        "variable with no attrs declaration must not trigger W106"
+    );
 }
 
 #[test]
@@ -784,8 +1007,11 @@ fn no_w106_for_non_hinted_variable() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
-        "non-hinted variable must not trigger W106");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W106").count(),
+        0,
+        "non-hinted variable must not trigger W106"
+    );
 }
 
 #[test]
@@ -798,25 +1024,35 @@ fn w106_is_off_by_default_in_filter() {
     let raw_diags = run_checks(src, "t.html", &idx, &reg, &ws);
     // With empty select (default), W106 is suppressed
     let filtered = filter_by_config(&raw_diags, &[], &[]);
-    assert!(filtered.iter().all(|d| d.code != "JINJA-W106"),
-        "W106 must be filtered out by default when select is empty");
+    assert!(
+        filtered.iter().all(|d| d.code != "JINJA-W106"),
+        "W106 must be filtered out by default when select is empty"
+    );
     // With explicit select, W106 appears
     let filtered_selected = filter_by_config(&raw_diags, &["JINJA-W106"], &[]);
-    assert!(filtered_selected.iter().any(|d| d.code == "JINJA-W106"),
-        "W106 must appear when explicitly selected");
+    assert!(
+        filtered_selected.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must appear when explicitly selected"
+    );
 }
 
 // ─── W106: template-scope fix (jinja-lsp-o45w) ───────────────────────────────
 
 fn registry_with_scoped_context_var_attrs(name: &str, template: &str, attrs: &[&str]) -> Registry {
-    let attrs_yaml = attrs.iter().map(|a| format!("  - name: {a}")).collect::<Vec<_>>().join("\n");
+    let attrs_yaml = attrs
+        .iter()
+        .map(|a| format!("  - name: {a}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let src = format!(
         "---\nname: {name}\ncategory: context_variable\ntemplate: {template}\nattributes:\n{attrs_yaml}\n---\nA scoped hinted variable."
     );
     let mut reg = Registry::load_core();
     if let Some((entry, attr_docs)) = parse_doc_str(&src, Source::Hint) {
         reg.insert(entry);
-        for a in attr_docs { reg.insert_attr(a); }
+        for a in attr_docs {
+            reg.insert_attr(a);
+        }
     }
     reg
 }
@@ -866,7 +1102,8 @@ fn no_w106_for_subscript_known_attribute() {
     let reg = registry_with_context_var_attrs("post", &["title", "slug"]);
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-W106").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-W106").count(),
+        0,
         "known attribute via subscript must not trigger W106"
     );
 }
@@ -895,7 +1132,11 @@ fn jinja_lsp_l27o_subscript_scan_ignores_html_and_script_text() {
     let reg = registry_with_context_var_attrs("session", &["id"]);
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-W106" && d.message.contains("session")).count(), 0,
+        diags
+            .iter()
+            .filter(|d| d.code == "JINJA-W106" && d.message.contains("session"))
+            .count(),
+        0,
         "subscript access inside plain HTML/JS text must not trigger W106: {diags:?}"
     );
 }
@@ -911,10 +1152,16 @@ fn jinja_lsp_l27o_subscript_position_correct_on_second_line() {
     let ws = ws_with(&[("t.html", src)]);
     let reg = registry_with_context_var_attrs("post", &["title"]);
     let diags = run_checks(src, "t.html", &idx, &reg, &ws);
-    let d = diags.iter().find(|d| d.code == "JINJA-W106").expect("W106 must fire");
+    let d = diags
+        .iter()
+        .find(|d| d.code == "JINJA-W106")
+        .expect("W106 must fire");
     assert_eq!(d.line, 1, "must report line 1 (0-indexed), not line 0");
     let expected_col = src.lines().nth(1).unwrap().find("autor").unwrap() as u32;
-    assert_eq!(d.col, expected_col, "column must point at the key content on line 1");
+    assert_eq!(
+        d.col, expected_col,
+        "column must point at the key content on line 1"
+    );
 }
 
 // ─── E501: wrong-call-args ───────────────────────────────────────────────────
@@ -927,8 +1174,14 @@ fn e501_too_few_required_args() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
-    assert!(e501.is_some(), "E501 must fire when required args are missing");
-    assert!(e501.unwrap().message.contains("greet"), "message must name the callee");
+    assert!(
+        e501.is_some(),
+        "E501 must fire when required args are missing"
+    );
+    assert!(
+        e501.unwrap().message.contains("greet"),
+        "message must name the callee"
+    );
 }
 
 #[test]
@@ -939,7 +1192,10 @@ fn e501_too_many_positional_args() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
-    assert!(e501.is_some(), "E501 must fire when too many positional args are passed");
+    assert!(
+        e501.is_some(),
+        "E501 must fire when too many positional args are passed"
+    );
 }
 
 #[test]
@@ -948,8 +1204,11 @@ fn no_e501_for_correct_positional_args() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
-        "correct arg count must not trigger E501");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E501").count(),
+        0,
+        "correct arg count must not trigger E501"
+    );
 }
 
 #[test]
@@ -959,8 +1218,11 @@ fn no_e501_for_optional_args_omitted() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
-        "omitting optional args must not trigger E501");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E501").count(),
+        0,
+        "omitting optional args must not trigger E501"
+    );
 }
 
 #[test]
@@ -971,8 +1233,14 @@ fn e501_unknown_keyword_arg() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e501 = diags.iter().find(|d| d.code == "JINJA-E501");
-    assert!(e501.is_some(), "E501 must fire for unknown keyword argument");
-    assert!(e501.unwrap().message.contains("title"), "message must name the unknown keyword");
+    assert!(
+        e501.is_some(),
+        "E501 must fire for unknown keyword argument"
+    );
+    assert!(
+        e501.unwrap().message.contains("title"),
+        "message must name the unknown keyword"
+    );
 }
 
 #[test]
@@ -981,8 +1249,11 @@ fn no_e501_for_valid_keyword_arg() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E501").count(), 0,
-        "valid keyword arg must not trigger E501");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E501").count(),
+        0,
+        "valid keyword arg must not trigger E501"
+    );
 }
 
 // ─── E404: recursive-import ──────────────────────────────────────────────────
@@ -998,8 +1269,14 @@ fn e404_emitted_for_direct_cycle() {
     ws.index_inline("b.html", b_src);
     let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
     let e404 = diags.iter().find(|d| d.code == "JINJA-E404");
-    assert!(e404.is_some(), "E404 must fire when a.html and b.html import each other");
-    assert!(e404.unwrap().message.contains("b.html"), "message must name the cyclic target");
+    assert!(
+        e404.is_some(),
+        "E404 must fire when a.html and b.html import each other"
+    );
+    assert!(
+        e404.unwrap().message.contains("b.html"),
+        "message must name the cyclic target"
+    );
 }
 
 #[test]
@@ -1014,8 +1291,10 @@ fn e404_emitted_for_indirect_cycle() {
     ws.index_inline("b.html", b_src);
     ws.index_inline("c.html", c_src);
     let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
-    assert!(diags.iter().any(|d| d.code == "JINJA-E404"),
-        "E404 must fire for indirect cycle a→b→c→a");
+    assert!(
+        diags.iter().any(|d| d.code == "JINJA-E404"),
+        "E404 must fire for indirect cycle a→b→c→a"
+    );
 }
 
 #[test]
@@ -1027,8 +1306,11 @@ fn no_e404_for_non_cyclic_import() {
     ws.index_inline("a.html", a_src);
     ws.index_inline("b.html", b_src);
     let diags = run_checks(a_src, "a.html", &idx_a, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
-        "non-cyclic import must not trigger E404");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E404").count(),
+        0,
+        "non-cyclic import must not trigger E404"
+    );
 }
 
 #[test]
@@ -1040,8 +1322,11 @@ fn no_e404_for_extends_no_cycle() {
     ws.index_inline("child.html", child);
     ws.index_inline("base.html", base);
     let diags = run_checks(child, "child.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E404").count(), 0,
-        "linear extends chain must not trigger E404");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E404").count(),
+        0,
+        "linear extends chain must not trigger E404"
+    );
 }
 
 // ─── E103: undefined-function ────────────────────────────────────────────────
@@ -1053,7 +1338,10 @@ fn e103_emitted_for_undefined_function_call() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     let e103 = diags.iter().find(|d| d.code == "JINJA-E103");
-    assert!(e103.is_some(), "E103 must fire for an undefined function call");
+    assert!(
+        e103.is_some(),
+        "E103 must fire for an undefined function call"
+    );
     assert!(e103.unwrap().message.contains("totally_fake_fn_xyz"));
 }
 
@@ -1063,8 +1351,11 @@ fn no_e103_for_builtin_jinja2_function() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
-        "built-in Jinja2 function 'range' must not trigger E103");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E103").count(),
+        0,
+        "built-in Jinja2 function 'range' must not trigger E103"
+    );
 }
 
 #[test]
@@ -1073,8 +1364,11 @@ fn no_e103_for_local_macro_call() {
     let idx = extract(src);
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
-        "local macro call must not trigger E103");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E103").count(),
+        0,
+        "local macro call must not trigger E103"
+    );
 }
 
 #[test]
@@ -1084,8 +1378,11 @@ fn no_e103_for_from_imported_macro_call() {
     let idx = extract(child_src);
     let ws = ws_with(&[("macros.html", macro_src), ("child.html", child_src)]);
     let diags = run_checks(child_src, "child.html", &idx, &registry(), &ws);
-    assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E103").count(), 0,
-        "from-imported macro call must not trigger E103");
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-E103").count(),
+        0,
+        "from-imported macro call must not trigger E103"
+    );
 }
 
 // ─── REQ-EXTR-09: block-set variable extraction ──────────────────────────────
@@ -1110,7 +1407,8 @@ fn block_set_variable_no_e101() {
     let ws = ws_with(&[("t.html", src)]);
     let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
     assert_eq!(
-        diags.iter().filter(|d| d.code == "JINJA-E101").count(), 0,
+        diags.iter().filter(|d| d.code == "JINJA-E101").count(),
+        0,
         "block-set variable must not trigger E101; diags: {diags:?}"
     );
 }
@@ -1119,8 +1417,14 @@ fn block_set_variable_no_e101() {
 fn multiple_block_set_variables_are_indexed() {
     let src = "{% set a %}x{% endset %}{% set b %}y{% endset %}{{ a }}{{ b }}";
     let idx = extract(src);
-    assert!(idx.variables.iter().any(|v| v.name == "a"), "variable 'a' must be indexed");
-    assert!(idx.variables.iter().any(|v| v.name == "b"), "variable 'b' must be indexed");
+    assert!(
+        idx.variables.iter().any(|v| v.name == "a"),
+        "variable 'a' must be indexed"
+    );
+    assert!(
+        idx.variables.iter().any(|v| v.name == "b"),
+        "variable 'b' must be indexed"
+    );
 }
 
 #[test]

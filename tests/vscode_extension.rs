@@ -19,8 +19,14 @@ fn vscode_activation_events_include_jinja_languages_and_config() {
         .map(|v| v.as_str().unwrap())
         .collect();
 
-    assert!(events.iter().any(|&e| e == "onLanguage:jinja"), "must activate on jinja");
-    assert!(events.iter().any(|&e| e == "onLanguage:jinja-html"), "must activate on jinja-html");
+    assert!(
+        events.iter().any(|&e| e == "onLanguage:jinja"),
+        "must activate on jinja"
+    );
+    assert!(
+        events.iter().any(|&e| e == "onLanguage:jinja-html"),
+        "must activate on jinja-html"
+    );
     assert!(
         events.iter().any(|&e| e == "workspaceContains:jinja.toml"),
         "must activate when workspace has jinja.toml"
@@ -67,8 +73,14 @@ fn vscode_grammars_registered_for_both_languages() {
         .filter_map(|g| g["language"].as_str())
         .collect();
 
-    assert!(languages.contains(&"jinja"), "tmLanguage must cover jinja language");
-    assert!(languages.contains(&"jinja-html"), "tmLanguage must cover jinja-html language");
+    assert!(
+        languages.contains(&"jinja"),
+        "tmLanguage must cover jinja language"
+    );
+    assert!(
+        languages.contains(&"jinja-html"),
+        "tmLanguage must cover jinja-html language"
+    );
 }
 
 // ─── T-12b: tmLanguage files exist on disk ───────────────────────────────────
@@ -88,14 +100,17 @@ fn vscode_language_ids_are_canonical() {
         .as_array()
         .expect("languages must be array");
 
-    let ids: Vec<&str> = languages
-        .iter()
-        .filter_map(|l| l["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = languages.iter().filter_map(|l| l["id"].as_str()).collect();
 
     // The two canonical languageIds per REQ-EDIT-11.
-    assert!(ids.contains(&"jinja"), "VS Code must contribute 'jinja' language");
-    assert!(ids.contains(&"jinja-html"), "VS Code must contribute 'jinja-html' language");
+    assert!(
+        ids.contains(&"jinja"),
+        "VS Code must contribute 'jinja' language"
+    );
+    assert!(
+        ids.contains(&"jinja-html"),
+        "VS Code must contribute 'jinja-html' language"
+    );
 }
 
 // ─── jinja-lsp-ltdq: jinja-html must not steal the default .html association ─
@@ -106,7 +121,9 @@ fn jinja_html_does_not_claim_bare_html_extension() {
     // every HTML file in every workspace, stealing VS Code's built-in HTML
     // IntelliSense/Emmet/formatting even in projects with no Jinja at all.
     let pkg = pkg();
-    let languages = pkg["contributes"]["languages"].as_array().expect("languages must be array");
+    let languages = pkg["contributes"]["languages"]
+        .as_array()
+        .expect("languages must be array");
     let jinja_html = languages
         .iter()
         .find(|l| l["id"].as_str() == Some("jinja-html"))
@@ -132,21 +149,39 @@ fn language_configuration_json_exists_and_is_valid() {
     let cfg: serde_json::Value = serde_json::from_str(raw).expect("must be valid JSON");
 
     let comments = &cfg["comments"];
-    let block = comments["blockComment"].as_array().expect("comments.blockComment must be an array");
+    let block = comments["blockComment"]
+        .as_array()
+        .expect("comments.blockComment must be an array");
     let block: Vec<&str> = block.iter().filter_map(|v| v.as_str()).collect();
-    assert_eq!(block, vec!["{#", "#}"], "blockComment must be Jinja's {{# #}} pair");
+    assert_eq!(
+        block,
+        vec!["{#", "#}"],
+        "blockComment must be Jinja's {{# #}} pair"
+    );
 
-    let brackets = cfg["brackets"].as_array().expect("brackets must be an array");
-    assert!(!brackets.is_empty(), "brackets must declare at least one pair");
+    let brackets = cfg["brackets"]
+        .as_array()
+        .expect("brackets must be an array");
+    assert!(
+        !brackets.is_empty(),
+        "brackets must declare at least one pair"
+    );
 
-    let auto_closing = cfg["autoClosingPairs"].as_array().expect("autoClosingPairs must be an array");
-    assert!(!auto_closing.is_empty(), "autoClosingPairs must declare at least one pair");
+    let auto_closing = cfg["autoClosingPairs"]
+        .as_array()
+        .expect("autoClosingPairs must be an array");
+    assert!(
+        !auto_closing.is_empty(),
+        "autoClosingPairs must declare at least one pair"
+    );
 }
 
 #[test]
 fn package_json_configuration_path_matches_file_on_disk() {
     let pkg = pkg();
-    let languages = pkg["contributes"]["languages"].as_array().expect("languages must be array");
+    let languages = pkg["contributes"]["languages"]
+        .as_array()
+        .expect("languages must be array");
     for lang in languages {
         assert_eq!(
             lang["configuration"].as_str(),
@@ -173,7 +208,10 @@ fn vscode_extension_ts_launches_jinja_lsp_lsp() {
         src.contains("'lsp'") || src.contains("\"lsp\""),
         "extension.ts must launch with the lsp subcommand"
     );
-    assert!(src.contains("stdio"), "extension.ts must use stdio transport");
+    assert!(
+        src.contains("stdio"),
+        "extension.ts must use stdio transport"
+    );
 }
 
 #[test]

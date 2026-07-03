@@ -2,9 +2,9 @@
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::features::semantic_tokens::{
-    semantic_tokens_full, semantic_tokens_range, SemanticToken, TOKEN_MODIFIERS, TOKEN_TYPES,
-    MOD_BUILTIN, MOD_DEFINED, MOD_UNKNOWN, MOD_USER, TT_BLOCK, TT_FILTER, TT_FUNCTION, TT_MACRO,
-    TT_PARAMETER, TT_TEST, TT_VARIABLE,
+    MOD_BUILTIN, MOD_DEFINED, MOD_UNKNOWN, MOD_USER, SemanticToken, TOKEN_MODIFIERS, TOKEN_TYPES,
+    TT_BLOCK, TT_FILTER, TT_FUNCTION, TT_MACRO, TT_PARAMETER, TT_TEST, TT_VARIABLE,
+    semantic_tokens_full, semantic_tokens_range,
 };
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
@@ -33,8 +33,15 @@ fn sem01_token_type_legend_order() {
     assert_eq!(TOKEN_TYPES[4], "function");
     assert_eq!(TOKEN_TYPES[5], "test");
     assert_eq!(TOKEN_TYPES[6], "block");
-    assert_eq!(TOKEN_TYPES[7], "", "index 7 must be materialized as a tombstone slot");
-    assert_eq!(TOKEN_TYPES.len(), 8, "8 entries: 7 live (0-6) + 1 tombstone at index 7 (REQ-SEM-06)");
+    assert_eq!(
+        TOKEN_TYPES[7], "",
+        "index 7 must be materialized as a tombstone slot"
+    );
+    assert_eq!(
+        TOKEN_TYPES.len(),
+        8,
+        "8 entries: 7 live (0-6) + 1 tombstone at index 7 (REQ-SEM-06)"
+    );
 }
 
 #[test]
@@ -52,7 +59,7 @@ fn sem02_token_modifier_legend_order() {
     assert_eq!(TOKEN_MODIFIERS[0], "defined"); // bit 0
     assert_eq!(TOKEN_MODIFIERS[1], "unknown"); // bit 1
     assert_eq!(TOKEN_MODIFIERS[2], "builtin"); // bit 2
-    assert_eq!(TOKEN_MODIFIERS[3], "user");    // bit 3
+    assert_eq!(TOKEN_MODIFIERS[3], "user"); // bit 3
     assert_eq!(TOKEN_MODIFIERS.len(), 4);
 }
 
@@ -68,8 +75,15 @@ fn sem06_type_indices_are_stable() {
     assert_eq!(TT_TEST, 5);
     assert_eq!(TT_BLOCK, 6);
     // Index 7 is tombstoned — no constant defined there; slot held as "" to prevent reuse.
-    assert_eq!(TOKEN_TYPES[7], "", "tombstone slot must be materialized, not just a comment");
-    assert_eq!(TOKEN_TYPES.len(), 8, "8 slots: 7 live (0-6) + 1 tombstone (7) (REQ-SEM-06)");
+    assert_eq!(
+        TOKEN_TYPES[7], "",
+        "tombstone slot must be materialized, not just a comment"
+    );
+    assert_eq!(
+        TOKEN_TYPES.len(),
+        8,
+        "8 slots: 7 live (0-6) + 1 tombstone (7) (REQ-SEM-06)"
+    );
 }
 
 // ─── REQ-SEM-04: block definition → block token, zero modifiers ─────────────
@@ -78,14 +92,20 @@ fn sem06_type_indices_are_stable() {
 fn sem04_block_definition_emits_block_token() {
     let tokens = full("{% block content %}body{% endblock %}");
     let block_toks = tokens_of_type(&tokens, TT_BLOCK);
-    assert!(!block_toks.is_empty(), "block definition must emit a block token");
+    assert!(
+        !block_toks.is_empty(),
+        "block definition must emit a block token"
+    );
 }
 
 #[test]
 fn sem04_block_token_carries_no_modifiers() {
     let tokens = full("{% block content %}body{% endblock %}");
     for tok in tokens_of_type(&tokens, TT_BLOCK) {
-        assert_eq!(tok.token_modifiers, 0, "block token must carry zero modifiers (REQ-SEM-02)");
+        assert_eq!(
+            tok.token_modifiers, 0,
+            "block token must carry zero modifiers (REQ-SEM-02)"
+        );
     }
 }
 
@@ -104,7 +124,9 @@ fn sem04_macro_definition_emits_macro_token() {
 fn sem04_macro_definition_has_defined_user_modifiers() {
     let tokens = full("{% macro greet(name) %}hello{% endmacro %}");
     assert!(
-        tokens.iter().any(|t| t.token_type == TT_MACRO && t.token_modifiers == MOD_DEFINED | MOD_USER),
+        tokens
+            .iter()
+            .any(|t| t.token_type == TT_MACRO && t.token_modifiers == MOD_DEFINED | MOD_USER),
         "macro definition must have {{defined, user}} modifiers"
     );
 }
@@ -119,7 +141,10 @@ fn sem04_macro_call_is_macro_defined_user() {
         .iter()
         .filter(|t| t.token_type == TT_MACRO && t.token_modifiers == MOD_DEFINED | MOD_USER)
         .collect();
-    assert!(call_toks.len() >= 1, "macro call must be tokenized as macro {{defined, user}}");
+    assert!(
+        call_toks.len() >= 1,
+        "macro call must be tokenized as macro {{defined, user}}"
+    );
 }
 
 // ─── REQ-SEM-04: parameter in signature → parameter, zero modifiers ──────────
@@ -128,14 +153,20 @@ fn sem04_macro_call_is_macro_defined_user() {
 fn sem04_parameter_in_signature_emits_parameter_token() {
     let tokens = full("{% macro greet(name) %}hello{% endmacro %}");
     let param_toks = tokens_of_type(&tokens, TT_PARAMETER);
-    assert!(!param_toks.is_empty(), "macro parameter must emit a parameter token");
+    assert!(
+        !param_toks.is_empty(),
+        "macro parameter must emit a parameter token"
+    );
 }
 
 #[test]
 fn sem04_parameter_token_carries_no_modifiers() {
     let tokens = full("{% macro greet(name) %}hello{% endmacro %}");
     for tok in tokens_of_type(&tokens, TT_PARAMETER) {
-        assert_eq!(tok.token_modifiers, 0, "parameter token must carry zero modifiers (REQ-SEM-02)");
+        assert_eq!(
+            tok.token_modifiers, 0,
+            "parameter token must carry zero modifiers (REQ-SEM-02)"
+        );
     }
 }
 
@@ -147,9 +178,15 @@ fn jinja_lsp_2iqx_param_after_string_default_containing_close_paren_gets_a_token
     let src = r#"{% macro m(a=")", b) %}{{ a }}{{ b }}{% endmacro %}"#;
     let tokens = full(src);
     let param_toks = tokens_of_type(&tokens, TT_PARAMETER);
-    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens: {param_toks:?}");
+    assert_eq!(
+        param_toks.len(),
+        2,
+        "both 'a' and 'b' must emit parameter tokens: {param_toks:?}"
+    );
 
-    let b_tok = param_toks.iter().find(|t| t.length == 1 && t.start_char == src.find(", b").unwrap() as u32 + 2)
+    let b_tok = param_toks
+        .iter()
+        .find(|t| t.length == 1 && t.start_char == src.find(", b").unwrap() as u32 + 2)
         .expect("parameter 'b' must have a correctly-positioned token");
     assert_eq!(b_tok.length, 1);
 }
@@ -162,7 +199,11 @@ fn jinja_lsp_2iqx_comma_inside_string_default_does_not_split_params() {
     let src = r#"{% macro m(a=", ", b) %}{{ a }}{{ b }}{% endmacro %}"#;
     let tokens = full(src);
     let param_toks = tokens_of_type(&tokens, TT_PARAMETER);
-    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens: {param_toks:?}");
+    assert_eq!(
+        param_toks.len(),
+        2,
+        "both 'a' and 'b' must emit parameter tokens: {param_toks:?}"
+    );
 }
 
 // ─── REQ-SEM-04: parameter body use → variable, not parameter ───────────────
@@ -172,12 +213,18 @@ fn sem04_parameter_body_use_is_variable_not_parameter() {
     // "name" appears in signature (→ parameter) and in body (→ variable).
     let src = "{% macro greet(name) %}{{ name }}{% endmacro %}";
     let tokens = full(src);
-    let param_count = tokens.iter().filter(|t| t.token_type == TT_PARAMETER).count();
+    let param_count = tokens
+        .iter()
+        .filter(|t| t.token_type == TT_PARAMETER)
+        .count();
     let var_count = tokens
         .iter()
         .filter(|t| t.token_type == TT_VARIABLE && t.length == "name".len() as u32)
         .count();
-    assert!(param_count >= 1, "signature 'name' must be a parameter token");
+    assert!(
+        param_count >= 1,
+        "signature 'name' must be a parameter token"
+    );
     assert!(var_count >= 1, "body 'name' must be a variable token");
 }
 
@@ -187,7 +234,10 @@ fn sem04_parameter_body_use_is_variable_not_parameter() {
 fn sem04_filter_builtin_is_filter_builtin_defined() {
     let tokens = full("{{ x | truncate }}");
     let filter_tok = tokens.iter().find(|t| t.token_type == TT_FILTER);
-    assert!(filter_tok.is_some(), "known filter must emit a filter token");
+    assert!(
+        filter_tok.is_some(),
+        "known filter must emit a filter token"
+    );
     assert_eq!(
         filter_tok.unwrap().token_modifiers,
         MOD_BUILTIN | MOD_DEFINED,
@@ -201,7 +251,10 @@ fn sem04_filter_builtin_is_filter_builtin_defined() {
 fn sem04_filter_unknown_is_filter_unknown() {
     let tokens = full("{{ x | absolutely_unknown_filter_xyz }}");
     let filter_tok = tokens.iter().find(|t| t.token_type == TT_FILTER);
-    assert!(filter_tok.is_some(), "unknown filter must still emit a filter token");
+    assert!(
+        filter_tok.is_some(),
+        "unknown filter must still emit a filter token"
+    );
     assert_eq!(
         filter_tok.unwrap().token_modifiers,
         MOD_UNKNOWN,
@@ -229,7 +282,10 @@ fn sem04_test_builtin_is_test_builtin_defined() {
 fn sem04_test_unknown_is_test_unknown() {
     let tokens = full("{% if x is xyz_totally_unknown_test %}yes{% endif %}");
     let test_tok = tokens.iter().find(|t| t.token_type == TT_TEST);
-    assert!(test_tok.is_some(), "unknown test must still emit a test token");
+    assert!(
+        test_tok.is_some(),
+        "unknown test must still emit a test token"
+    );
     assert_eq!(
         test_tok.unwrap().token_modifiers,
         MOD_UNKNOWN,
@@ -244,11 +300,15 @@ fn sem04_unresolved_call_is_variable_unknown_not_function_unknown() {
     // §5.3.1 step 3: no macro, no registry function → variable {unknown}
     let tokens = full("{{ totally_unknown_func_xyz() }}");
     assert!(
-        !tokens.iter().any(|t| t.token_type == TT_FUNCTION && t.token_modifiers == MOD_UNKNOWN),
+        !tokens
+            .iter()
+            .any(|t| t.token_type == TT_FUNCTION && t.token_modifiers == MOD_UNKNOWN),
         "unresolved call must NOT be function {{unknown}} per §5.3.1"
     );
     assert!(
-        tokens.iter().any(|t| t.token_type == TT_VARIABLE && t.token_modifiers == MOD_UNKNOWN),
+        tokens
+            .iter()
+            .any(|t| t.token_type == TT_VARIABLE && t.token_modifiers == MOD_UNKNOWN),
         "unresolved call must be variable {{unknown}}"
     );
 }
@@ -311,8 +371,13 @@ fn sem04_for_keyword_emits_no_token() {
     let src = "{% for item in items %}{{ item }}{% endfor %}";
     let tokens = full(src);
     // "for" keyword is at byte 3 (col 3). Check no token at that position.
-    let has_for_tok = tokens.iter().any(|t| t.line == 0 && t.start_char == 3 && t.length == 3);
-    assert!(!has_for_tok, "statement keyword 'for' must not emit a semantic token");
+    let has_for_tok = tokens
+        .iter()
+        .any(|t| t.line == 0 && t.start_char == 3 && t.length == 3);
+    assert!(
+        !has_for_tok,
+        "statement keyword 'for' must not emit a semantic token"
+    );
 }
 
 // ─── REQ-SEM-04: variable from for-loop → variable {user, defined} ───────────
@@ -327,7 +392,10 @@ fn sem04_for_loop_variable_is_variable_user_defined() {
             && t.token_modifiers == MOD_USER | MOD_DEFINED
             && t.length == "item".len() as u32
     });
-    assert!(item_tok.is_some(), "for-loop variable 'item' usage must be variable {{user, defined}}");
+    assert!(
+        item_tok.is_some(),
+        "for-loop variable 'item' usage must be variable {{user, defined}}"
+    );
 }
 
 // ─── REQ-SEM-04: tokens are sorted by position ───────────────────────────────
@@ -361,7 +429,11 @@ fn sem_internal_positions_are_byte_based() {
     let tokens = full(src);
     let x_tok = tokens.iter().find(|t| t.token_type == TT_VARIABLE);
     assert!(x_tok.is_some(), "should produce a variable token for 'x'");
-    assert_eq!(x_tok.unwrap().start_char, 3, "'x' is at byte column 3 in '{{ x }}'");
+    assert_eq!(
+        x_tok.unwrap().start_char,
+        3,
+        "'x' is at byte column 3 in '{{ x }}'"
+    );
     assert_eq!(x_tok.unwrap().length, 1, "'x' has byte length 1");
 }
 
@@ -387,7 +459,11 @@ fn sem_block_named_block_does_not_match_keyword() {
     assert!(!block_toks.is_empty(), "must emit a block token");
     // "block" keyword starts at col 3; name "block" starts at col 9
     let tok = block_toks[0];
-    assert_eq!(tok.start_char, 9, "token must be on the name at col 9, not the keyword at col 3; got col {}", tok.start_char);
+    assert_eq!(
+        tok.start_char, 9,
+        "token must be on the name at col 9, not the keyword at col 3; got col {}",
+        tok.start_char
+    );
 }
 
 #[test]
@@ -397,7 +473,10 @@ fn sem_macro_named_macro_does_not_match_keyword() {
     let macro_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_MACRO).collect();
     assert!(!macro_toks.is_empty(), "must emit a macro token");
     // "macro" keyword at col 3; name "macro" at col 9
-    let tok = macro_toks.iter().find(|t| t.start_char == 9).expect("name token must be at col 9");
+    let tok = macro_toks
+        .iter()
+        .find(|t| t.start_char == 9)
+        .expect("name token must be at col 9");
     assert_eq!(tok.start_char, 9);
 }
 
@@ -410,17 +489,26 @@ fn sem_3s51_param_b_not_matched_in_default_of_a() {
     // not at the default-value position (col 13 in `a=b`).
     let src = "{% macro f(a=b, b) %}{% endmacro %}";
     let tokens = full(src);
-    let param_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_PARAMETER).collect();
+    let param_toks: Vec<_> = tokens
+        .iter()
+        .filter(|t| t.token_type == TT_PARAMETER)
+        .collect();
     // No parameter token must appear at the default-value position of 'b' in `a=b`.
     // Note: the extractor may record duplicate 'b' parameter entries (a separate grammar issue),
     // but the POSITION must always be the declaration site, never the default-value site.
-    let b_default_col = src.find("=b").map(|i| i as u32 + 1).expect("'=b' must be present");
+    let b_default_col = src
+        .find("=b")
+        .map(|i| i as u32 + 1)
+        .expect("'=b' must be present");
     assert!(
         param_toks.iter().all(|t| t.start_char != b_default_col),
         "no parameter token must appear at the default-value position (col {b_default_col})"
     );
     // At least one parameter token must be at the real 'b' declaration (after the comma).
-    let b_param_col = src.find(", b").map(|i| i as u32 + 2).expect("', b' must be present");
+    let b_param_col = src
+        .find(", b")
+        .map(|i| i as u32 + 2)
+        .expect("', b' must be present");
     assert!(
         param_toks.iter().any(|t| t.start_char == b_param_col),
         "at least one parameter token must be at the declaration position (col {b_param_col})"
@@ -432,6 +520,13 @@ fn sem_3s51_default_with_paren_does_not_truncate() {
     // {% macro f(a=foo(), b) %} — the first ')' is in foo(); b must still be found.
     let src = "{% macro f(a=foo(), b) %}{% endmacro %}";
     let tokens = full(src);
-    let param_toks: Vec<_> = tokens.iter().filter(|t| t.token_type == TT_PARAMETER).collect();
-    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens even with default foo()");
+    let param_toks: Vec<_> = tokens
+        .iter()
+        .filter(|t| t.token_type == TT_PARAMETER)
+        .collect();
+    assert_eq!(
+        param_toks.len(),
+        2,
+        "both 'a' and 'b' must emit parameter tokens even with default foo()"
+    );
 }

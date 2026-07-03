@@ -47,10 +47,10 @@ pub fn fold_ranges(source: &str) -> Vec<FoldRange> {
 
 #[derive(Debug, Clone)]
 enum EventKind {
-    BlockOpen(String), // keyword name (e.g. "block", "for", "cache")
+    BlockOpen(String),  // keyword name (e.g. "block", "for", "cache")
     BlockClose(String), // end-keyword without "end" prefix (e.g. "block", "for")
-    Tag,               // any `{%…%}` or `{{…}}` (for multi-line tag fold)
-    Comment,           // `{#…#}`
+    Tag,                // any `{%…%}` or `{{…}}` (for multi-line tag fold)
+    Comment,            // `{#…#}`
 }
 
 #[derive(Debug, Clone)]
@@ -88,19 +88,31 @@ fn scan_events(source: &str) -> Vec<Event> {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
                 let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
-                let keyword = inner.trim_matches('-').split_whitespace().next().unwrap_or("");
+                let keyword = inner
+                    .trim_matches('-')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
                 if in_raw {
                     // Inside raw body: only endraw exits raw mode; other tags are literal text.
                     if keyword == "endraw" {
                         in_raw = false;
-                        events.push(Event { kind: EventKind::BlockClose("raw".to_owned()), start_line: sl, end_line: el });
+                        events.push(Event {
+                            kind: EventKind::BlockClose("raw".to_owned()),
+                            start_line: sl,
+                            end_line: el,
+                        });
                     }
                 } else {
                     if keyword == "raw" {
                         in_raw = true;
                     }
                     let kind = classify_statement(inner);
-                    events.push(Event { kind, start_line: sl, end_line: el });
+                    events.push(Event {
+                        kind,
+                        start_line: sl,
+                        end_line: el,
+                    });
                 }
                 current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
@@ -111,7 +123,11 @@ fn scan_events(source: &str) -> Vec<Event> {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
                 let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
-                events.push(Event { kind: EventKind::Comment, start_line: sl, end_line: el });
+                events.push(Event {
+                    kind: EventKind::Comment,
+                    start_line: sl,
+                    end_line: el,
+                });
                 current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;
@@ -121,7 +137,11 @@ fn scan_events(source: &str) -> Vec<Event> {
                 let tag_end = i + 2 + close_rel + 2;
                 let sl = current_line;
                 let el = current_line + count_newlines(&source[i..tag_end.saturating_sub(1)]);
-                events.push(Event { kind: EventKind::Tag, start_line: sl, end_line: el });
+                events.push(Event {
+                    kind: EventKind::Tag,
+                    start_line: sl,
+                    end_line: el,
+                });
                 current_line += count_newlines(&source[i..tag_end]);
                 i = tag_end;
                 continue;
@@ -131,7 +151,11 @@ fn scan_events(source: &str) -> Vec<Event> {
         if bytes[i] == b'\n' {
             current_line += 1;
         }
-        i += source[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        i += source[i..]
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(1);
     }
 
     events

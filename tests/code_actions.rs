@@ -2,7 +2,9 @@
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
-use jinja_lsp::features::code_actions::{code_actions, selection_code_actions, ActionKind, CodeAction};
+use jinja_lsp::features::code_actions::{
+    ActionKind, CodeAction, code_actions, selection_code_actions,
+};
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
 
@@ -61,7 +63,12 @@ fn e103(line: u32, col: u32, name: &str) -> Diagnostic {
 }
 
 /// Apply the first edit from a specific action (found by title substring) to `source`.
-fn apply_by_title(source: &str, file: &str, actions: &[CodeAction], title_contains: &str) -> String {
+fn apply_by_title(
+    source: &str,
+    file: &str,
+    actions: &[CodeAction],
+    title_contains: &str,
+) -> String {
     let action = actions
         .iter()
         .find(|a| a.title.contains(title_contains))
@@ -77,17 +84,36 @@ fn apply(source: &str, file: &str, actions: &[CodeAction]) -> String {
 
 fn apply_action(source: &str, file: &str, action: &CodeAction) -> String {
     let edit = action.edit.as_ref().expect("action must have an edit");
-    let edits = edit.changes.get(file).unwrap_or_else(|| panic!("must have edits for {file}"));
+    let edits = edit
+        .changes
+        .get(file)
+        .unwrap_or_else(|| panic!("must have edits for {file}"));
     assert_eq!(edits.len(), 1, "expected exactly one text edit");
     let e = &edits[0];
     let line_starts: Vec<usize> = std::iter::once(0)
-        .chain(source.char_indices().filter(|(_, c)| *c == '\n').map(|(i, _)| i + 1))
+        .chain(
+            source
+                .char_indices()
+                .filter(|(_, c)| *c == '\n')
+                .map(|(i, _)| i + 1),
+        )
         .collect();
-    let start_byte = line_starts.get(e.start_line as usize).copied().unwrap_or(source.len())
+    let start_byte = line_starts
+        .get(e.start_line as usize)
+        .copied()
+        .unwrap_or(source.len())
         + e.start_col as usize;
-    let end_byte = line_starts.get(e.end_line as usize).copied().unwrap_or(source.len())
+    let end_byte = line_starts
+        .get(e.end_line as usize)
+        .copied()
+        .unwrap_or(source.len())
         + e.end_col as usize;
-    format!("{}{}{}", &source[..start_byte], e.new_text, &source[end_byte..])
+    format!(
+        "{}{}{}",
+        &source[..start_byte],
+        e.new_text,
+        &source[end_byte..]
+    )
 }
 
 // ─── REQ-ACT-01: T-01 — Remove unused `{% import … as … %}` ─────────────────
@@ -104,7 +130,10 @@ fn act01_t01_remove_import_alias_whole_line() {
     assert!(actions[0].title.contains("shared"));
     assert!(actions[0].is_preferred);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{{ content }}", "import line must be gone, no blank line left");
+    assert_eq!(
+        result, "{{ content }}",
+        "import line must be gone, no blank line left"
+    );
 }
 
 // ─── REQ-ACT-01: T-02 — Remove unused `{% macro … %}…{% endmacro %}` ─────────
@@ -121,7 +150,10 @@ fn act01_t02_remove_unused_macro_whole_region() {
     assert!(actions[0].title.contains("foo"));
     assert!(actions[0].is_preferred);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{{ bar }}", "full macro region must be gone, no blank line left");
+    assert_eq!(
+        result, "{{ bar }}",
+        "full macro region must be gone, no blank line left"
+    );
 }
 
 // ─── REQ-ACT-01: T-03 — Remove one name from a multi-name from-import ────────
@@ -137,8 +169,7 @@ fn act01_t03_remove_one_name_from_multi_name_from_import() {
     assert!(actions[0].title.contains("b"));
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% from \"x.html\" import a %}\n{{ a }}",
+        result, "{% from \"x.html\" import a %}\n{{ a }}",
         "only unused name removed, used name and line intact"
     );
 }
@@ -153,7 +184,10 @@ fn act01_single_name_from_import_deletes_whole_line() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{{ content }}", "single-name from-import → whole line deleted");
+    assert_eq!(
+        result, "{{ content }}",
+        "single-name from-import → whole line deleted"
+    );
 }
 
 // ─── REQ-ACT-01: Additional — no action when diagnostic code is not W202/W203 ─
@@ -172,7 +206,10 @@ fn act01_no_action_for_unrelated_diagnostic() {
         message: "undefined variable 'foo'".to_owned(),
     }];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "non-W202/W203 diagnostic must not produce actions");
+    assert!(
+        actions.is_empty(),
+        "non-W202/W203 diagnostic must not produce actions"
+    );
 }
 
 // ─── REQ-ACT-01: Additional — macro with multi-line body ─────────────────────
@@ -199,8 +236,7 @@ fn act01_remove_aliased_name_from_multi_name_from_import() {
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% from \"x.html\" import a %}\n{{ a }}",
+        result, "{% from \"x.html\" import a %}\n{{ a }}",
         "aliased name and alias removed together"
     );
 }
@@ -240,11 +276,19 @@ fn act02_import_fix_uses_relative_path_when_workspace_keyed_absolute() {
     let mut idx = extract(macro_src);
     idx.path = "/srv/templates/blog/macros.html".to_owned();
     idx.relative_path = Some("blog/macros.html".to_owned());
-    ws.templates.insert("/srv/templates/blog/macros.html".to_owned(), idx);
+    ws.templates
+        .insert("/srv/templates/blog/macros.html".to_owned(), idx);
 
     let idx = extract(src);
     let diags = vec![e103(1, 3, "post_url")];
-    let actions = code_actions(src, "/srv/templates/blog/post.html", &diags, &idx, &ws, &reg());
+    let actions = code_actions(
+        src,
+        "/srv/templates/blog/post.html",
+        &diags,
+        &idx,
+        &ws,
+        &reg(),
+    );
     let import_action = actions.iter().find(|a| a.title.contains("Import")).unwrap();
     assert!(
         import_action.title.contains("blog/macros.html")
@@ -272,8 +316,7 @@ fn act02_t04b_import_fix_at_top_when_no_extends() {
     let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
     let result = apply_by_title(src, "t.html", &actions, "Import");
     assert_eq!(
-        result,
-        "{% from \"macros.html\" import post_url %}\n{{ post_url(post) }}",
+        result, "{% from \"macros.html\" import post_url %}\n{{ post_url(post) }}",
         "import inserted at top when no extends"
     );
 }
@@ -295,11 +338,16 @@ fn act02_t05_near_miss_offers_did_you_mean_and_import() {
         .find(|a| a.title.contains("Did you mean") && a.title.contains("post_url"))
         .expect("did-you-mean post_url action must be present");
     let result = apply_action(src, "t.html", mean_action);
-    assert_eq!(result, "{{ post_url(post) }}", "identifier replaced with near-match");
+    assert_eq!(
+        result, "{{ post_url(post) }}",
+        "identifier replaced with near-match"
+    );
 
     // import fix also offered for near-match workspace macro (spec T-05 "import fix plus")
     assert!(
-        actions.iter().any(|a| a.title.contains("Import") && a.title.contains("post_url")),
+        actions
+            .iter()
+            .any(|a| a.title.contains("Import") && a.title.contains("post_url")),
         "import fix for near-match must be offered alongside did-you-mean"
     );
 }
@@ -328,7 +376,11 @@ fn act02_exact_match_is_preferred_over_near_miss() {
     let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
     let preferred = actions.iter().filter(|a| a.is_preferred).count();
     assert_eq!(preferred, 1, "exactly one action must be preferred");
-    assert!(actions.iter().any(|a| a.is_preferred && a.title.contains("Import")));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.is_preferred && a.title.contains("Import"))
+    );
 }
 
 // ─── REQ-ACT-03: T-07 — E102 undefined-filter suggests close match ───────────
@@ -365,7 +417,10 @@ fn act03_t07_undefined_filter_suggests_close_match() {
     let col = src.find("uppe").unwrap() as u32;
     let diags = vec![e102(0, col, "uppe")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(!actions.is_empty(), "must suggest at least one close filter");
+    assert!(
+        !actions.is_empty(),
+        "must suggest at least one close filter"
+    );
     assert!(
         actions.iter().all(|a| a.title.contains("Did you mean")),
         "all actions must be did-you-mean"
@@ -403,7 +458,10 @@ fn act03_t09_no_close_match_no_action() {
     let idx = extract(src);
     let diags = vec![e102(0, 7, "zzqq_filter")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "no close match must produce no actions — we don't guess");
+    assert!(
+        actions.is_empty(),
+        "no close match must produce no actions — we don't guess"
+    );
 }
 
 // ─── REQ-ACT-03: Additional — action replaces filter name in source ──────────
@@ -442,12 +500,17 @@ fn act04_t10_insert_block_stub_after_extends() {
     let diags = vec![e403(0, 0, "content")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1, "must offer exactly one action");
-    assert!(actions[0].title.contains("content"), "title must name the block");
-    assert!(actions[0].is_preferred, "block stub fix is the only option — must be preferred");
+    assert!(
+        actions[0].title.contains("content"),
+        "title must name the block"
+    );
+    assert!(
+        actions[0].is_preferred,
+        "block stub fix is the only option — must be preferred"
+    );
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% extends \"base.html\" %}\n{% block content %}{% endblock %}\n{{ content }}",
+        result, "{% extends \"base.html\" %}\n{% block content %}{% endblock %}\n{{ content }}",
         "block stub inserted after extends line"
     );
 }
@@ -499,10 +562,17 @@ fn act05_t11_create_missing_template() {
     let diags = vec![e601(0, 0, "missing/base.html")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1, "must offer exactly one action");
-    assert!(actions[0].title.contains("missing/base.html"), "title must name the path");
+    assert!(
+        actions[0].title.contains("missing/base.html"),
+        "title must name the path"
+    );
     assert!(actions[0].is_preferred);
     let edit = actions[0].edit.as_ref().unwrap();
-    assert_eq!(edit.create_files.len(), 1, "must request exactly one file creation");
+    assert_eq!(
+        edit.create_files.len(),
+        1,
+        "must request exactly one file creation"
+    );
     assert_eq!(edit.create_files[0].0, "missing/base.html", "correct path");
 }
 
@@ -514,7 +584,10 @@ fn act05_t12_escaping_path_no_action() {
     let idx = extract(src);
     let diags = vec![e601(0, 0, "../secret.html")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "path escaping templates root must not get a create action");
+    assert!(
+        actions.is_empty(),
+        "path escaping templates root must not get a create action"
+    );
 }
 
 #[test]
@@ -523,7 +596,10 @@ fn act05_absolute_path_no_action() {
     let idx = extract(src);
     let diags = vec![e601(0, 0, "/etc/passwd")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "absolute path must not get a create action");
+    assert!(
+        actions.is_empty(),
+        "absolute path must not get a create action"
+    );
 }
 
 // ─── vv5j: path-traversal guard must cover backslash and bare '..' ────────────
@@ -534,7 +610,10 @@ fn vv5j_bare_dotdot_final_segment_no_action() {
     let idx = extract(src);
     let diags = vec![e601(0, 0, "templates/..")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "bare '..' final segment must be rejected");
+    assert!(
+        actions.is_empty(),
+        "bare '..' final segment must be rejected"
+    );
 }
 
 #[test]
@@ -543,35 +622,68 @@ fn vv5j_backslash_traversal_no_action() {
     let idx = extract(src);
     let diags = vec![e601(0, 0, "..\\secret.html")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
-    assert!(actions.is_empty(), "backslash '..' traversal must be rejected");
+    assert!(
+        actions.is_empty(),
+        "backslash '..' traversal must be rejected"
+    );
 }
 
 // ─── REQ-ACT-06 helpers ──────────────────────────────────────────────────────
 
 fn w301(line: u32, name: &str) -> Diagnostic {
-    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W301".to_owned(),
-        slug: "duplicate-block".to_owned(), severity: DiagnosticSeverity::Warning,
-        message: format!("duplicate block '{name}'") }
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col: 0,
+        code: "JINJA-W301".to_owned(),
+        slug: "duplicate-block".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate block '{name}'"),
+    }
 }
 fn w302(line: u32, name: &str) -> Diagnostic {
-    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W302".to_owned(),
-        slug: "duplicate-macro".to_owned(), severity: DiagnosticSeverity::Warning,
-        message: format!("duplicate macro '{name}'") }
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col: 0,
+        code: "JINJA-W302".to_owned(),
+        slug: "duplicate-macro".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate macro '{name}'"),
+    }
 }
 fn w303(line: u32, name: &str) -> Diagnostic {
-    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W303".to_owned(),
-        slug: "duplicate-import-alias".to_owned(), severity: DiagnosticSeverity::Warning,
-        message: format!("duplicate import alias '{name}'") }
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col: 0,
+        code: "JINJA-W303".to_owned(),
+        slug: "duplicate-import-alias".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate import alias '{name}'"),
+    }
 }
 fn w304(line: u32, name: &str) -> Diagnostic {
-    Diagnostic { file: "t.html".to_owned(), line, col: 0, code: "JINJA-W304".to_owned(),
-        slug: "duplicate-from-import".to_owned(), severity: DiagnosticSeverity::Warning,
-        message: format!("duplicate from-import '{name}'") }
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col: 0,
+        code: "JINJA-W304".to_owned(),
+        slug: "duplicate-from-import".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: format!("duplicate from-import '{name}'"),
+    }
 }
 fn w305(line: u32, col: u32, name: &str) -> Diagnostic {
-    Diagnostic { file: "t.html".to_owned(), line, col, code: "JINJA-W305".to_owned(),
-        slug: "name-shadowing".to_owned(), severity: DiagnosticSeverity::Warning,
-        message: format!("variable '{name}' shadows outer binding") }
+    Diagnostic {
+        file: "t.html".to_owned(),
+        line,
+        col,
+        code: "JINJA-W305".to_owned(),
+        slug: "name-shadowing".to_owned(),
+        severity: DiagnosticSeverity::Warning,
+        message: format!("variable '{name}' shadows outer binding"),
+    }
 }
 
 /// Apply all edits in the action's first file entry (bottom-to-top to preserve offsets).
@@ -579,13 +691,29 @@ fn apply_all(source: &str, file: &str, action: &CodeAction) -> String {
     let edit = action.edit.as_ref().expect("action must have an edit");
     let edits = edit.changes.get(file).expect("edits for file");
     let line_starts: Vec<usize> = std::iter::once(0)
-        .chain(source.char_indices().filter(|(_, c)| *c == '\n').map(|(i, _)| i + 1))
+        .chain(
+            source
+                .char_indices()
+                .filter(|(_, c)| *c == '\n')
+                .map(|(i, _)| i + 1),
+        )
         .collect();
-    let mut byte_edits: Vec<(usize, usize, String)> = edits.iter().map(|e| {
-        let s = line_starts.get(e.start_line as usize).copied().unwrap_or(source.len()) + e.start_col as usize;
-        let en = line_starts.get(e.end_line as usize).copied().unwrap_or(source.len()) + e.end_col as usize;
-        (s, en, e.new_text.clone())
-    }).collect();
+    let mut byte_edits: Vec<(usize, usize, String)> = edits
+        .iter()
+        .map(|e| {
+            let s = line_starts
+                .get(e.start_line as usize)
+                .copied()
+                .unwrap_or(source.len())
+                + e.start_col as usize;
+            let en = line_starts
+                .get(e.end_line as usize)
+                .copied()
+                .unwrap_or(source.len())
+                + e.end_col as usize;
+            (s, en, e.new_text.clone())
+        })
+        .collect();
     // Apply bottom-to-top so earlier byte offsets are not invalidated.
     byte_edits.sort_by_key(|e| std::cmp::Reverse(e.0));
     let mut result = source.to_owned();
@@ -607,7 +735,10 @@ fn act06_t13_remove_duplicate_block() {
     assert_eq!(actions.len(), 1, "must offer remove-duplicate action");
     assert!(actions[0].title.contains("content"));
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{% block content %}first{% endblock %}", "later block removed");
+    assert_eq!(
+        result, "{% block content %}first{% endblock %}",
+        "later block removed"
+    );
 }
 
 // ─── jinja-lsp-zhss: endblock scan must never produce an orphan endblock ─────
@@ -677,7 +808,10 @@ fn act06_t14_remove_duplicate_macro() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{% macro foo() %}first{% endmacro %}", "later macro removed");
+    assert_eq!(
+        result, "{% macro foo() %}first{% endmacro %}",
+        "later macro removed"
+    );
 }
 
 // ─── REQ-ACT-06: T-15 — Remove duplicate import alias ────────────────────────
@@ -690,7 +824,10 @@ fn act06_t15_remove_duplicate_import_alias() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{% import \"shared.html\" as shared %}", "later import alias removed");
+    assert_eq!(
+        result, "{% import \"shared.html\" as shared %}",
+        "later import alias removed"
+    );
 }
 
 // ─── REQ-ACT-06: T-16 — Remove duplicate from-import ────────────────────────
@@ -703,7 +840,10 @@ fn act06_t16_remove_duplicate_from_import() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{% from \"x.html\" import foo %}", "later from-import removed");
+    assert_eq!(
+        result, "{% from \"x.html\" import foo %}",
+        "later from-import removed"
+    );
 }
 
 // ─── REQ-ACT-06: multi-name from-import removes only the duplicate name ─────
@@ -719,8 +859,7 @@ fn act06_remove_duplicate_from_import_keeps_other_names_on_line() {
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% from \"x.html\" import a %}\n{% from \"x.html\" import b %}",
+        result, "{% from \"x.html\" import a %}\n{% from \"x.html\" import b %}",
         "duplicate name 'a' removed, valid import 'b' preserved"
     );
 }
@@ -738,7 +877,10 @@ fn act06_t17_rename_shadowing_variable() {
     let diags = vec![w305(0, col, "post")];
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1, "must offer rename action");
-    assert!(actions[0].title.contains("post_2"), "suggestion suffixes _2");
+    assert!(
+        actions[0].title.contains("post_2"),
+        "suggestion suffixes _2"
+    );
     let result = apply_all(src, "t.html", &actions[0]);
     assert!(result.contains("post_2"), "post renamed to post_2");
     assert!(!result.contains("{% for post "), "definition renamed");
@@ -755,7 +897,10 @@ fn act06_t18_identical_duplicate_macro_removes_later() {
     let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
-    assert_eq!(result, "{% macro foo() %}body{% endmacro %}\n{{ bar }}", "only the later macro removed");
+    assert_eq!(
+        result, "{% macro foo() %}body{% endmacro %}\n{{ bar }}",
+        "only the later macro removed"
+    );
 }
 
 // ─── REQ-ACT-10: T-36 — Quick-fixes have kind=QuickFix and diagnostics set ───
@@ -766,16 +911,28 @@ fn act10_t36_quickfix_kind_and_diagnostics_set() {
     let src = "{% import \"shared.html\" as shared %}\n{{ content }}";
     let idx = extract(src);
     let diag = Diagnostic {
-        file: "t.html".to_owned(), line: 0, col: 0,
-        code: "JINJA-W203".to_owned(), slug: "unused-import".to_owned(),
+        file: "t.html".to_owned(),
+        line: 0,
+        col: 0,
+        code: "JINJA-W203".to_owned(),
+        slug: "unused-import".to_owned(),
         severity: DiagnosticSeverity::Warning,
         message: "unused import 'shared'".to_owned(),
     };
     let actions = code_actions(src, "t.html", &[diag.clone()], &idx, &no_ws(), &reg());
     assert_eq!(actions.len(), 1);
-    assert!(matches!(actions[0].kind, ActionKind::QuickFix), "must be QuickFix");
-    assert!(!actions[0].diagnostics.is_empty(), "diagnostics must be set");
-    assert_eq!(actions[0].diagnostics[0].code, "JINJA-W203", "must reference the originating diagnostic");
+    assert!(
+        matches!(actions[0].kind, ActionKind::QuickFix),
+        "must be QuickFix"
+    );
+    assert!(
+        !actions[0].diagnostics.is_empty(),
+        "diagnostics must be set"
+    );
+    assert_eq!(
+        actions[0].diagnostics[0].code, "JINJA-W203",
+        "must reference the originating diagnostic"
+    );
 }
 
 // ─── REQ-ACT-10: T-37 — Import fix isPreferred; did-you-mean suggestions are not ──
@@ -783,15 +940,24 @@ fn act10_t36_quickfix_kind_and_diagnostics_set() {
 #[test]
 fn act10_t37_import_fix_is_preferred_over_suggestions() {
     // Workspace has exact-match macro; import fix must be isPreferred, suggestions must not.
-    let ws = ws_with(&[("blog/macros.html", "{% macro post_url(post) %}url{% endmacro %}")]);
+    let ws = ws_with(&[(
+        "blog/macros.html",
+        "{% macro post_url(post) %}url{% endmacro %}",
+    )]);
     let src = "{{ post_url(post) }}";
     let idx = extract(src);
     let diag = e103(0, 3, "post_url");
     let actions = code_actions(src, "t.html", &[diag], &idx, &ws, &reg());
-    let import_action = actions.iter().find(|a| a.title.contains("Import")).expect("import fix must be offered");
+    let import_action = actions
+        .iter()
+        .find(|a| a.title.contains("Import"))
+        .expect("import fix must be offered");
     assert!(import_action.is_preferred, "import fix must be isPreferred");
     for action in actions.iter().filter(|a| a.title.contains("Did you mean")) {
-        assert!(!action.is_preferred, "did-you-mean suggestions must not be isPreferred");
+        assert!(
+            !action.is_preferred,
+            "did-you-mean suggestions must not be isPreferred"
+        );
     }
 }
 
@@ -801,8 +967,14 @@ fn act10_t37_import_fix_is_preferred_over_suggestions() {
 fn act08_t01_wrap_if_produces_refactor_rewrite_action() {
     let src = "<p>hello</p>\n<p>world</p>";
     let actions = selection_code_actions(src, "t.html", 0, 0);
-    let wrap_if = actions.iter().find(|a| a.title.contains("if")).expect("wrap-if action must exist");
-    assert!(matches!(wrap_if.kind, ActionKind::RefactorRewrite), "wrap must be RefactorRewrite");
+    let wrap_if = actions
+        .iter()
+        .find(|a| a.title.contains("if"))
+        .expect("wrap-if action must exist");
+    assert!(
+        matches!(wrap_if.kind, ActionKind::RefactorRewrite),
+        "wrap must be RefactorRewrite"
+    );
     assert!(wrap_if.edit.is_some(), "wrap action must have an edit");
 }
 
@@ -810,7 +982,10 @@ fn act08_t01_wrap_if_produces_refactor_rewrite_action() {
 fn act08_t02_wrap_for_produces_refactor_rewrite_action() {
     let src = "{{ item }}";
     let actions = selection_code_actions(src, "t.html", 0, 0);
-    let wrap_for = actions.iter().find(|a| a.title.contains("for")).expect("wrap-for action must exist");
+    let wrap_for = actions
+        .iter()
+        .find(|a| a.title.contains("for"))
+        .expect("wrap-for action must exist");
     assert!(matches!(wrap_for.kind, ActionKind::RefactorRewrite));
 }
 
@@ -818,11 +993,20 @@ fn act08_t02_wrap_for_produces_refactor_rewrite_action() {
 fn act08_t03_wrap_block_produces_refactor_rewrite_action() {
     let src = "{{ item }}";
     let actions = selection_code_actions(src, "t.html", 0, 0);
-    let wrap_block = actions.iter().find(|a| a.title.contains("block")).expect("wrap-block action must exist");
+    let wrap_block = actions
+        .iter()
+        .find(|a| a.title.contains("block"))
+        .expect("wrap-block action must exist");
     assert!(matches!(wrap_block.kind, ActionKind::RefactorRewrite));
     // REQ-ACT-07: wrap-block uses executeCommand so the editor can prompt for a name.
-    assert!(wrap_block.edit.is_none(), "wrap-block must not carry an inline edit");
-    let (cmd_id, args) = wrap_block.command.as_ref().expect("wrap-block must carry a command");
+    assert!(
+        wrap_block.edit.is_none(),
+        "wrap-block must not carry an inline edit"
+    );
+    let (cmd_id, args) = wrap_block
+        .command
+        .as_ref()
+        .expect("wrap-block must carry a command");
     assert_eq!(cmd_id, "jinja-lsp.wrap-block");
     assert_eq!(args["path"], "t.html");
 }
@@ -837,10 +1021,22 @@ fn act08_t04_wrap_if_edit_inserts_tags_around_selection() {
     let edits = edit.changes.get("t.html").unwrap();
     // Single replacement edit spanning the whole selection.
     assert_eq!(edits.len(), 1, "wrap produces exactly 1 edit");
-    assert!(edits[0].new_text.contains("if condition"), "edit must contain opening tag");
-    assert!(edits[0].new_text.contains("endif"), "edit must contain closing tag");
-    assert!(edits[0].new_text.contains("  <p>hello</p>"), "body must be indented one level");
-    assert!(edits[0].new_text.contains("  <p>world</p>"), "both body lines must be indented");
+    assert!(
+        edits[0].new_text.contains("if condition"),
+        "edit must contain opening tag"
+    );
+    assert!(
+        edits[0].new_text.contains("endif"),
+        "edit must contain closing tag"
+    );
+    assert!(
+        edits[0].new_text.contains("  <p>hello</p>"),
+        "body must be indented one level"
+    );
+    assert!(
+        edits[0].new_text.contains("  <p>world</p>"),
+        "both body lines must be indented"
+    );
 }
 
 // ─── T-24: split-selection negative — no wrap offered ────────────────────────
@@ -880,11 +1076,23 @@ fn act08_t24c_balanced_tags_wraps_offered() {
 fn act07_t01_extract_macro_produces_refactor_extract_action() {
     let src = "<p>hello</p>\n<p>world</p>";
     let actions = selection_code_actions(src, "t.html", 0, 0);
-    let extract_action = actions.iter().find(|a| a.title.contains("macro")).expect("extract-macro action must exist");
-    assert!(matches!(extract_action.kind, ActionKind::RefactorExtract), "extract must be RefactorExtract");
+    let extract_action = actions
+        .iter()
+        .find(|a| a.title.contains("macro"))
+        .expect("extract-macro action must exist");
+    assert!(
+        matches!(extract_action.kind, ActionKind::RefactorExtract),
+        "extract must be RefactorExtract"
+    );
     // REQ-ACT-08: emits a server command (editor prompts for name), no inline edit.
-    assert!(extract_action.edit.is_none(), "extract-macro must not carry an inline edit");
-    let (cmd_id, args) = extract_action.command.as_ref().expect("extract-macro must carry a command");
+    assert!(
+        extract_action.edit.is_none(),
+        "extract-macro must not carry an inline edit"
+    );
+    let (cmd_id, args) = extract_action
+        .command
+        .as_ref()
+        .expect("extract-macro must carry a command");
     assert_eq!(cmd_id, "jinja-lsp.extract-macro");
     assert_eq!(args["path"], "t.html");
     assert_eq!(args["start_line"], 0);
@@ -917,8 +1125,7 @@ fn gspz_import_keyword_inside_path_not_mistaken_for_import_keyword() {
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% from \"import helpers.html\" import a %}\n{{ a }}",
+        result, "{% from \"import helpers.html\" import a %}\n{{ a }}",
         "path containing 'import ' must be skipped when locating the import keyword"
     );
 }
@@ -934,8 +1141,7 @@ fn gspz_remove_first_name_from_import_with_path_containing_import() {
     assert_eq!(actions.len(), 1);
     let result = apply(src, "t.html", &actions);
     assert_eq!(
-        result,
-        "{% from \"import helpers.html\" import b %}\n{{ b }}",
+        result, "{% from \"import helpers.html\" import b %}\n{{ b }}",
         "first name must be removed cleanly even with 'import ' in the path"
     );
 }

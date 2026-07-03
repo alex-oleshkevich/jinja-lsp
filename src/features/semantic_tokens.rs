@@ -344,7 +344,9 @@ fn find_param_in_macro_tag(
                 str_char2 = c;
             }
             '(' | '[' => depth2 += 1,
-            ')' | ']' => { depth2 = depth2.saturating_sub(1); }
+            ')' | ']' => {
+                depth2 = depth2.saturating_sub(1);
+            }
             ',' if depth2 == 0 => {
                 slots.push((slot_start, j));
                 slot_start = j + 1;
@@ -359,7 +361,10 @@ fn find_param_in_macro_tag(
     for (slot_s, slot_e) in slots {
         let slot_raw = &content[slot_s..slot_e];
         // Leading whitespace offset within the slot.
-        let ws_len = slot_raw.len() - slot_raw.trim_start_matches(|c: char| c.is_ascii_whitespace()).len();
+        let ws_len = slot_raw.len()
+            - slot_raw
+                .trim_start_matches(|c: char| c.is_ascii_whitespace())
+                .len();
         let name_end = slot_raw.find('=').unwrap_or(slot_raw.len());
         let name_part = slot_raw[..name_end].trim();
         let np_bytes = name_part.as_bytes();
@@ -368,8 +373,8 @@ fn find_param_in_macro_tag(
         while i + param_name.len() <= name_part.len() {
             if &np_bytes[i..i + param_name.len()] == name_bytes {
                 let before_ok = i == 0 || !is_ident(np_bytes[i - 1]);
-                let after_ok =
-                    i + param_name.len() >= name_part.len() || !is_ident(np_bytes[i + param_name.len()]);
+                let after_ok = i + param_name.len() >= name_part.len()
+                    || !is_ident(np_bytes[i + param_name.len()]);
                 if before_ok && after_ok {
                     let abs = content_abs + slot_s + ws_len + i;
                     return Some(super::byte_to_line_col(source, abs));

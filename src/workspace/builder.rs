@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use super::index::WorkspaceIndex;
 use crate::parsing::{discover_templates, extract};

@@ -6,7 +6,7 @@
 
 use std::{fs, path::PathBuf};
 
-use jinja_lsp::format::{format_with_config, FormatterConfig};
+use jinja_lsp::format::{FormatterConfig, format_with_config};
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formatter")
@@ -59,6 +59,10 @@ fn formatter_fixtures_match_expected() {
     }
 
     if !failures.is_empty() {
-        panic!("{} fixture(s) failed:\n{}", failures.len(), failures.join("\n\n"));
+        panic!(
+            "{} fixture(s) failed:\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
     }
 }

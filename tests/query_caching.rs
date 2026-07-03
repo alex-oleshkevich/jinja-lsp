@@ -10,12 +10,21 @@ fn queries_are_lazily_compiled_and_non_empty() {
     let counts1 = query_pattern_counts();
     let counts2 = query_pattern_counts();
 
-    assert!(!counts1.is_empty(), "query_pattern_counts must return entries");
+    assert!(
+        !counts1.is_empty(),
+        "query_pattern_counts must return entries"
+    );
 
     for ((name1, c1), (name2, c2)) in counts1.iter().zip(counts2.iter()) {
         assert_eq!(name1, name2);
-        assert_eq!(c1, c2, "pattern count for {name1} changed between calls (not a stable static)");
-        assert!(*c1 > 0, "query {name1} has zero patterns — scm file may be empty or wrong");
+        assert_eq!(
+            c1, c2,
+            "pattern count for {name1} changed between calls (not a stable static)"
+        );
+        assert!(
+            *c1 > 0,
+            "query {name1} has zero patterns — scm file may be empty or wrong"
+        );
     }
 }
 
@@ -26,5 +35,9 @@ fn extract_is_idempotent_for_same_source() {
     let src = "{% macro greet(name) %}Hello {{ name }}{% endmacro %}";
     let idx1 = extract(src);
     let idx2 = extract(src);
-    assert_eq!(idx1.macros.len(), idx2.macros.len(), "repeated extract must give same result");
+    assert_eq!(
+        idx1.macros.len(),
+        idx2.macros.len(),
+        "repeated extract must give same result"
+    );
 }

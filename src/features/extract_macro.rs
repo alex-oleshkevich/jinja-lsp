@@ -58,14 +58,9 @@ pub fn compute_extract_macro(
     // Insert after the last line.
     let total_lines = source_lines.len() as u32;
     let last_file_line = total_lines.saturating_sub(1);
-    let last_file_col = source_lines
-        .last()
-        .map(|l| l.len() as u32)
-        .unwrap_or(0);
+    let last_file_col = source_lines.last().map(|l| l.len() as u32).unwrap_or(0);
 
-    let macro_def = format!(
-        "\n{{% macro {macro_name}() %}}\n{body}\n{{% endmacro %}}"
-    );
+    let macro_def = format!("\n{{% macro {macro_name}() %}}\n{body}\n{{% endmacro %}}");
 
     let append_edit = TextEdit {
         start_line: last_file_line,
@@ -77,5 +72,8 @@ pub fn compute_extract_macro(
 
     let mut changes = HashMap::new();
     changes.insert(file.to_owned(), vec![replacement_edit, append_edit]);
-    Some(WorkspaceEdit { changes, create_files: vec![] })
+    Some(WorkspaceEdit {
+        changes,
+        create_files: vec![],
+    })
 }

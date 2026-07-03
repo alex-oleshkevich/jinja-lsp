@@ -109,8 +109,10 @@ fn fmt08_t05_diff_mode_no_rewrite() {
 
     assert_eq!(out.status.code().unwrap(), 1);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("{{x}}") || stdout.contains("{{ x }}"),
-        "diff output should show change; got: {stdout}");
+    assert!(
+        stdout.contains("{{x}}") || stdout.contains("{{ x }}"),
+        "diff output should show change; got: {stdout}"
+    );
     // File must NOT have been rewritten.
     assert_eq!(fs::read_to_string(&path).unwrap(), "{{x}}\n");
 }
@@ -133,9 +135,15 @@ fn fmt08_t06_directory_formats_all_templates() {
 
     assert_eq!(status.code().unwrap(), 1);
     assert_eq!(fs::read_to_string(dir.join("a.html")).unwrap(), "{{ a }}\n");
-    assert_eq!(fs::read_to_string(dir.join("b.jinja")).unwrap(), "{{ b }}\n");
+    assert_eq!(
+        fs::read_to_string(dir.join("b.jinja")).unwrap(),
+        "{{ b }}\n"
+    );
     // .txt file should NOT have been touched
-    assert_eq!(fs::read_to_string(dir.join("readme.txt")).unwrap(), "{{c}}\n");
+    assert_eq!(
+        fs::read_to_string(dir.join("readme.txt")).unwrap(),
+        "{{c}}\n"
+    );
 }
 
 // ─── 8nyl: --check prints per-file message and summary ───────────────────────
@@ -155,8 +163,14 @@ fn fmt08_check_prints_would_reformat_per_file() {
         .expect("run format --check");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("would reformat:"), "--check must print 'would reformat: path': {stdout}");
-    assert!(stdout.contains("1 file would be reformatted"), "--check must print summary: {stdout}");
+    assert!(
+        stdout.contains("would reformat:"),
+        "--check must print 'would reformat: path': {stdout}"
+    );
+    assert!(
+        stdout.contains("1 file would be reformatted"),
+        "--check must print summary: {stdout}"
+    );
 }
 
 #[test]
@@ -174,8 +188,14 @@ fn fmt08_check_summary_counts_unchanged() {
         .expect("run format --check dir");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("1 unchanged"), "--check summary must count unchanged: {stdout}");
-    assert!(stdout.contains("1 file would be reformatted"), "--check must show changed count: {stdout}");
+    assert!(
+        stdout.contains("1 unchanged"),
+        "--check summary must count unchanged: {stdout}"
+    );
+    assert!(
+        stdout.contains("1 file would be reformatted"),
+        "--check must show changed count: {stdout}"
+    );
 }
 
 #[test]
@@ -193,7 +213,10 @@ fn fmt08_diff_prints_summary_line() {
         .expect("run format --diff");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("1 file would be reformatted."), "--diff must print summary: {stdout}");
+    assert!(
+        stdout.contains("1 file would be reformatted."),
+        "--diff must print summary: {stdout}"
+    );
 }
 
 // ─── T-08: --output - writes formatted content to stdout ─────────────────────
@@ -211,7 +234,11 @@ fn fmt08_t08_output_stdout() {
         .output()
         .expect("run format --output -");
 
-    assert_eq!(out.status.code().unwrap(), 1, "exit 1 when file would change");
+    assert_eq!(
+        out.status.code().unwrap(),
+        1,
+        "exit 1 when file would change"
+    );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "{{ x }}\n");
     // original file must be untouched
     assert_eq!(fs::read_to_string(&path).unwrap(), "{{x}}\n");
@@ -258,9 +285,16 @@ fn fmt08_t10_output_file_multiple_inputs_is_error() {
         .output()
         .expect("run format");
 
-    assert_eq!(out.status.code().unwrap(), 2, "exit 2 for --output FILE with multiple inputs");
+    assert_eq!(
+        out.status.code().unwrap(),
+        2,
+        "exit 2 for --output FILE with multiple inputs"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("--output FILE requires a single input file"), "{stderr}");
+    assert!(
+        stderr.contains("--output FILE requires a single input file"),
+        "{stderr}"
+    );
 }
 
 // ─── jinja-lsp-w86m: ../-escape guard must also apply to directory arguments ──
@@ -286,7 +320,11 @@ fn jinja_lsp_w86m_directory_arg_escaping_templates_root_is_skipped() {
         .status()
         .expect("run format");
 
-    assert_eq!(status.code().unwrap(), 0, "no files should be found/changed once the escaping dir is skipped");
+    assert_eq!(
+        status.code().unwrap(),
+        0,
+        "no files should be found/changed once the escaping dir is skipped"
+    );
     assert_eq!(
         fs::read_to_string(&outside_file).unwrap(),
         "{{x}}\n",

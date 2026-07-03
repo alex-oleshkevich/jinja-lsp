@@ -11,7 +11,9 @@ fn manifest() -> toml::Value {
 #[test]
 fn zed_manifest_declares_jinja_grammar() {
     let m = manifest();
-    let grammars = m.get("grammars").expect("extension.toml must have [grammars]");
+    let grammars = m
+        .get("grammars")
+        .expect("extension.toml must have [grammars]");
     assert!(
         grammars.get("jinja").is_some(),
         "extension.toml must declare the jinja grammar"
@@ -27,10 +29,16 @@ fn zed_manifest_declares_jinja_grammar() {
 #[test]
 fn zed_manifest_declares_language_server() {
     let m = manifest();
-    let servers = m.get("language_servers").expect("extension.toml must have [language_servers]");
+    let servers = m
+        .get("language_servers")
+        .expect("extension.toml must have [language_servers]");
     // REQ-EDIT-07/08: language-server id is jinja2-lsp, language is Jinja2 (HTML).
-    let server = servers.get("jinja2-lsp").expect("must declare jinja2-lsp server");
-    let langs = server["languages"].as_array().expect("languages must be array");
+    let server = servers
+        .get("jinja2-lsp")
+        .expect("must declare jinja2-lsp server");
+    let langs = server["languages"]
+        .as_array()
+        .expect("languages must be array");
     let lang_names: Vec<&str> = langs.iter().filter_map(|v| v.as_str()).collect();
     assert!(
         lang_names.contains(&"Jinja2 (HTML)"),
@@ -73,7 +81,8 @@ fn zed_grammar_pinned_to_sha_not_head() {
 #[test]
 fn zed_language_config_exists_with_correct_name() {
     let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
-    let cfg: toml::Value = toml::from_str(cfg_raw).expect("languages/jinja2/config.toml must be valid TOML");
+    let cfg: toml::Value =
+        toml::from_str(cfg_raw).expect("languages/jinja2/config.toml must be valid TOML");
     let name = cfg["name"].as_str().unwrap_or("");
     assert_eq!(
         name, "Jinja2 (HTML)",
@@ -103,8 +112,15 @@ fn zed_language_config_uses_block_comment_not_line_comments() {
     let block_comment = cfg["block_comment"]
         .as_array()
         .expect("block_comment must be set as a [start, end] pair");
-    let pair: Vec<&str> = block_comment.iter().map(|v| v.as_str().unwrap_or("")).collect();
-    assert_eq!(pair, vec!["{# ", " #}"], "block_comment must be [\"{{# \", \" #}}\"]");
+    let pair: Vec<&str> = block_comment
+        .iter()
+        .map(|v| v.as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        pair,
+        vec!["{# ", " #}"],
+        "block_comment must be [\"{{# \", \" #}}\"]"
+    );
 }
 
 // ─── T-14: REQ-EDIT-07 — language_server_command returns jinja-lsp lsp ───────
@@ -134,15 +150,19 @@ fn zed_manifest_legacy_ids_preserved() {
     // The language-server id jinja2-lsp and language Jinja2 (HTML) are the legacy
     // identifiers from the hand-created .zed/settings.json. They must remain stable
     // so existing Zed users' configuration keeps working (REQ-EDIT-07/08).
-    let servers = m["language_servers"].as_table().expect("language_servers table");
+    let servers = m["language_servers"]
+        .as_table()
+        .expect("language_servers table");
     assert!(
         servers.contains_key("jinja2-lsp"),
         "legacy jinja2-lsp id must be preserved"
     );
     let lang = servers["jinja2-lsp"]["languages"][0].as_str().unwrap_or("");
-    assert_eq!(lang, "Jinja2 (HTML)", "legacy language name Jinja2 (HTML) must be preserved");
+    assert_eq!(
+        lang, "Jinja2 (HTML)",
+        "legacy language name Jinja2 (HTML) must be preserved"
+    );
 }
-
 
 #[test]
 fn zed_no_nonexistent_api_calls() {

@@ -1,6 +1,6 @@
 // F12 — Folding range tests: REQ-FOLD2-01 through REQ-FOLD2-06.
 
-use jinja_lsp::features::folding::{fold_ranges, FoldKind};
+use jinja_lsp::features::folding::{FoldKind, fold_ranges};
 
 // ─── REQ-FOLD2-01: every block-statement node folds ──────────────────────────
 
@@ -8,7 +8,10 @@ use jinja_lsp::features::folding::{fold_ranges, FoldKind};
 fn fold01_block_folds_as_region() {
     let src = "{% block content %}\nbody\n{% endblock %}";
     let ranges = fold_ranges(src);
-    let r = ranges.iter().find(|r| r.kind == FoldKind::Region).expect("block must fold");
+    let r = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Region)
+        .expect("block must fold");
     assert_eq!(r.start_line, 0, "startLine is opener line (0-based)");
     assert_eq!(r.end_line, 2, "endLine is closer line (0-based)");
 }
@@ -18,7 +21,9 @@ fn fold01_for_folds_as_region() {
     let src = "{% for item in items %}\n{{ item }}\n{% endfor %}";
     let ranges = fold_ranges(src);
     assert!(
-        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
         "for loop must fold"
     );
 }
@@ -28,7 +33,9 @@ fn fold01_macro_folds_as_region() {
     let src = "{% macro greet(name) %}\nhello {{ name }}\n{% endmacro %}";
     let ranges = fold_ranges(src);
     assert!(
-        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
         "macro must fold"
     );
 }
@@ -45,7 +52,9 @@ fn fold01_if_folds_as_single_region_from_if_to_endif() {
     assert_eq!(r.end_line, 6, "region ends at endif (line 6)");
     // No per-branch sub-folds.
     assert!(
-        !ranges.iter().any(|r| r.start_line == 2 || r.start_line == 4),
+        !ranges
+            .iter()
+            .any(|r| r.start_line == 2 || r.start_line == 4),
         "elif/else must not produce separate sub-folds"
     );
 }
@@ -55,7 +64,9 @@ fn fold01_custom_tag_folds_via_endname_convention() {
     let src = "{% cache 'key' %}\ncontent\n{% endcache %}";
     let ranges = fold_ranges(src);
     assert!(
-        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
         "custom cache tag must fold via end<name> convention"
     );
 }
@@ -170,7 +181,9 @@ fn fold06_unclosed_block_yields_no_fold() {
     let src = "{% block content %}\nbody\n(no endblock)";
     let ranges = fold_ranges(src);
     assert!(
-        !ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0),
+        !ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0),
         "unclosed block must not fold"
     );
 }
@@ -193,8 +206,13 @@ fn fold06_unclosed_does_not_suppress_well_formed_pair() {
     let block_fold = ranges
         .iter()
         .find(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2);
-    let for_fold = ranges.iter().find(|r| r.kind == FoldKind::Region && r.start_line == 3);
-    assert!(block_fold.is_some(), "well-formed block/endblock pair must fold");
+    let for_fold = ranges
+        .iter()
+        .find(|r| r.kind == FoldKind::Region && r.start_line == 3);
+    assert!(
+        block_fold.is_some(),
+        "well-formed block/endblock pair must fold"
+    );
     assert!(for_fold.is_none(), "unclosed for must not fold");
 }
 
@@ -209,10 +227,13 @@ fn fold06_interleaved_for_if_endfor_produces_no_pair_fold() {
     let ranges = fold_ranges(src);
     // There must be no Region fold starting at line 0 (the "for" opener)
     // whose end line is 2 (the "endfor") — that would be the wrongly-emitted fold.
-    let for_fold = ranges.iter().any(|r| {
-        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
-    });
-    assert!(!for_fold, "interleaved for/if/endfor must not produce a for fold: {ranges:?}");
+    let for_fold = ranges
+        .iter()
+        .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2);
+    assert!(
+        !for_fold,
+        "interleaved for/if/endfor must not produce a for fold: {ranges:?}"
+    );
 }
 
 // ─── REQ-FOLD2-01 / v08w: {% raw %} body tags must not produce folds ─────────
@@ -224,9 +245,15 @@ fn fold01_raw_inner_multiline_tags_produce_no_nested_fold() {
     // Lines: 0=before, 1=raw, 2=for, 3=content, 4=endfor, 5=endraw, 6=after
     let src = "before\n{% raw %}\n{% for x in xs %}\n{{ x }}\n{% endfor %}\n{% endraw %}\nafter";
     let ranges = fold_ranges(src);
-    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
-    assert_eq!(regions.len(), 1,
-        "only raw pair must fold; inner for/endfor must not produce a nested fold: {regions:?}");
+    let regions: Vec<_> = ranges
+        .iter()
+        .filter(|r| r.kind == FoldKind::Region)
+        .collect();
+    assert_eq!(
+        regions.len(),
+        1,
+        "only raw pair must fold; inner for/endfor must not produce a nested fold: {regions:?}"
+    );
     assert_eq!(regions[0].start_line, 1, "raw fold starts on raw line");
     assert_eq!(regions[0].end_line, 5, "raw fold ends on endraw line");
 }
@@ -236,7 +263,10 @@ fn fold01_raw_folds_as_single_region_multiline() {
     // Multiline raw block folds from opener to closer.
     let src = "{% raw %}\nsome content\n{% endraw %}";
     let ranges = fold_ranges(src);
-    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    let regions: Vec<_> = ranges
+        .iter()
+        .filter(|r| r.kind == FoldKind::Region)
+        .collect();
     assert_eq!(regions.len(), 1, "raw block must fold: {regions:?}");
     assert_eq!(regions[0].start_line, 0);
     assert_eq!(regions[0].end_line, 2);
@@ -251,10 +281,20 @@ fn vsf6_for_else_folds_as_single_region() {
     // Lines: 0=for, 1=body, 2=else, 3=default, 4=endfor
     let src = "{% for x in xs %}\n{{ x }}\n{% else %}\ndefault\n{% endfor %}";
     let ranges = fold_ranges(src);
-    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
-    assert_eq!(regions.len(), 1, "for/else/endfor must produce exactly one region: {regions:?}");
+    let regions: Vec<_> = ranges
+        .iter()
+        .filter(|r| r.kind == FoldKind::Region)
+        .collect();
+    assert_eq!(
+        regions.len(),
+        1,
+        "for/else/endfor must produce exactly one region: {regions:?}"
+    );
     assert_eq!(regions[0].start_line, 0);
-    assert_eq!(regions[0].end_line, 4, "region must span for (0) to endfor (4)");
+    assert_eq!(
+        regions[0].end_line, 4,
+        "region must span for (0) to endfor (4)"
+    );
 }
 
 #[test]
@@ -264,7 +304,9 @@ fn vsf6_whitespace_control_tags_fold_same_as_regular() {
     let src = "{%- for x in xs -%}\n{{ x }}\n{%- endfor -%}";
     let ranges = fold_ranges(src);
     assert!(
-        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
         "whitespace-control for must fold same as regular: {ranges:?}"
     );
 }
@@ -276,7 +318,9 @@ fn vsf6_call_block_folds_as_region() {
     let src = "{% call(x) render_dialog() %}\ncontent\n{% endcall %}";
     let ranges = fold_ranges(src);
     assert!(
-        ranges.iter().any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
+        ranges
+            .iter()
+            .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2),
         "call block must fold as region: {ranges:?}"
     );
 }
@@ -289,12 +333,22 @@ fn vsf6_multiline_macro_opener_emits_both_tag_fold_and_pair_fold() {
     // Lines: 0..2 = multi-line macro opener, 3=body, 4=endmacro
     let src = "{% macro render(\n  post\n) %}\nbody\n{% endmacro %}";
     let ranges = fold_ranges(src);
-    let regions: Vec<_> = ranges.iter().filter(|r| r.kind == FoldKind::Region).collect();
+    let regions: Vec<_> = ranges
+        .iter()
+        .filter(|r| r.kind == FoldKind::Region)
+        .collect();
     let tag_fold = regions.iter().any(|r| r.start_line == 0 && r.end_line == 2);
     let pair_fold = regions.iter().any(|r| r.start_line == 0 && r.end_line == 4);
-    assert!(tag_fold, "opener tag fold (0..2) must be emitted: {regions:?}");
+    assert!(
+        tag_fold,
+        "opener tag fold (0..2) must be emitted: {regions:?}"
+    );
     assert!(pair_fold, "pair fold (0..4) must be emitted: {regions:?}");
-    assert_eq!(regions.len(), 2, "exactly two region folds (tag + pair): {regions:?}");
+    assert_eq!(
+        regions.len(),
+        2,
+        "exactly two region folds (tag + pair): {regions:?}"
+    );
 }
 
 // ─── REQ-FOLD2-03: multi-line block openers also get a tag fold ──────────────
@@ -307,10 +361,13 @@ fn fold03_multiline_macro_opener_emits_tag_fold() {
     let src = "{% macro render(\n  post\n) %}\nbody\n{% endmacro %}";
     let ranges = fold_ranges(src);
     // There must be a Region fold just for the opener tag: lines 0..2 (or 0..1 etc.)
-    let opener_tag_fold = ranges.iter().any(|r| {
-        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
-    });
-    assert!(opener_tag_fold, "multi-line macro opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}");
+    let opener_tag_fold = ranges
+        .iter()
+        .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2);
+    assert!(
+        opener_tag_fold,
+        "multi-line macro opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}"
+    );
 }
 
 #[test]
@@ -318,8 +375,11 @@ fn fold03_multiline_block_opener_emits_tag_fold() {
     // Same for `{% block %}` — multi-line opener must fold the tag itself.
     let src = "{% block\n  content\n%}\nbody\n{% endblock %}";
     let ranges = fold_ranges(src);
-    let opener_tag_fold = ranges.iter().any(|r| {
-        r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2
-    });
-    assert!(opener_tag_fold, "multi-line block opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}");
+    let opener_tag_fold = ranges
+        .iter()
+        .any(|r| r.kind == FoldKind::Region && r.start_line == 0 && r.end_line == 2);
+    assert!(
+        opener_tag_fold,
+        "multi-line block opener must emit a tag fold (REQ-FOLD2-03): {ranges:?}"
+    );
 }

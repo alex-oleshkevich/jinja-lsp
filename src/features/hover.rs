@@ -50,7 +50,11 @@ pub fn hover(
         let result = match r.kind {
             ReferenceKind::Filter => {
                 let name = super::resolve_filter_alias(&r.name);
-                let alias_note = if name != r.name.as_str() { Some(r.name.as_str()) } else { None };
+                let alias_note = if name != r.name.as_str() {
+                    Some(r.name.as_str())
+                } else {
+                    None
+                };
                 registry
                     .get(Category::Filter, name)
                     .map(|e| format_registry_card_with_span(e, alias_note, &r.span))
@@ -75,7 +79,11 @@ pub fn hover(
             }
             ReferenceKind::Test => {
                 let name = resolve_test_alias(&r.name);
-                let alias_note = if name != r.name.as_str() { Some(r.name.as_str()) } else { None };
+                let alias_note = if name != r.name.as_str() {
+                    Some(r.name.as_str())
+                } else {
+                    None
+                };
                 registry
                     .get(Category::Test, name)
                     .map(|e| format_registry_card_with_span(e, alias_note, &r.span))
@@ -119,13 +127,7 @@ pub fn hover(
                 format!("→ `{}`{}", tr.path, note)
             };
             let result = HoverResult {
-                markdown: compose_card(
-                    &tr.path,
-                    "template path",
-                    None,
-                    Some(&body),
-                    None,
-                ),
+                markdown: compose_card(&tr.path, "template path", None, Some(&body), None),
                 start_line: tr.span.start_line,
                 start_col: tr.span.start_col,
                 end_line: tr.span.end_line,
@@ -140,13 +142,19 @@ pub fn hover(
     // REQ-HOV-08: suppress hover inside {% raw %} bodies, plain string literals,
     // and outside Jinja delimiters entirely (e.g. plain HTML text that happens to
     // match a keyword, macro name, or imported name/alias).
-    if is_in_raw_body(source, byte) || is_in_string_literal(source, byte) || !super::inside_jinja(source, byte) {
+    if is_in_raw_body(source, byte)
+        || is_in_string_literal(source, byte)
+        || !super::inside_jinja(source, byte)
+    {
         return None;
     }
     if let Some((word, wb_start, wb_end)) = word_at_byte_range(source, byte) {
         // REQ-HOV-12: special objects not captured as references (e.g. loop as
         // an attribute parent) — look them up in the variable registry.
-        if matches!(word, "loop" | "self" | "super" | "caller" | "varargs" | "kwargs") {
+        if matches!(
+            word,
+            "loop" | "self" | "super" | "caller" | "varargs" | "kwargs"
+        ) {
             let span = byte_range_to_span(source, wb_start, wb_end);
             let entry = registry
                 .get(Category::Variable, word)
@@ -166,7 +174,9 @@ pub fn hover(
         if let Some(m) = index.macros.iter().find(|m| m.name == word) {
             return Some(format_macro_card(m));
         }
-        if let Some(m) = workspace.templates.values()
+        if let Some(m) = workspace
+            .templates
+            .values()
             .flat_map(|ti| &ti.macros)
             .find(|m| m.name == word)
         {
@@ -220,7 +230,8 @@ pub fn hover(
         // REQ-HOV-11: keyword-argument names — word immediately followed by `=`.
         if is_keyword_arg_name(source, wb_end) {
             let span = byte_range_to_span(source, wb_start, wb_end);
-            if let Some(result) = hover_keyword_arg(word, &span, source, wb_start, index, registry) {
+            if let Some(result) = hover_keyword_arg(word, &span, source, wb_start, index, registry)
+            {
                 return Some(result);
             }
         }
@@ -295,7 +306,11 @@ fn hover_attribute(
     Some(format_attr_card(attr_doc, span))
 }
 
-fn format_registry_card_with_span(entry: &DocEntry, alias_of: Option<&str>, span: &Span) -> HoverResult {
+fn format_registry_card_with_span(
+    entry: &DocEntry,
+    alias_of: Option<&str>,
+    span: &Span,
+) -> HoverResult {
     let kind_label = match entry.category {
         Category::Filter => "filter",
         Category::Function => "function",
@@ -304,9 +319,18 @@ fn format_registry_card_with_span(entry: &DocEntry, alias_of: Option<&str>, span
         Category::ContextVariable => "context variable",
     };
 
-    let alias_suffix = alias_of.map(|a| format!(" *(alias of `{a}`)*")).unwrap_or_default();
-    let since_suffix = entry.since.as_deref().map(|s| format!(" · since {s}")).unwrap_or_default();
-    let heading = format!("**{}** — {}{}{alias_suffix}", entry.name, kind_label, since_suffix);
+    let alias_suffix = alias_of
+        .map(|a| format!(" *(alias of `{a}`)*"))
+        .unwrap_or_default();
+    let since_suffix = entry
+        .since
+        .as_deref()
+        .map(|s| format!(" · since {s}"))
+        .unwrap_or_default();
+    let heading = format!(
+        "**{}** — {}{}{alias_suffix}",
+        entry.name, kind_label, since_suffix
+    );
 
     let mut parts = vec![heading];
     if let Some(sig) = &entry.signature {
@@ -326,10 +350,18 @@ fn format_registry_card_with_span(entry: &DocEntry, alias_of: Option<&str>, span
 }
 
 /// REQ-HOV-09: block inheritance card (modifiers, parent override, overriding children).
-fn format_block_card(b: &BlockDefinition, index: &TemplateIndex, workspace: &WorkspaceIndex) -> HoverResult {
+fn format_block_card(
+    b: &BlockDefinition,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+) -> HoverResult {
     let mut modifiers = Vec::new();
-    if b.scoped { modifiers.push("scoped"); }
-    if b.required { modifiers.push("required"); }
+    if b.scoped {
+        modifiers.push("scoped");
+    }
+    if b.required {
+        modifiers.push("required");
+    }
 
     let heading = if modifiers.is_empty() {
         format!("**{}** — block", b.name)
@@ -341,7 +373,12 @@ fn format_block_card(b: &BlockDefinition, index: &TemplateIndex, workspace: &Wor
 
     // Parent block (what this block overrides).
     if let Some((parent_path, parent_line)) = find_parent_block(&b.name, index, workspace) {
-        parts.push(format!("Overrides `{}` block in `{}` (line {})", b.name, parent_path, parent_line + 1));
+        parts.push(format!(
+            "Overrides `{}` block in `{}` (line {})",
+            b.name,
+            parent_path,
+            parent_line + 1
+        ));
     }
 
     // Child templates that override this block.
@@ -514,20 +551,22 @@ fn scope_note_for_special(word: &str, byte: usize, index: &TemplateIndex) -> Opt
             && v.valid_range.start_byte <= byte
             && byte <= v.valid_range.end_byte
     });
-    let in_block = index.blocks.iter().any(|b| {
-        b.body.start_byte <= byte && byte <= b.body.end_byte
-    });
-    let in_macro = index.macros.iter().any(|m| {
-        m.body.start_byte <= byte && byte <= m.body.end_byte
-    });
+    let in_block = index
+        .blocks
+        .iter()
+        .any(|b| b.body.start_byte <= byte && byte <= b.body.end_byte);
+    let in_macro = index
+        .macros
+        .iter()
+        .any(|m| m.body.start_byte <= byte && byte <= m.body.end_byte);
     match word {
         "loop" if !in_for => Some("⚠ `loop` is only valid inside a `{% for %}` block.".to_owned()),
         "self" | "super" if !in_block => {
             Some(format!("⚠ `{word}` is only valid inside a block body."))
         }
-        "caller" | "varargs" | "kwargs" if !in_macro => {
-            Some(format!("⚠ `{word}` is only valid inside a macro or call block."))
-        }
+        "caller" | "varargs" | "kwargs" if !in_macro => Some(format!(
+            "⚠ `{word}` is only valid inside a macro or call block."
+        )),
         _ => None,
     }
 }
@@ -629,7 +668,8 @@ fn is_in_string_literal(source: &str, byte: usize) -> bool {
     // Walk from the nearest Jinja delimiter open to the cursor, tracking quote state.
     let byte = super::clamp_to_char_boundary(source, byte);
     let before = &source[..byte];
-    let delim_start = before.rfind("{{")
+    let delim_start = before
+        .rfind("{{")
         .or_else(|| before.rfind("{%"))
         .unwrap_or(0);
     let slice = &source[delim_start..byte];
@@ -638,7 +678,7 @@ fn is_in_string_literal(source: &str, byte: usize) -> bool {
     for ch in slice.chars() {
         match ch {
             '\'' if !in_double => in_single = !in_single,
-            '"'  if !in_single => in_double = !in_double,
+            '"' if !in_single => in_double = !in_double,
             _ => {}
         }
     }
@@ -708,7 +748,10 @@ fn hover_keyword_arg(
         .collect();
     for entry in candidates {
         if let Some(p) = entry.params.iter().find(|p| p.name == param_name) {
-            let ty_note = p.ty.as_deref().map(|t| format!(" : `{t}`")).unwrap_or_default();
+            let ty_note =
+                p.ty.as_deref()
+                    .map(|t| format!(" : `{t}`"))
+                    .unwrap_or_default();
             let default_note = p
                 .default
                 .as_deref()
@@ -727,36 +770,99 @@ fn hover_keyword_arg(
 
 /// Embedded tag-doc set for statement keywords (REQ-HOV-13).
 static TAG_DOCS: &[(&str, &str)] = &[
-    ("for",        "Iterates over each item in a sequence. Use `loop.index`, `loop.first`, `loop.last` to inspect the iteration state. Supports `else` for empty sequences.\n\nExample: `{% for item in items %}{{ item }}{% endfor %}`"),
-    ("endfor",     "Closes a `{% for %}` block."),
-    ("if",         "Renders its body only when the condition is truthy. Chain with `{% elif %}` / `{% else %}` for alternatives.\n\nExample: `{% if user.active %}…{% endif %}`"),
-    ("elif",       "Alternative branch in a `{% if %}` chain. Evaluated only when all prior conditions were falsy."),
-    ("else",       "Fallback branch for `{% if %}` and `{% for %}` (rendered when the iterable is empty)."),
-    ("endif",      "Closes an `{% if %}` block."),
-    ("block",      "Defines a named section that child templates can override via `{% extends %}`. Supports `scoped` and `required` modifiers.\n\nExample: `{% block content %}default{% endblock %}`"),
-    ("endblock",   "Closes a `{% block %}` definition."),
-    ("macro",      "Defines a reusable template function with positional and keyword parameters.\n\nExample: `{% macro render_post(title, body='') %}…{% endmacro %}`"),
-    ("endmacro",   "Closes a `{% macro %}` definition."),
-    ("set",        "Assigns a value to a variable. Use `{% set x %}…{% endset %}` (block form) to capture a rendered string.\n\nExample: `{% set url = 'https://example.com' %}`"),
-    ("endset",     "Closes a block-form `{% set %}`."),
-    ("with",       "Opens a new scope where additional variables can be defined. Variables set inside `{% with %}` are scoped to its body.\n\nExample: `{% with total = price * qty %}{{ total }}{% endwith %}`"),
-    ("endwith",    "Closes a `{% with %}` scope."),
-    ("extends",    "Makes this template inherit from a parent layout. Must be the first tag in the file.\n\nExample: `{% extends 'base.html' %}`"),
-    ("include",    "Renders another template inline, sharing the current context.\n\nExample: `{% include 'partials/nav.html' %}`"),
-    ("import",     "Imports macros from another template into a namespace.\n\nExample: `{% import 'macros.html' as macros %}`"),
-    ("from",       "Imports specific macros from another template.\n\nExample: `{% from 'macros.html' import render_post, render_comment %}`"),
-    ("call",       "Invokes a macro while passing a caller block as `caller()`.\n\nExample: `{% call(p) render_dialog(p) %}content{% endcall %}`"),
-    ("endcall",    "Closes a `{% call %}` block."),
-    ("filter",     "Applies a filter to the enclosed content.\n\nExample: `{% filter upper %}hello{% endfilter %}`"),
-    ("endfilter",  "Closes a `{% filter %}` block."),
-    ("raw",        "Outputs its content verbatim — Jinja delimiters inside are not processed.\n\nExample: `{% raw %}{{ not_a_variable }}{% endraw %}`"),
-    ("endraw",     "Closes a `{% raw %}` block."),
-    ("autoescape", "Enables or disables HTML auto-escaping for the enclosed block.\n\nExample: `{% autoescape true %}{{ html }}{% endautoescape %}`"),
+    (
+        "for",
+        "Iterates over each item in a sequence. Use `loop.index`, `loop.first`, `loop.last` to inspect the iteration state. Supports `else` for empty sequences.\n\nExample: `{% for item in items %}{{ item }}{% endfor %}`",
+    ),
+    ("endfor", "Closes a `{% for %}` block."),
+    (
+        "if",
+        "Renders its body only when the condition is truthy. Chain with `{% elif %}` / `{% else %}` for alternatives.\n\nExample: `{% if user.active %}…{% endif %}`",
+    ),
+    (
+        "elif",
+        "Alternative branch in a `{% if %}` chain. Evaluated only when all prior conditions were falsy.",
+    ),
+    (
+        "else",
+        "Fallback branch for `{% if %}` and `{% for %}` (rendered when the iterable is empty).",
+    ),
+    ("endif", "Closes an `{% if %}` block."),
+    (
+        "block",
+        "Defines a named section that child templates can override via `{% extends %}`. Supports `scoped` and `required` modifiers.\n\nExample: `{% block content %}default{% endblock %}`",
+    ),
+    ("endblock", "Closes a `{% block %}` definition."),
+    (
+        "macro",
+        "Defines a reusable template function with positional and keyword parameters.\n\nExample: `{% macro render_post(title, body='') %}…{% endmacro %}`",
+    ),
+    ("endmacro", "Closes a `{% macro %}` definition."),
+    (
+        "set",
+        "Assigns a value to a variable. Use `{% set x %}…{% endset %}` (block form) to capture a rendered string.\n\nExample: `{% set url = 'https://example.com' %}`",
+    ),
+    ("endset", "Closes a block-form `{% set %}`."),
+    (
+        "with",
+        "Opens a new scope where additional variables can be defined. Variables set inside `{% with %}` are scoped to its body.\n\nExample: `{% with total = price * qty %}{{ total }}{% endwith %}`",
+    ),
+    ("endwith", "Closes a `{% with %}` scope."),
+    (
+        "extends",
+        "Makes this template inherit from a parent layout. Must be the first tag in the file.\n\nExample: `{% extends 'base.html' %}`",
+    ),
+    (
+        "include",
+        "Renders another template inline, sharing the current context.\n\nExample: `{% include 'partials/nav.html' %}`",
+    ),
+    (
+        "import",
+        "Imports macros from another template into a namespace.\n\nExample: `{% import 'macros.html' as macros %}`",
+    ),
+    (
+        "from",
+        "Imports specific macros from another template.\n\nExample: `{% from 'macros.html' import render_post, render_comment %}`",
+    ),
+    (
+        "call",
+        "Invokes a macro while passing a caller block as `caller()`.\n\nExample: `{% call(p) render_dialog(p) %}content{% endcall %}`",
+    ),
+    ("endcall", "Closes a `{% call %}` block."),
+    (
+        "filter",
+        "Applies a filter to the enclosed content.\n\nExample: `{% filter upper %}hello{% endfilter %}`",
+    ),
+    ("endfilter", "Closes a `{% filter %}` block."),
+    (
+        "raw",
+        "Outputs its content verbatim — Jinja delimiters inside are not processed.\n\nExample: `{% raw %}{{ not_a_variable }}{% endraw %}`",
+    ),
+    ("endraw", "Closes a `{% raw %}` block."),
+    (
+        "autoescape",
+        "Enables or disables HTML auto-escaping for the enclosed block.\n\nExample: `{% autoescape true %}{{ html }}{% endautoescape %}`",
+    ),
     ("endautoescape", "Closes an `{% autoescape %}` block."),
-    ("do",         "Executes an expression for its side effects without rendering output.\n\nExample: `{% do list.append(item) %}`"),
-    ("trans",      "Marks a string for translation (i18n).\n\nExample: `{% trans %}Hello, world!{% endtrans %}`"),
-    ("endtrans",   "Closes a `{% trans %}` block."),
-    ("pluralize",  "Inside `{% trans %}`, selects singular/plural form based on a count."),
-    ("continue",   "Skips the rest of the current loop iteration (Jinja2 extension)."),
-    ("break",      "Exits the current loop immediately (Jinja2 extension)."),
+    (
+        "do",
+        "Executes an expression for its side effects without rendering output.\n\nExample: `{% do list.append(item) %}`",
+    ),
+    (
+        "trans",
+        "Marks a string for translation (i18n).\n\nExample: `{% trans %}Hello, world!{% endtrans %}`",
+    ),
+    ("endtrans", "Closes a `{% trans %}` block."),
+    (
+        "pluralize",
+        "Inside `{% trans %}`, selects singular/plural form based on a count.",
+    ),
+    (
+        "continue",
+        "Skips the rest of the current loop iteration (Jinja2 extension).",
+    ),
+    (
+        "break",
+        "Exits the current loop immediately (Jinja2 extension).",
+    ),
 ];

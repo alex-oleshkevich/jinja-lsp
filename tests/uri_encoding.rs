@@ -3,7 +3,7 @@
 // string formatting — otherwise paths with spaces, '#', '?', or non-ASCII
 // characters silently desync from the real filesystem path.
 
-use jinja_lsp::server::{path_to_uri, Backend};
+use jinja_lsp::server::{Backend, path_to_uri};
 use tower_lsp::lsp_types::Url;
 
 #[test]

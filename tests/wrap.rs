@@ -1,6 +1,6 @@
 // REQ-ACT-08: Wrap selection in block, if, or for.
 
-use jinja_lsp::features::wrap::{selection_is_well_formed, wrap_selection, WrapKind};
+use jinja_lsp::features::wrap::{WrapKind, selection_is_well_formed, wrap_selection};
 
 fn single_edit(source: &str, start: u32, end: u32, kind: WrapKind) -> jinja_lsp::edit::TextEdit {
     let we = wrap_selection(source, "/tpl.html", start, end, kind)
@@ -15,9 +15,15 @@ fn single_edit(source: &str, start: u32, end: u32, kind: WrapKind) -> jinja_lsp:
 #[test]
 fn act08_t01_wrap_in_if() {
     let e = single_edit("<p>hello</p>", 0, 0, WrapKind::If);
-    assert!(e.new_text.contains("{% if condition %}"), "missing open tag");
+    assert!(
+        e.new_text.contains("{% if condition %}"),
+        "missing open tag"
+    );
     assert!(e.new_text.contains("{% endif %}"), "missing close tag");
-    assert!(e.new_text.contains("  <p>hello</p>"), "body must be indented one level");
+    assert!(
+        e.new_text.contains("  <p>hello</p>"),
+        "body must be indented one level"
+    );
 }
 
 // ─── T-02: wrap selection in for ─────────────────────────────────────────────
@@ -25,19 +31,39 @@ fn act08_t01_wrap_in_if() {
 #[test]
 fn act08_t02_wrap_in_for() {
     let e = single_edit("<li>{{ item }}</li>", 0, 0, WrapKind::For);
-    assert!(e.new_text.contains("{% for item in items %}"), "missing open tag");
+    assert!(
+        e.new_text.contains("{% for item in items %}"),
+        "missing open tag"
+    );
     assert!(e.new_text.contains("{% endfor %}"), "missing close tag");
-    assert!(e.new_text.contains("  <li>{{ item }}</li>"), "body must be indented one level");
+    assert!(
+        e.new_text.contains("  <li>{{ item }}</li>"),
+        "body must be indented one level"
+    );
 }
 
 // ─── T-03: wrap selection in block ───────────────────────────────────────────
 
 #[test]
 fn act08_t03_wrap_in_block_with_placeholder() {
-    let e = single_edit("<main>content</main>", 0, 0, WrapKind::Block("main_block".to_owned()));
-    assert!(e.new_text.contains("{% block main_block %}"), "missing block open tag");
-    assert!(e.new_text.contains("{% endblock %}"), "missing endblock tag");
-    assert!(e.new_text.contains("  <main>content</main>"), "body must be indented one level");
+    let e = single_edit(
+        "<main>content</main>",
+        0,
+        0,
+        WrapKind::Block("main_block".to_owned()),
+    );
+    assert!(
+        e.new_text.contains("{% block main_block %}"),
+        "missing block open tag"
+    );
+    assert!(
+        e.new_text.contains("{% endblock %}"),
+        "missing endblock tag"
+    );
+    assert!(
+        e.new_text.contains("  <main>content</main>"),
+        "body must be indented one level"
+    );
 }
 
 // ─── T-04: multi-line selection re-indents all body lines ────────────────────
@@ -66,7 +92,11 @@ fn act08_t05_middle_of_file_wrap() {
     assert_eq!(e.start_line, 1, "edit starts at line 1");
     assert_eq!(e.start_col, 0);
     assert_eq!(e.end_line, 2, "edit ends at line 2");
-    assert_eq!(e.end_col, "<p>two</p>".len() as u32, "edit ends at end-of-line col");
+    assert_eq!(
+        e.end_col,
+        "<p>two</p>".len() as u32,
+        "edit ends at end-of-line col"
+    );
     let expected = "{% if condition %}\n  <p>one</p>\n  <p>two</p>\n{% endif %}";
     assert_eq!(e.new_text, expected);
 }
@@ -78,7 +108,10 @@ fn act08_t21_body_re_indented_one_level() {
     // A body line already indented 2 spaces gets 2 more → 4 spaces total.
     let source = "  <p>nested</p>";
     let e = single_edit(source, 0, 0, WrapKind::If);
-    assert!(e.new_text.contains("    <p>nested</p>"), "pre-existing indent preserved + one level added");
+    assert!(
+        e.new_text.contains("    <p>nested</p>"),
+        "pre-existing indent preserved + one level added"
+    );
 }
 
 // ─── T-22: empty lines within the body are not padded ────────────────────────
@@ -101,7 +134,11 @@ fn well_formed_plain_text_ok() {
 
 #[test]
 fn well_formed_balanced_statement_ok() {
-    assert!(selection_is_well_formed("{% if x %}\nhello\n{% endif %}", 0, 2));
+    assert!(selection_is_well_formed(
+        "{% if x %}\nhello\n{% endif %}",
+        0,
+        2
+    ));
 }
 
 #[test]

@@ -54,13 +54,21 @@ pub fn document_highlight(
     }
 
     // Macro definition opening tag → Write at name, Read at every call site.
-    if let Some(m) = index.macros.iter().find(|m| m.name == word && super::byte_in_span(byte, &m.span)) {
+    if let Some(m) = index
+        .macros
+        .iter()
+        .find(|m| m.name == word && super::byte_in_span(byte, &m.span))
+    {
         let write = name_span_in_source(source, m.span.start_byte, &m.name);
         return with_write_and_reads(write, word, index);
     }
 
     // Block definition opening tag → Write at name.
-    if let Some(b) = index.blocks.iter().find(|b| b.name == word && super::byte_in_span(byte, &b.span)) {
+    if let Some(b) = index
+        .blocks
+        .iter()
+        .find(|b| b.name == word && super::byte_in_span(byte, &b.span))
+    {
         let write = name_span_in_source(source, b.span.start_byte, &b.name);
         return with_write_and_reads(write, word, index);
     }
@@ -109,13 +117,17 @@ pub fn document_highlight(
     // (`{% for x in a %}...{% for x in b %}`), the text scan always resolved to
     // the first loop's target regardless of which one the cursor is inside.
     if index.variables.iter().any(|v| v.name == word) {
-        let write = index.variables.iter()
+        let write = index
+            .variables
+            .iter()
             .filter(|v| {
-                v.name == word
-                    && v.valid_range.start_byte <= byte
-                    && byte <= v.valid_range.end_byte
+                v.name == word && v.valid_range.start_byte <= byte && byte <= v.valid_range.end_byte
             })
-            .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+            .min_by_key(|v| {
+                v.valid_range
+                    .end_byte
+                    .saturating_sub(v.valid_range.start_byte)
+            })
             .map(|v| v.span.clone());
         return match write {
             Some(w) => with_write_and_reads(w, word, index),
@@ -125,7 +137,10 @@ pub fn document_highlight(
 
     // Import alias (cursor on usage, e.g. `m.greet` where `m` is the alias)?
     if let Some(alias) = index.import_aliases.iter().find(|a| a.alias == word) {
-        let mut result = vec![DocumentHighlight { range: alias.span.clone(), kind: HighlightKind::Write }];
+        let mut result = vec![DocumentHighlight {
+            range: alias.span.clone(),
+            kind: HighlightKind::Write,
+        }];
         result.extend(reads_only(word, index));
         return result;
     }
@@ -149,7 +164,10 @@ pub fn document_highlight(
 fn with_write_and_reads(write: Span, name: &str, index: &TemplateIndex) -> Vec<DocumentHighlight> {
     let mut result = vec![];
     if write.start_byte < write.end_byte {
-        result.push(DocumentHighlight { range: write, kind: HighlightKind::Write });
+        result.push(DocumentHighlight {
+            range: write,
+            kind: HighlightKind::Write,
+        });
     }
     result.extend(reads_only(name, index));
     result
@@ -160,7 +178,10 @@ fn reads_only(name: &str, index: &TemplateIndex) -> Vec<DocumentHighlight> {
         .references
         .iter()
         .filter(|r| r.name == name && is_read_kind(r.kind))
-        .map(|r| DocumentHighlight { range: r.span.clone(), kind: HighlightKind::Read })
+        .map(|r| DocumentHighlight {
+            range: r.span.clone(),
+            kind: HighlightKind::Read,
+        })
         .collect()
 }
 
@@ -207,7 +228,14 @@ fn word_span_at(source: &str, byte: usize) -> Span {
 fn make_span(source: &str, start: usize, end: usize) -> Span {
     let (sl, sc) = super::byte_to_line_col(source, start);
     let (el, ec) = super::byte_to_line_col(source, end);
-    Span { start_byte: start, end_byte: end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
+    Span {
+        start_byte: start,
+        end_byte: end,
+        start_line: sl,
+        start_col: sc,
+        end_line: el,
+        end_col: ec,
+    }
 }
 
 fn inside_jinja(source: &str, byte: usize) -> bool {

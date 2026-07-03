@@ -198,7 +198,8 @@ impl ServerState {
     /// REQ-EXTR-08: Return the WorkspaceIndex for the folder that owns `key`.
     /// Uses longest-prefix match on folder roots. Falls back to the primary workspace.
     pub fn workspace_for<'a>(&'a self, key: &str) -> &'a WorkspaceIndex {
-        self.extra_folders.iter()
+        self.extra_folders
+            .iter()
             .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.workspace)
@@ -208,7 +209,10 @@ impl ServerState {
     /// REQ-EXTR-08: Mutable borrow of the extra FolderState that owns `key`, if any.
     /// Returns `None` if the file belongs to the primary folder.
     fn extra_folder_for_mut(&mut self, key: &str) -> Option<&mut FolderState> {
-        let idx = self.extra_folders.iter().enumerate()
+        let idx = self
+            .extra_folders
+            .iter()
+            .enumerate()
             .filter(|(_, f)| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|(i, _)| i)?;
@@ -227,7 +231,8 @@ impl ServerState {
 
     /// Folder/global registry without sidecar overlay — used to build sidecars.
     pub fn base_registry_for<'a>(&'a self, key: &str) -> &'a Registry {
-        self.extra_folders.iter()
+        self.extra_folders
+            .iter()
             .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.registry)
@@ -236,7 +241,8 @@ impl ServerState {
 
     /// REQ-EXTR-08: Return the JinjaConfig for the folder that owns `key`.
     pub fn config_for<'a>(&'a self, key: &str) -> &'a JinjaConfig {
-        self.extra_folders.iter()
+        self.extra_folders
+            .iter()
             .filter(|f| key_under_root(key, f.root.to_str().unwrap_or("")))
             .max_by_key(|f| f.root.to_str().map(|s| s.len()).unwrap_or(0))
             .map(|f| &f.config)
@@ -289,13 +295,21 @@ impl ServerState {
     }
 
     /// Index `source` at `key` into the given workspace, handling inline regions.
-    fn index_file_into(key: &str, source: &str, workspace: &mut WorkspaceIndex, config: &JinjaConfig) {
+    fn index_file_into(
+        key: &str,
+        source: &str,
+        workspace: &mut WorkspaceIndex,
+        config: &JinjaConfig,
+    ) {
         let mut idx = extract(source);
         idx.path = key.to_owned();
         // relative_path is a property of the file's location, not its content — carry it
         // over from the previous entry so re-indexing on every edit doesn't lose the
         // templates-root-relative path computed at discovery time (jinja-lsp-chw9).
-        idx.relative_path = workspace.templates.get(key).and_then(|old| old.relative_path.clone());
+        idx.relative_path = workspace
+            .templates
+            .get(key)
+            .and_then(|old| old.relative_path.clone());
         workspace.templates.insert(key.to_owned(), idx);
 
         // jinja-lsp-bv6m: evict this file's previous inline entries (from both
@@ -312,13 +326,16 @@ impl ServerState {
                 let inline_key = format!("{key}::{}", region.host_offset);
                 workspace.index_inline_for_host(key, &inline_key, &region.content);
                 // REQ-INLN-03: store host-coordinate metadata for position translation.
-                workspace.register_inline_range(&inline_key, InlineRange {
-                    host_path: key.to_owned(),
-                    host_offset: region.host_offset,
-                    host_line: region.host_line,
-                    host_col: region.host_col,
-                    content_len: region.content.len(),
-                });
+                workspace.register_inline_range(
+                    &inline_key,
+                    InlineRange {
+                        host_path: key.to_owned(),
+                        host_offset: region.host_offset,
+                        host_line: region.host_line,
+                        host_col: region.host_col,
+                        content_len: region.content.len(),
+                    },
+                );
             }
         }
     }

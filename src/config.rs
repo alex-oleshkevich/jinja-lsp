@@ -60,28 +60,29 @@ impl JinjaConfig {
 
     /// Load config from an explicit file path (must be a jinja.toml file).
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
-        let raw = fs::read_to_string(path)
-            .map_err(|e| ConfigError::Io(e.to_string()))?;
+        let raw = fs::read_to_string(path).map_err(|e| ConfigError::Io(e.to_string()))?;
         Self::from_jinja_toml(&raw)
     }
 
     /// Like `discover`, but also returns the path of the config file that was found.
     /// Returns `(config, Some(path))` when a file was found, or `(defaults, None)`.
-    pub fn discover_with_path(root: &Path) -> Result<(Self, Option<std::path::PathBuf>), ConfigError> {
+    pub fn discover_with_path(
+        root: &Path,
+    ) -> Result<(Self, Option<std::path::PathBuf>), ConfigError> {
         let mut dir = root.to_owned();
         loop {
             // 1. jinja.toml
             let jinja_toml = dir.join("jinja.toml");
             if jinja_toml.is_file() {
-                let raw = fs::read_to_string(&jinja_toml)
-                    .map_err(|e| ConfigError::Io(e.to_string()))?;
+                let raw =
+                    fs::read_to_string(&jinja_toml).map_err(|e| ConfigError::Io(e.to_string()))?;
                 return Ok((Self::from_jinja_toml(&raw)?, Some(jinja_toml)));
             }
             // 2. pyproject.toml with [tool.jinja]
             let pyproject = dir.join("pyproject.toml");
             if pyproject.is_file() {
-                let raw = fs::read_to_string(&pyproject)
-                    .map_err(|e| ConfigError::Io(e.to_string()))?;
+                let raw =
+                    fs::read_to_string(&pyproject).map_err(|e| ConfigError::Io(e.to_string()))?;
                 if let Some(cfg) = Self::from_pyproject(&raw)? {
                     return Ok((cfg, Some(pyproject)));
                 }
@@ -96,22 +97,21 @@ impl JinjaConfig {
     }
 
     fn from_jinja_toml(raw: &str) -> Result<Self, ConfigError> {
-        let table: TomlConfig = toml::from_str(raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let table: TomlConfig =
+            toml::from_str(raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
         Ok(table.into_config())
     }
 
     fn from_pyproject(raw: &str) -> Result<Option<Self>, ConfigError> {
         let doc: toml::Value =
             toml::from_str(raw).map_err(|e| ConfigError::Parse(e.to_string()))?;
-        let table = doc
-            .get("tool")
-            .and_then(|t| t.get("jinja"))
-            .cloned();
+        let table = doc.get("tool").and_then(|t| t.get("jinja")).cloned();
         match table {
             None => Ok(None),
             Some(v) => {
-                let tc: TomlConfig =
-                    v.try_into().map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
+                let tc: TomlConfig = v
+                    .try_into()
+                    .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
                 Ok(Some(tc.into_config()))
             }
         }
@@ -142,7 +142,11 @@ impl JinjaConfig {
         let doc: toml::Value = toml::from_str(&raw).ok()?;
         doc.get("project")
             .and_then(|p| p.get("name"))
-            .or_else(|| doc.get("tool").and_then(|t| t.get("poetry")).and_then(|p| p.get("name")))
+            .or_else(|| {
+                doc.get("tool")
+                    .and_then(|t| t.get("poetry"))
+                    .and_then(|p| p.get("name"))
+            })
             .and_then(|v| v.as_str())
             .map(|s| s.to_owned())
     }
@@ -194,15 +198,31 @@ impl JinjaConfig {
 
     /// REQ-CFG-11: apply editor-supplied overlay on top of this config (per-key).
     pub fn apply_overlay(&mut self, overlay: ConfigOverlay) {
-        if let Some(v) = overlay.extensions { self.extensions = v; }
-        if let Some(v) = overlay.extras { self.extras = v; }
-        if let Some(v) = overlay.custom_builtins { self.custom_builtins = v; }
-        if let Some(v) = overlay.hints { self.hints = v; }
-        if let Some(v) = overlay.inline_patterns { self.inline_patterns = v; }
-        if let Some(v) = overlay.templates { self.templates_raw = v; }
+        if let Some(v) = overlay.extensions {
+            self.extensions = v;
+        }
+        if let Some(v) = overlay.extras {
+            self.extras = v;
+        }
+        if let Some(v) = overlay.custom_builtins {
+            self.custom_builtins = v;
+        }
+        if let Some(v) = overlay.hints {
+            self.hints = v;
+        }
+        if let Some(v) = overlay.inline_patterns {
+            self.inline_patterns = v;
+        }
+        if let Some(v) = overlay.templates {
+            self.templates_raw = v;
+        }
         if let Some(lint) = overlay.lint {
-            if let Some(s) = lint.select { self.lint.select = s; }
-            if let Some(i) = lint.ignore { self.lint.ignore = i; }
+            if let Some(s) = lint.select {
+                self.lint.select = s;
+            }
+            if let Some(i) = lint.ignore {
+                self.lint.ignore = i;
+            }
         }
     }
 }

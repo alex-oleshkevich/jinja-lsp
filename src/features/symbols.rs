@@ -114,7 +114,13 @@ fn collect_flat(source: &str, index: &TemplateIndex) -> Vec<FlatNode> {
 
     // Blocks → Class (REQ-SYM-01).
     for b in &index.blocks {
-        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Block, &b.name, b.span.start_byte) {
+        if let Some(full) = full_tag_span(
+            &tags,
+            &full_extents,
+            TagKind::Block,
+            &b.name,
+            b.span.start_byte,
+        ) {
             let (start, end) = full;
             flat.push(FlatNode {
                 start_byte: start,
@@ -147,7 +153,13 @@ fn collect_flat(source: &str, index: &TemplateIndex) -> Vec<FlatNode> {
 
     // Macros → Function (REQ-SYM-01).
     for m in &index.macros {
-        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Macro, &m.name, m.span.start_byte) {
+        if let Some(full) = full_tag_span(
+            &tags,
+            &full_extents,
+            TagKind::Macro,
+            &m.name,
+            m.span.start_byte,
+        ) {
             let (start, end) = full;
             flat.push(FlatNode {
                 start_byte: start,
@@ -301,7 +313,9 @@ fn build_tree(flat: Vec<FlatNode>) -> Vec<DocumentSymbol> {
     // Move symbols into the tree. `Option::take` ensures each index is visited once.
     let mut nodes: Vec<Option<FlatNode>> = flat.into_iter().map(Some).collect();
     fn build(i: usize, nodes: &mut Vec<Option<FlatNode>>, cl: &[Vec<usize>]) -> DocumentSymbol {
-        let mut node = nodes[i].take().expect("flat-node visited twice — parent-child index is inconsistent");
+        let mut node = nodes[i]
+            .take()
+            .expect("flat-node visited twice — parent-child index is inconsistent");
         for &ci in &cl[i] {
             node.sym.children.push(build(ci, nodes, cl));
         }
@@ -394,7 +408,14 @@ fn name_span_in(source: &str, tag_start_byte: usize, name: &str) -> Span {
     let abs_end = abs_start + name.len();
     let (sl, sc) = super::byte_to_line_col(source, abs_start);
     let (el, ec) = super::byte_to_line_col(source, abs_end);
-    Span { start_byte: abs_start, end_byte: abs_end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
+    Span {
+        start_byte: abs_start,
+        end_byte: abs_end,
+        start_line: sl,
+        start_col: sc,
+        end_line: el,
+        end_col: ec,
+    }
 }
 
 /// Find the byte span of the `{% set name … %}` statement for a top-level
@@ -451,7 +472,14 @@ fn find_set_span(
 
     let (sl, sc) = super::byte_to_line_col(source, start);
     let (el, ec) = super::byte_to_line_col(source, end);
-    Some(Span { start_byte: start, end_byte: end, start_line: sl, start_col: sc, end_line: el, end_col: ec })
+    Some(Span {
+        start_byte: start,
+        end_byte: end,
+        start_line: sl,
+        start_col: sc,
+        end_line: el,
+        end_col: ec,
+    })
 }
 
 // ── Tag scanner — computes full construct extents ─────────────────────────────
@@ -463,13 +491,16 @@ fn find_set_span(
 // source text, balancing opening and closing tags with a stack.
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TagKind { Block, Macro }
+enum TagKind {
+    Block,
+    Macro,
+}
 
 struct TagInfo {
     start_byte: usize, // byte offset of the `{%`
     end_byte: usize,   // byte offset just past the `%}`
     kind: TagKind,
-    name: String,      // block/macro name; empty for end tags
+    name: String, // block/macro name; empty for end tags
     is_close: bool,
 }
 
@@ -520,7 +551,11 @@ fn scan_jinja_tags(source: &str) -> Vec<TagInfo> {
                 continue;
             }
         }
-        i += source[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        i += source[i..]
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(1);
     }
     tags
 }
@@ -534,21 +569,45 @@ fn classify_tag_content(inner: &str, start: usize, end: usize) -> Option<TagInfo
         }
         if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
             let name = rest.split_whitespace().next().unwrap_or("").to_owned();
-            return Some(TagInfo { start_byte: start, end_byte: end, kind: TagKind::Block, name, is_close: false });
+            return Some(TagInfo {
+                start_byte: start,
+                end_byte: end,
+                kind: TagKind::Block,
+                name,
+                is_close: false,
+            });
         }
     }
     if s.starts_with("endblock") {
-        return Some(TagInfo { start_byte: start, end_byte: end, kind: TagKind::Block, name: String::new(), is_close: true });
+        return Some(TagInfo {
+            start_byte: start,
+            end_byte: end,
+            kind: TagKind::Block,
+            name: String::new(),
+            is_close: true,
+        });
     }
     if let Some(rest) = s.strip_prefix("macro") {
         let rest = rest.trim();
         if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
             let name = rest.split(['(', ' ']).next().unwrap_or("").to_owned();
-            return Some(TagInfo { start_byte: start, end_byte: end, kind: TagKind::Macro, name, is_close: false });
+            return Some(TagInfo {
+                start_byte: start,
+                end_byte: end,
+                kind: TagKind::Macro,
+                name,
+                is_close: false,
+            });
         }
     }
     if s.starts_with("endmacro") {
-        return Some(TagInfo { start_byte: start, end_byte: end, kind: TagKind::Macro, name: String::new(), is_close: true });
+        return Some(TagInfo {
+            start_byte: start,
+            end_byte: end,
+            kind: TagKind::Macro,
+            name: String::new(),
+            is_close: true,
+        });
     }
     None
 }
@@ -590,12 +649,23 @@ fn full_tag_span(
     tags.iter()
         .filter(|t| !t.is_close && t.kind == kind && t.name == name)
         .find(|t| t.start_byte <= entry_start && entry_start < t.end_byte)
-        .and_then(|t| full_extents.get(&t.start_byte).map(|&end| (t.start_byte, end)))
+        .and_then(|t| {
+            full_extents
+                .get(&t.start_byte)
+                .map(|&end| (t.start_byte, end))
+        })
 }
 
 /// Build a `Span` from raw byte offsets, computing line/col from `source`.
 fn make_span(source: &str, start_byte: usize, end_byte: usize) -> Span {
     let (sl, sc) = super::byte_to_line_col(source, start_byte);
     let (el, ec) = super::byte_to_line_col(source, end_byte);
-    Span { start_byte, end_byte, start_line: sl, start_col: sc, end_line: el, end_col: ec }
+    Span {
+        start_byte,
+        end_byte,
+        start_line: sl,
+        start_col: sc,
+        end_line: el,
+        end_col: ec,
+    }
 }

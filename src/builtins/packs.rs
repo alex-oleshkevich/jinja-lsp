@@ -1,14 +1,9 @@
 // REQ-EXT-01..05: extension pack activation and embedded pack catalogs.
 
-use crate::builtins::registry::{parse_doc_str, Registry, Source};
+use crate::builtins::registry::{Registry, Source, parse_doc_str};
 
 /// The four valid pack names accepted by the `extras` config key.
-pub const KNOWN_PACK_NAMES: &[&str] = &[
-    "flask",
-    "starlette",
-    "starlette-babel",
-    "starlette-flash",
-];
+pub const KNOWN_PACK_NAMES: &[&str] = &["flask", "starlette", "starlette-babel", "starlette-flash"];
 
 /// REQ-EXT-01: a validated pack name; unknown names produce `PackError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +11,7 @@ pub enum KnownPack {
     Flask,
     Starlette,
     StarletteBabel,
-    StarletteFlash,    // starlette-flash
+    StarletteFlash, // starlette-flash
 }
 
 /// REQ-EXT-01: error type for an unrecognised extras name.
@@ -116,6 +111,5 @@ static STARLETTE_BABEL_DOCS: &[(&str, &str)] = &[
     doc!("starlette_babel/func__p.md"),
 ];
 
-static STARLETTE_FLASH_DOCS: &[(&str, &str)] = &[
-    doc!("starlette_flash/func_get_flashed_messages.md"),
-];
+static STARLETTE_FLASH_DOCS: &[(&str, &str)] =
+    &[doc!("starlette_flash/func_get_flashed_messages.md")];

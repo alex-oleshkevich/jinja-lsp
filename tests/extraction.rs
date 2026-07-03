@@ -15,11 +15,30 @@ fn extraction_pipeline_indexes_all_constructs() {
     // macro with positional + keyword param
     assert_eq!(index.macros.len(), 1, "macros: {:?}", index.macros);
     assert_eq!(index.macros[0].name, "greet");
-    assert_eq!(index.macros[0].parameters.len(), 2, "params: {:?}", index.macros[0].parameters);
-    let param_names: Vec<&str> = index.macros[0].parameters.iter().map(|p| p.name.as_str()).collect();
-    assert!(param_names.contains(&"name"), "positional param missing: {param_names:?}");
-    assert!(param_names.contains(&"msg"), "keyword param missing: {param_names:?}");
-    let msg = index.macros[0].parameters.iter().find(|p| p.name == "msg").unwrap();
+    assert_eq!(
+        index.macros[0].parameters.len(),
+        2,
+        "params: {:?}",
+        index.macros[0].parameters
+    );
+    let param_names: Vec<&str> = index.macros[0]
+        .parameters
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert!(
+        param_names.contains(&"name"),
+        "positional param missing: {param_names:?}"
+    );
+    assert!(
+        param_names.contains(&"msg"),
+        "keyword param missing: {param_names:?}"
+    );
+    let msg = index.macros[0]
+        .parameters
+        .iter()
+        .find(|p| p.name == "msg")
+        .unwrap();
     assert!(msg.default.is_some(), "msg default not captured");
 
     // block
@@ -29,16 +48,35 @@ fn extraction_pipeline_indexes_all_constructs() {
 
     // variables from set and for
     let var_names: Vec<&str> = index.variables.iter().map(|v| v.name.as_str()).collect();
-    assert!(var_names.contains(&"x"), "set var not indexed: {var_names:?}");
-    assert!(var_names.contains(&"item"), "for var not indexed: {var_names:?}");
+    assert!(
+        var_names.contains(&"x"),
+        "set var not indexed: {var_names:?}"
+    );
+    assert!(
+        var_names.contains(&"item"),
+        "for var not indexed: {var_names:?}"
+    );
 
     // template reference
-    assert_eq!(index.template_refs.len(), 1, "template_refs: {:?}", index.template_refs);
+    assert_eq!(
+        index.template_refs.len(),
+        1,
+        "template_refs: {:?}",
+        index.template_refs
+    );
     assert_eq!(index.template_refs[0].kind, TemplateRefKind::Extends);
-    assert!(index.template_refs[0].path.contains("base.html"), "path: {:?}", index.template_refs[0].path);
+    assert!(
+        index.template_refs[0].path.contains("base.html"),
+        "path: {:?}",
+        index.template_refs[0].path
+    );
 
     // no syntax errors in a valid template
-    assert!(index.syntax_errors.is_empty(), "unexpected errors: {:?}", index.syntax_errors);
+    assert!(
+        index.syntax_errors.is_empty(),
+        "unexpected errors: {:?}",
+        index.syntax_errors
+    );
 }
 
 #[test]
@@ -83,10 +121,16 @@ fn extr10_filter_after_attr_captured_as_filter() {
     // {{ post.title | upper }} — 'upper' must be captured as ReferenceKind::Filter
     let src = "{{ post.title | upper }}";
     let idx = extract(src);
-    let filter_refs: Vec<_> = idx.references.iter()
+    let filter_refs: Vec<_> = idx
+        .references
+        .iter()
         .filter(|r| r.name == "upper" && r.kind == ReferenceKind::Filter)
         .collect();
-    assert!(!filter_refs.is_empty(), "upper must be captured as Filter in '{{ post.title | upper }}';\n  references = {:?}", idx.references);
+    assert!(
+        !filter_refs.is_empty(),
+        "upper must be captured as Filter in '{{ post.title | upper }}';\n  references = {:?}",
+        idx.references
+    );
 }
 
 #[test]
@@ -95,10 +139,16 @@ fn extr10_filter_with_args_after_attr_captured_as_function() {
     // so 'truncate' must be captured as ReferenceKind::Function (enabling the hover fallback).
     let src = "{{ post.title | truncate(60) }}";
     let idx = extract(src);
-    let fn_refs: Vec<_> = idx.references.iter()
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
         .filter(|r| r.name == "truncate" && r.kind == ReferenceKind::Function)
         .collect();
-    assert!(!fn_refs.is_empty(), "truncate must be captured as Function in '{{ post.title | truncate(60) }}';\n  references = {:?}", idx.references);
+    assert!(
+        !fn_refs.is_empty(),
+        "truncate must be captured as Function in '{{ post.title | truncate(60) }}';\n  references = {:?}",
+        idx.references
+    );
 }
 
 #[test]
@@ -106,10 +156,16 @@ fn extr10_deep_attr_chain_filter_captured() {
     // {{ post.author.name | truncate(60) }} — two-level attribute chain before filter
     let src = "{{ post.author.name | truncate(60) }}";
     let idx = extract(src);
-    let fn_refs: Vec<_> = idx.references.iter()
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
         .filter(|r| r.name == "truncate" && r.kind == ReferenceKind::Function)
         .collect();
-    assert!(!fn_refs.is_empty(), "truncate must be captured after deep attr chain;\n  references = {:?}", idx.references);
+    assert!(
+        !fn_refs.is_empty(),
+        "truncate must be captured after deep attr chain;\n  references = {:?}",
+        idx.references
+    );
 }
 
 #[test]
@@ -129,10 +185,24 @@ fn extraction_from_import() {
     let index = extract(source);
     assert_eq!(index.from_imports.len(), 1);
     assert!(index.from_imports[0].source.contains("blog/macros.html"));
-    let imported_names: Vec<&str> = index.from_imports[0].names.iter().map(|n| n.name.as_str()).collect();
-    assert!(imported_names.contains(&"post_url"), "names: {imported_names:?}");
-    assert!(imported_names.contains(&"card"), "names: {imported_names:?}");
-    let card = index.from_imports[0].names.iter().find(|n| n.name == "card").unwrap();
+    let imported_names: Vec<&str> = index.from_imports[0]
+        .names
+        .iter()
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        imported_names.contains(&"post_url"),
+        "names: {imported_names:?}"
+    );
+    assert!(
+        imported_names.contains(&"card"),
+        "names: {imported_names:?}"
+    );
+    let card = index.from_imports[0]
+        .names
+        .iter()
+        .find(|n| n.name == "card")
+        .unwrap();
     assert_eq!(card.alias.as_deref(), Some("c"));
 }
 
@@ -161,7 +231,11 @@ fn jinja_lsp_8my3_unclosed_with_falls_back_to_end_of_source() {
     // incomplete-template case; run_with must match.
     let source = "{% with x = 1 %}\n{{ x }}";
     let index = extract(source);
-    let x = index.variables.iter().find(|v| v.name == "x").expect("with-bound variable must be indexed");
+    let x = index
+        .variables
+        .iter()
+        .find(|v| v.name == "x")
+        .expect("with-bound variable must be indexed");
     assert!(
         x.valid_range.end_byte >= source.len(),
         "unclosed with must fall back to end-of-source, not an empty range: {:?}",
@@ -224,7 +298,9 @@ fn jinja_lsp_mojm_include_template_refs_are_in_document_order() {
         r#"{% include "e.html" %}"#,
     );
     let index = extract(source);
-    let include_paths: Vec<&str> = index.template_refs.iter()
+    let include_paths: Vec<&str> = index
+        .template_refs
+        .iter()
         .filter(|r| r.kind == TemplateRefKind::Include)
         .map(|r| r.path.as_str())
         .collect();

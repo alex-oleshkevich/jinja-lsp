@@ -53,7 +53,10 @@ pub struct CodeLensConfig {
 
 impl Default for CodeLensConfig {
     fn default() -> Self {
-        Self { references: true, inheritance: true }
+        Self {
+            references: true,
+            inheritance: true,
+        }
     }
 }
 
@@ -61,7 +64,11 @@ impl Default for CodeLensConfig {
 
 /// Emit the initial cheap listing — one stub per eligible symbol, no title (REQ-LENS-04).
 /// Kinds disabled by `config` are omitted entirely (REQ-LENS-03).
-pub fn code_lens(template_path: &str, index: &TemplateIndex, config: &CodeLensConfig) -> Vec<CodeLens> {
+pub fn code_lens(
+    template_path: &str,
+    index: &TemplateIndex,
+    config: &CodeLensConfig,
+) -> Vec<CodeLens> {
     if !config.references && !config.inheritance {
         return vec![];
     }
@@ -183,7 +190,12 @@ fn make_lens(
 }
 
 /// True when the workspace still contains the symbol by (kind, name) — ignores position.
-fn symbol_exists(workspace: &WorkspaceIndex, file_path: &str, kind: &LensSymbolKind, name: &str) -> bool {
+fn symbol_exists(
+    workspace: &WorkspaceIndex,
+    file_path: &str,
+    kind: &LensSymbolKind,
+    name: &str,
+) -> bool {
     let Some(idx) = workspace.templates.get(file_path) else {
         return false;
     };
@@ -207,8 +219,7 @@ fn count_references(
             .templates
             .iter()
             .filter(|(path, tmpl_idx)| {
-                path.as_str() == file_path
-                    || super::template_does_not_shadow_macro(tmpl_idx, name)
+                path.as_str() == file_path || super::template_does_not_shadow_macro(tmpl_idx, name)
             })
             .flat_map(|(_, idx)| idx.references.iter())
             .filter(|r| {
@@ -237,7 +248,11 @@ fn has_ancestor_block(workspace: &WorkspaceIndex, file_path: &str, block_name: &
 /// Count all templates that (a) define `block_name` AND (b) are descendants of `file_path`.
 /// A template T is a descendant of `file_path` iff `file_path` appears in T's extends chain.
 /// This counts ALL descendants, not only immediate children (deep-chain rule, REQ-LENS-02).
-fn count_descendant_overrides(workspace: &WorkspaceIndex, file_path: &str, block_name: &str) -> usize {
+fn count_descendant_overrides(
+    workspace: &WorkspaceIndex,
+    file_path: &str,
+    block_name: &str,
+) -> usize {
     workspace
         .templates
         .iter()

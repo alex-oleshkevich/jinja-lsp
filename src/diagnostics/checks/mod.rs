@@ -87,8 +87,11 @@ fn check_e101(
     // Names that structurally suppress E101 without a registry lookup.
     let macro_names: std::collections::HashSet<&str> =
         index.macros.iter().map(|m| m.name.as_str()).collect();
-    let alias_names: std::collections::HashSet<&str> =
-        index.import_aliases.iter().map(|a| a.alias.as_str()).collect();
+    let alias_names: std::collections::HashSet<&str> = index
+        .import_aliases
+        .iter()
+        .map(|a| a.alias.as_str())
+        .collect();
     let from_names: std::collections::HashSet<&str> = index
         .from_imports
         .iter()
@@ -114,7 +117,10 @@ fn check_e101(
             continue;
         }
         // Local variable in scope — resolve_reference handles valid_range containment.
-        if !matches!(index.resolve_reference(r, workspace), ResolvedBinding::HostOwned) {
+        if !matches!(
+            index.resolve_reference(r, workspace),
+            ResolvedBinding::HostOwned
+        ) {
             continue;
         }
         let name = r.name.as_str();
@@ -172,7 +178,10 @@ fn check_e103(
             continue;
         }
         // resolve_reference covers: local macros, from-imports, workspace-wide macros.
-        if !matches!(index.resolve_reference(r, workspace), ResolvedBinding::HostOwned) {
+        if !matches!(
+            index.resolve_reference(r, workspace),
+            ResolvedBinding::HostOwned
+        ) {
             continue;
         }
         let name = r.name.as_str();
@@ -200,15 +209,25 @@ fn check_e103(
 // ── W106: unknown-attribute ───────────────────────────────────────────────────
 // REQ-HINT-05: off by default; only fires against hinted context_variables with declared attrs.
 
-fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Registry, out: &mut Vec<Diagnostic>) {
+fn check_w106(
+    source: &str,
+    path: &str,
+    index: &TemplateIndex,
+    registry: &Registry,
+    out: &mut Vec<Diagnostic>,
+) {
     // Dotted attribute access: {{ obj.attr }} — captured as ReferenceKind::Attribute.
     for r in &index.references {
         if r.kind != ReferenceKind::Attribute {
             continue;
         }
         let attr = r.name.as_str();
-        let Some(parent) = attribute_parent(source, r.span.start_byte) else { continue };
-        let Some(entry) = registry.get(Category::ContextVariable, parent) else { continue };
+        let Some(parent) = attribute_parent(source, r.span.start_byte) else {
+            continue;
+        };
+        let Some(entry) = registry.get(Category::ContextVariable, parent) else {
+            continue;
+        };
         // REQ-HINT-03: template scope — skip if this hint does not apply to the current file.
         if let Some(t) = &entry.template {
             if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
@@ -216,8 +235,12 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
             }
         }
         let declared_attrs = registry.attrs_for(parent);
-        if declared_attrs.is_empty() { continue; }
-        if declared_attrs.iter().any(|a| a.attr == attr) { continue; }
+        if declared_attrs.is_empty() {
+            continue;
+        }
+        if declared_attrs.iter().any(|a| a.attr == attr) {
+            continue;
+        }
         out.push(Diagnostic {
             file: path.to_owned(),
             line: r.span.start_line,
@@ -233,15 +256,21 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
     // The tree-sitter grammar does not produce Attribute references for subscript nodes,
     // so we scan the source text directly (REQ-HINT-05).
     for (parent, attr, line, col) in subscript_accesses(source) {
-        let Some(entry) = registry.get(Category::ContextVariable, parent) else { continue };
+        let Some(entry) = registry.get(Category::ContextVariable, parent) else {
+            continue;
+        };
         if let Some(t) = &entry.template {
             if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
                 continue;
             }
         }
         let declared_attrs = registry.attrs_for(parent);
-        if declared_attrs.is_empty() { continue; }
-        if declared_attrs.iter().any(|a| a.attr == attr) { continue; }
+        if declared_attrs.is_empty() {
+            continue;
+        }
+        if declared_attrs.iter().any(|a| a.attr == attr) {
+            continue;
+        }
         out.push(Diagnostic {
             file: path.to_owned(),
             line,
@@ -264,7 +293,11 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
 /// byte 0 for every match, which was O(n^2) on subscript-heavy files.
 fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
     #[derive(PartialEq, Clone, Copy)]
-    enum Delim { None, ExprOrStmt, Comment }
+    enum Delim {
+        None,
+        ExprOrStmt,
+        Comment,
+    }
 
     let mut out = Vec::new();
     let bytes = source.as_bytes();
@@ -276,7 +309,12 @@ fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
     // Advance the running (line, col) position by exactly one byte.
     macro_rules! advance {
         () => {
-            if bytes[i] == b'\n' { line += 1; col = 0; } else { col += 1; }
+            if bytes[i] == b'\n' {
+                line += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
             i += 1;
         };
     }
@@ -317,37 +355,69 @@ fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
 
         // Find the identifier before `[`.
         let before_bracket = i;
-        if before_bracket == 0 { advance!(); continue; }
+        if before_bracket == 0 {
+            advance!();
+            continue;
+        }
         let id_end = before_bracket;
         let mut id_start = id_end;
-        while id_start > 0 && (bytes[id_start - 1].is_ascii_alphanumeric() || bytes[id_start - 1] == b'_') {
+        while id_start > 0
+            && (bytes[id_start - 1].is_ascii_alphanumeric() || bytes[id_start - 1] == b'_')
+        {
             id_start -= 1;
         }
-        if id_start == id_end { advance!(); continue; } // no identifier before `[`
+        if id_start == id_end {
+            advance!();
+            continue;
+        } // no identifier before `[`
         let parent = match std::str::from_utf8(&bytes[id_start..id_end]) {
             Ok(s) if !s.is_empty() => s,
-            _ => { advance!(); continue; }
+            _ => {
+                advance!();
+                continue;
+            }
         };
         // After `[`, expect an optional space then a quote.
         let mut j = i + 1;
-        while j < bytes.len() && bytes[j] == b' ' { j += 1; }
-        if j >= bytes.len() { advance!(); continue; }
+        while j < bytes.len() && bytes[j] == b' ' {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            advance!();
+            continue;
+        }
         let quote = bytes[j];
-        if quote != b'"' && quote != b'\'' { advance!(); continue; }
+        if quote != b'"' && quote != b'\'' {
+            advance!();
+            continue;
+        }
         let key_start = j + 1;
         let key_byte = key_start;
         // Find closing quote.
         let mut k = key_start;
-        while k < bytes.len() && bytes[k] != quote { k += 1; }
-        if k >= bytes.len() { advance!(); continue; }
+        while k < bytes.len() && bytes[k] != quote {
+            k += 1;
+        }
+        if k >= bytes.len() {
+            advance!();
+            continue;
+        }
         let attr = match std::str::from_utf8(&bytes[key_start..k]) {
             Ok(s) if !s.is_empty() => s,
-            _ => { advance!(); continue; }
+            _ => {
+                advance!();
+                continue;
+            }
         };
         // Verify closing `]` follows.
         let mut l = k + 1;
-        while l < bytes.len() && bytes[l] == b' ' { l += 1; }
-        if l >= bytes.len() || bytes[l] != b']' { advance!(); continue; }
+        while l < bytes.len() && bytes[l] == b' ' {
+            l += 1;
+        }
+        if l >= bytes.len() || bytes[l] != b']' {
+            advance!();
+            continue;
+        }
 
         // Compute the key's (line, col) from the CURRENT running position, walking
         // only the short span [i..key_byte] rather than rescanning from byte 0.
@@ -355,7 +425,12 @@ fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
             let mut kl = line;
             let mut kc = col;
             for &b in &bytes[i..key_byte] {
-                if b == b'\n' { kl += 1; kc = 0; } else { kc += 1; }
+                if b == b'\n' {
+                    kl += 1;
+                    kc = 0;
+                } else {
+                    kc += 1;
+                }
             }
             (kl, kc)
         };
@@ -382,12 +457,21 @@ fn attribute_parent(source: &str, attr_start_byte: usize) -> Option<&str> {
         .map(|i| i + 1)
         .unwrap_or(0);
     let parent = &before_dot[start..end];
-    if parent.is_empty() { None } else { Some(parent) }
+    if parent.is_empty() {
+        None
+    } else {
+        Some(parent)
+    }
 }
 
 // ── E102: undefined filter / E104: undefined test ─────────────────────────────
 
-fn check_e102_e104(path: &str, index: &TemplateIndex, registry: &Registry, out: &mut Vec<Diagnostic>) {
+fn check_e102_e104(
+    path: &str,
+    index: &TemplateIndex,
+    registry: &Registry,
+    out: &mut Vec<Diagnostic>,
+) {
     for r in &index.references {
         match r.kind {
             ReferenceKind::Filter if registry.get(Category::Filter, &r.name).is_none() => {
@@ -485,7 +569,12 @@ fn check_w201(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
 
 // ── W202: unused-macro ────────────────────────────────────────────────────────
 
-fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+fn check_w202(
+    path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
     // jinja-lsp-md8e: a template with no macros can never produce a W202, so skip the
     // O(workspace) scan entirely for the common case.
     if index.macros.is_empty() {
@@ -514,9 +603,7 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
         }
         // from-imports that source from the current template count as "exporting" the macro.
         for fi in &tmpl.from_imports {
-            if (workspace.resolve_key(&fi.source) == Some(path))
-                || fi.source == path
-            {
+            if (workspace.resolve_key(&fi.source) == Some(path)) || fi.source == path {
                 for n in &fi.names {
                     used.insert(n.name.as_str());
                 }
@@ -533,7 +620,10 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 code: DiagCode::W202.code_str().to_owned(),
                 slug: DiagCode::W202.slug().to_owned(),
                 severity: DiagCode::W202.severity(),
-                message: format!("macro '{}' is defined but never used anywhere in the workspace", m.name),
+                message: format!(
+                    "macro '{}' is defined but never used anywhere in the workspace",
+                    m.name
+                ),
             });
         }
     }
@@ -556,7 +646,9 @@ fn check_w203(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Dia
             let mut pos = 0usize;
             while pos + name.len() <= src_bytes.len() {
                 if &src_bytes[pos..pos + name.len()] == name {
-                    let before_ok = pos == 0 || !(src_bytes[pos - 1].is_ascii_alphanumeric() || src_bytes[pos - 1] == b'_');
+                    let before_ok = pos == 0
+                        || !(src_bytes[pos - 1].is_ascii_alphanumeric()
+                            || src_bytes[pos - 1] == b'_');
                     let after = pos + name.len();
                     let after_ok = after < src_bytes.len() && src_bytes[after] == b'.'; // alias.method
                     if before_ok && after_ok {
@@ -681,11 +773,21 @@ fn check_w305(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
 
 // ── E403: missing-required-block ─────────────────────────────────────────────
 
-fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+fn check_e403(
+    path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
     // Only applies to child templates.
-    let extends = index.template_refs.iter().find(|r| matches!(r.kind, TemplateRefKind::Extends));
+    let extends = index
+        .template_refs
+        .iter()
+        .find(|r| matches!(r.kind, TemplateRefKind::Extends));
     let Some(parent_ref) = extends else { return };
-    let Some(parent_idx) = workspace.get_by_ref(&parent_ref.path) else { return };
+    let Some(parent_idx) = workspace.get_by_ref(&parent_ref.path) else {
+        return;
+    };
 
     let child_block_names: std::collections::HashSet<&str> =
         index.blocks.iter().map(|b| b.name.as_str()).collect();
@@ -699,7 +801,10 @@ fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 code: DiagCode::E403.code_str().to_owned(),
                 slug: DiagCode::E403.slug().to_owned(),
                 severity: DiagCode::E403.severity(),
-                message: format!("required block '{}' is not overridden in this template", pb.name),
+                message: format!(
+                    "required block '{}' is not overridden in this template",
+                    pb.name
+                ),
             });
         }
     }
@@ -709,20 +814,27 @@ fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
 
 fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     // Only applies to child templates (those that extend a parent).
-    let is_child = index.template_refs.iter().any(|r| matches!(r.kind, TemplateRefKind::Extends));
+    let is_child = index
+        .template_refs
+        .iter()
+        .any(|r| matches!(r.kind, TemplateRefKind::Extends));
     if !is_child {
         return;
     }
 
     // Collect block body byte ranges ([body_start, body_end) = content between the tags).
-    let block_ranges: Vec<(usize, usize)> = index.blocks.iter()
+    let block_ranges: Vec<(usize, usize)> = index
+        .blocks
+        .iter()
         .filter(|b| b.body.start_byte < b.body.end_byte)
         .map(|b| (b.body.start_byte, b.body.end_byte))
         .collect();
 
     // A top-level {% macro %} is valid Jinja (callable from within blocks) — set/for
     // bindings inside its body are exempt from W402 the same way block bodies are.
-    let macro_ranges: Vec<(usize, usize)> = index.macros.iter()
+    let macro_ranges: Vec<(usize, usize)> = index
+        .macros
+        .iter()
         .filter(|m| m.body.start_byte < m.body.end_byte)
         .map(|m| (m.body.start_byte, m.body.end_byte))
         .collect();
@@ -742,7 +854,10 @@ fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>)
                 code: DiagCode::W402.code_str().to_owned(),
                 slug: DiagCode::W402.slug().to_owned(),
                 severity: DiagCode::W402.severity(),
-                message: format!("'{}' is outside any block and will not render in this extends template", v.name),
+                message: format!(
+                    "'{}' is outside any block and will not render in this extends template",
+                    v.name
+                ),
             });
         }
     }
@@ -752,7 +867,10 @@ fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>)
     // comments, and other text outside Jinja delimiters can never match, and so the
     // reported span is the tree-sitter byte span every other check already uses.
     for r in &index.references {
-        if r.kind == ReferenceKind::Function && r.name == "super" && !inside_block(r.span.start_byte) {
+        if r.kind == ReferenceKind::Function
+            && r.name == "super"
+            && !inside_block(r.span.start_byte)
+        {
             out.push(Diagnostic {
                 file: path.to_owned(),
                 line: r.span.start_line,
@@ -768,12 +886,20 @@ fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>)
 
 // ── E404: recursive-import ────────────────────────────────────────────────────
 
-fn check_e404(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+fn check_e404(
+    path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
     for tr in &index.template_refs {
         if tr.is_dynamic || tr.ignore_missing {
             continue;
         }
-        if !matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From) {
+        if !matches!(
+            tr.kind,
+            TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From
+        ) {
             continue;
         }
         let mut visited = HashSet::new();
@@ -792,7 +918,12 @@ fn check_e404(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
     }
 }
 
-fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<String>, workspace: &WorkspaceIndex) -> bool {
+fn import_chain_contains(
+    current: &str,
+    target: &str,
+    visited: &mut HashSet<String>,
+    workspace: &WorkspaceIndex,
+) -> bool {
     // Resolve current to the workspace key (handles relative ref vs absolute key mismatch).
     let current_key = match workspace.resolve_key(current) {
         Some(k) => k.to_owned(),
@@ -804,12 +935,17 @@ fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<Stri
     if !visited.insert(current_key.clone()) {
         return false;
     }
-    let Some(idx) = workspace.templates.get(&current_key) else { return false };
+    let Some(idx) = workspace.templates.get(&current_key) else {
+        return false;
+    };
     for tr in &idx.template_refs {
         if tr.is_dynamic || tr.ignore_missing {
             continue;
         }
-        if !matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From) {
+        if !matches!(
+            tr.kind,
+            TemplateRefKind::Extends | TemplateRefKind::Import | TemplateRefKind::From
+        ) {
             continue;
         }
         if import_chain_contains(tr.path.as_str(), target, visited, workspace) {
@@ -821,12 +957,23 @@ fn import_chain_contains(current: &str, target: &str, visited: &mut HashSet<Stri
 
 // ── E501: wrong-call-args ─────────────────────────────────────────────────────
 
-fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+fn check_e501(
+    path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
     for call in &index.macro_calls {
         // Resolve the callee macro definition (local → from-imports → workspace-wide).
-        let Some(mac) = resolve_macro(call.callee.as_str(), index, workspace) else { continue };
+        let Some(mac) = resolve_macro(call.callee.as_str(), index, workspace) else {
+            continue;
+        };
 
-        let required_count = mac.parameters.iter().filter(|p| p.default.is_none()).count();
+        let required_count = mac
+            .parameters
+            .iter()
+            .filter(|p| p.default.is_none())
+            .count();
         let total_count = mac.parameters.len();
         let given_positional = call.positional_count;
         let given_keywords: HashSet<&str> = call.keyword_names.iter().map(|s| s.as_str()).collect();
@@ -847,7 +994,9 @@ fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
         }
 
         // Count how many required params are already satisfied by keyword args.
-        let required_by_keyword = mac.parameters.iter()
+        let required_by_keyword = mac
+            .parameters
+            .iter()
             .filter(|p| p.default.is_none() && given_keywords.contains(p.name.as_str()))
             .count();
         let required_positional_needed = required_count.saturating_sub(required_by_keyword);
@@ -888,17 +1037,25 @@ fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
     }
 }
 
-fn resolve_macro<'a>(callee: &str, index: &'a TemplateIndex, workspace: &'a WorkspaceIndex) -> Option<&'a MacroDefinition> {
+fn resolve_macro<'a>(
+    callee: &str,
+    index: &'a TemplateIndex,
+    workspace: &'a WorkspaceIndex,
+) -> Option<&'a MacroDefinition> {
     // Local macro.
     if let Some(m) = index.macros.iter().find(|m| m.name == callee) {
         return Some(m);
     }
     // From-imports.
     for fi in &index.from_imports {
-        let Some(orig) = fi.names.iter()
+        let Some(orig) = fi
+            .names
+            .iter()
             .find(|n| n.alias.as_deref().unwrap_or(n.name.as_str()) == callee)
             .map(|n| n.name.as_str())
-        else { continue };
+        else {
+            continue;
+        };
         if let Some(src_idx) = workspace.get_by_ref(&fi.source) {
             if let Some(m) = src_idx.macros.iter().find(|m| m.name == orig) {
                 return Some(m);
@@ -911,13 +1068,23 @@ fn resolve_macro<'a>(callee: &str, index: &'a TemplateIndex, workspace: &'a Work
 
 // ── E601: template-does-not-exist ─────────────────────────────────────────────
 
-fn check_e601(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+fn check_e601(
+    path: &str,
+    index: &TemplateIndex,
+    workspace: &WorkspaceIndex,
+    out: &mut Vec<Diagnostic>,
+) {
     for tr in &index.template_refs {
         if tr.is_dynamic || tr.ignore_missing {
             continue;
         }
-        if matches!(tr.kind, TemplateRefKind::Extends | TemplateRefKind::Include | TemplateRefKind::Import | TemplateRefKind::From)
-            && workspace.get_by_ref(&tr.path).is_none()
+        if matches!(
+            tr.kind,
+            TemplateRefKind::Extends
+                | TemplateRefKind::Include
+                | TemplateRefKind::Import
+                | TemplateRefKind::From
+        ) && workspace.get_by_ref(&tr.path).is_none()
         {
             out.push(Diagnostic {
                 file: path.to_owned(),

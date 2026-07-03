@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use jinja_lsp::workspace::{build_workspace, index::WorkspaceIndex};
 use jinja_lsp::parsing::extract;
+use jinja_lsp::workspace::{build_workspace, index::WorkspaceIndex};
 
 // ── REQ-DATA-10: template_chain resolves across absolute-path keys ─────────
 
@@ -41,7 +41,11 @@ fn template_chain_follows_extends() {
 
     // blog/post.html extends base.html → chain is [post, base]
     let chain = workspace.template_chain("blog/post.html");
-    assert_eq!(chain, vec!["blog/post.html", "base.html"], "chain: {chain:?}");
+    assert_eq!(
+        chain,
+        vec!["blog/post.html", "base.html"],
+        "chain: {chain:?}"
+    );
 }
 
 #[test]
@@ -57,14 +61,17 @@ fn root_template_chain_has_single_entry() {
 #[test]
 fn missing_target_does_not_panic() {
     // Template references a non-existent parent — chain stops gracefully
-    use jinja_lsp::workspace::index::WorkspaceIndex;
     use jinja_lsp::parsing::extract;
+    use jinja_lsp::workspace::index::WorkspaceIndex;
 
     let source = r#"{% extends "ghost.html" %}"#;
     let mut idx = extract(source);
     idx.path = "orphan.html".to_owned();
 
-    let mut workspace = WorkspaceIndex { templates: std::collections::HashMap::new(), ..Default::default() };
+    let mut workspace = WorkspaceIndex {
+        templates: std::collections::HashMap::new(),
+        ..Default::default()
+    };
     workspace.templates.insert("orphan.html".to_owned(), idx);
 
     let chain = workspace.template_chain("orphan.html");
@@ -79,8 +86,14 @@ fn jinja_lsp_gtgh_resolve_key_suffix_match_is_deterministic() {
     // random pick depending on HashMap iteration order) — the shortest
     // matching key wins, tie-broken lexicographically.
     let mut ws = WorkspaceIndex::default();
-    ws.templates.insert("app2/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
-    ws.templates.insert("app1/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+    ws.templates.insert(
+        "app2/base.html".to_owned(),
+        extract("{% block content %}{% endblock %}"),
+    );
+    ws.templates.insert(
+        "app1/base.html".to_owned(),
+        extract("{% block content %}{% endblock %}"),
+    );
 
     let mut child_idx = extract(r#"{% extends "base.html" %}"#);
     child_idx.path = "child.html".to_owned();
@@ -99,23 +112,41 @@ fn jinja_lsp_gtgh_resolve_key_prefers_shortest_suffix_match() {
     // Among ambiguous (non-exact) suffix matches, the shortest key — the closer,
     // less-nested match — must win deterministically over a longer one.
     let mut ws = WorkspaceIndex::default();
-    ws.templates.insert("vendor/shared/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
-    ws.templates.insert("app/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+    ws.templates.insert(
+        "vendor/shared/base.html".to_owned(),
+        extract("{% block content %}{% endblock %}"),
+    );
+    ws.templates.insert(
+        "app/base.html".to_owned(),
+        extract("{% block content %}{% endblock %}"),
+    );
 
     let mut child_idx = extract(r#"{% extends "base.html" %}"#);
     child_idx.path = "child.html".to_owned();
     ws.templates.insert("child.html".to_owned(), child_idx);
 
     let chain = ws.template_chain("child.html");
-    assert_eq!(chain, vec!["child.html", "app/base.html"], "shortest suffix match must win: {chain:?}");
+    assert_eq!(
+        chain,
+        vec!["child.html", "app/base.html"],
+        "shortest suffix match must win: {chain:?}"
+    );
 }
 
 #[test]
 fn workspace_contains_all_discovered_templates() {
     let dir = tdir();
     let workspace = build_workspace(&[&dir], &["html"]);
-    assert!(workspace.templates.contains_key("base.html"), "keys: {:?}", workspace.templates.keys().collect::<Vec<_>>());
-    assert!(workspace.templates.contains_key("blog/post.html"), "keys: {:?}", workspace.templates.keys().collect::<Vec<_>>());
+    assert!(
+        workspace.templates.contains_key("base.html"),
+        "keys: {:?}",
+        workspace.templates.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        workspace.templates.contains_key("blog/post.html"),
+        "keys: {:?}",
+        workspace.templates.keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -130,11 +161,22 @@ fn jinja_lsp_l8ve_first_dir_wins_on_relative_path_collision() {
     let _ = std::fs::remove_dir_all(&second);
     std::fs::create_dir_all(&first).unwrap();
     std::fs::create_dir_all(&second).unwrap();
-    std::fs::write(first.join("shared.html"), "{% block from_first %}{% endblock %}").unwrap();
-    std::fs::write(second.join("shared.html"), "{% block from_second %}{% endblock %}").unwrap();
+    std::fs::write(
+        first.join("shared.html"),
+        "{% block from_first %}{% endblock %}",
+    )
+    .unwrap();
+    std::fs::write(
+        second.join("shared.html"),
+        "{% block from_second %}{% endblock %}",
+    )
+    .unwrap();
 
     let workspace = build_workspace(&[&first, &second], &["html"]);
-    let idx = workspace.templates.get("shared.html").expect("shared.html must be indexed");
+    let idx = workspace
+        .templates
+        .get("shared.html")
+        .expect("shared.html must be indexed");
     assert_eq!(
         idx.blocks.first().map(|b| b.name.as_str()),
         Some("from_first"),
@@ -142,4 +184,3 @@ fn jinja_lsp_l8ve_first_dir_wins_on_relative_path_collision() {
         idx.blocks
     );
 }
-

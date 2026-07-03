@@ -15,8 +15,12 @@ pub fn layer_name() -> &'static str {
 
 // ── User-facing formatter config (jinja.toml [format]) ───────────────────────
 
-fn default_indent_size() -> u32 { 4 }
-fn default_true() -> bool { true }
+fn default_indent_size() -> u32 {
+    4
+}
+fn default_true() -> bool {
+    true
+}
 
 /// User-controlled formatting preferences, readable from `jinja.toml [format]`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -128,7 +132,10 @@ pub struct FormatOptions {
 
 impl Default for FormatOptions {
     fn default() -> Self {
-        Self { tab_size: 4, insert_spaces: true }
+        Self {
+            tab_size: 4,
+            insert_spaces: true,
+        }
     }
 }
 
@@ -310,15 +317,34 @@ fn collect_delimiter_normalizations(
 
 /// Paired Jinja tags that open a new indentation level.
 const OPENERS: &[&str] = &[
-    "block", "for", "if", "elif", "else",
-    "macro", "call", "with", "filter",
-    "autoescape", "trans", "raw",
+    "block",
+    "for",
+    "if",
+    "elif",
+    "else",
+    "macro",
+    "call",
+    "with",
+    "filter",
+    "autoescape",
+    "trans",
+    "raw",
 ];
 /// Tags that close (or re-align at) an indentation level.
 const CLOSERS: &[&str] = &[
-    "endblock", "endfor", "endif", "endmacro", "endcall", "endwith", "endfilter",
-    "elif", "else",
-    "endset", "endautoescape", "endtrans", "endraw",
+    "endblock",
+    "endfor",
+    "endif",
+    "endmacro",
+    "endcall",
+    "endwith",
+    "endfilter",
+    "elif",
+    "else",
+    "endset",
+    "endautoescape",
+    "endtrans",
+    "endraw",
 ];
 
 /// Return true if `line` is a Jinja-tag line: first non-whitespace content is `{%`.
@@ -599,7 +625,10 @@ fn insert_blank_lines_after_top_level_blocks(source: &str, n: u8) -> String {
 
         if in_raw {
             let is_endraw = is_jinja_tag_line(line)
-                && jinja_tag_keywords_on_line(line).first().map(|(kw, _)| kw.as_str()) == Some("endraw");
+                && jinja_tag_keywords_on_line(line)
+                    .first()
+                    .map(|(kw, _)| kw.as_str())
+                    == Some("endraw");
             if !is_endraw {
                 continue;
             }
@@ -614,8 +643,9 @@ fn insert_blank_lines_after_top_level_blocks(source: &str, n: u8) -> String {
         let first_kw = keywords.first().map(|(kw, _)| kw.as_str()).unwrap_or("");
         // A "real" closer (excludes elif/else, which re-align within the same
         // block rather than closing it) appearing anywhere on the line.
-        let has_real_closer = keywords.iter()
-            .any(|(kw, _)| CLOSERS.contains(&kw.as_str()) && !matches!(kw.as_str(), "elif" | "else"));
+        let has_real_closer = keywords.iter().any(|(kw, _)| {
+            CLOSERS.contains(&kw.as_str()) && !matches!(kw.as_str(), "elif" | "else")
+        });
         if CLOSERS.contains(&first_kw) && depth > 0 {
             depth -= 1;
         }
@@ -672,7 +702,13 @@ fn insert_blank_lines_after_top_level_blocks(source: &str, n: u8) -> String {
 /// Apply all active passes to a single delimiter node's text.
 ///
 /// Pipeline: FMT-04 sub-edits first (relative positions), then FMT-01 outer padding.
-fn normalize_node(node: Node, text: &str, bytes: &[u8], config: &FormatterConfig, kind: &str) -> String {
+fn normalize_node(
+    node: Node,
+    text: &str,
+    bytes: &[u8],
+    config: &FormatterConfig,
+    kind: &str,
+) -> String {
     let node_start = node.start_byte();
 
     // Collect FMT-04 edits: relative byte positions within `text`.
@@ -723,14 +759,20 @@ fn collect_fmt04_edits(
         let op = node.utf8_text(bytes).unwrap_or("");
         if op == "|" {
             // `space_around_pipe` controls `|`: compact (`x|filter`) vs spaced (`x | filter`).
-            let (ws_start, ws_end) = surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
+            let (ws_start, ws_end) =
+                surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
             let rel_start = ws_start.saturating_sub(node_start);
             let rel_end = ws_end.saturating_sub(node_start);
-            let normalized = if config.space_around_pipe { format!(" {op} ") } else { op.to_owned() };
+            let normalized = if config.space_around_pipe {
+                format!(" {op} ")
+            } else {
+                op.to_owned()
+            };
             out.push((rel_start, rel_end, normalized));
         } else if op == "is" {
             // `is` is a keyword operator — spaces are always required to remain valid syntax.
-            let (ws_start, ws_end) = surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
+            let (ws_start, ws_end) =
+                surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
             let rel_start = ws_start.saturating_sub(node_start);
             let rel_end = ws_end.saturating_sub(node_start);
             out.push((rel_start, rel_end, format!(" {op} ")));
@@ -738,7 +780,8 @@ fn collect_fmt04_edits(
             // Opt-in only: default (false) leaves these operators exactly as written,
             // matching the pre-existing "formatter, not beautifier" behavior so
             // FormatOptions::default() never changes output for these operators.
-            let (ws_start, ws_end) = surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
+            let (ws_start, ws_end) =
+                surrounding_whitespace(bytes, node.start_byte(), node.end_byte());
             let rel_start = ws_start.saturating_sub(node_start);
             let rel_end = ws_end.saturating_sub(node_start);
             out.push((rel_start, rel_end, format!(" {op} ")));
@@ -796,12 +839,24 @@ fn surrounding_whitespace(bytes: &[u8], op_start: usize, op_end: usize) -> (usiz
 ///
 /// Grammar path: function_call → primary_expression → unary_expression → [right side of `|`]
 fn is_filter_call(func_call: Node, bytes: &[u8]) -> bool {
-    let Some(primary) = func_call.parent() else { return false };
-    if primary.kind() != "primary_expression" { return false; }
-    let Some(unary) = primary.parent() else { return false };
-    if unary.kind() != "unary_expression" { return false; }
-    let Some(binary) = unary.parent() else { return false };
-    if binary.kind() != "binary_expression" { return false; }
+    let Some(primary) = func_call.parent() else {
+        return false;
+    };
+    if primary.kind() != "primary_expression" {
+        return false;
+    }
+    let Some(unary) = primary.parent() else {
+        return false;
+    };
+    if unary.kind() != "unary_expression" {
+        return false;
+    }
+    let Some(binary) = unary.parent() else {
+        return false;
+    };
+    if binary.kind() != "binary_expression" {
+        return false;
+    }
     // The binary_expression's operator must be `|`.
     let mut cursor = binary.walk();
     if cursor.goto_first_child() {
@@ -810,7 +865,9 @@ fn is_filter_call(func_call: Node, bytes: &[u8]) -> bool {
             if child.kind() == "binary_operator" {
                 return child.utf8_text(bytes).unwrap_or("") == "|";
             }
-            if !cursor.goto_next_sibling() { break; }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
         }
     }
     false
@@ -869,7 +926,11 @@ fn normalize_string_quote(text: &str, target: char) -> Option<String> {
 /// Reconstruct a filter-call with normalized arg spacing: `name(arg1, arg2, ...)`.
 ///
 /// Returns `None` if the call has no arguments (nothing to normalize).
-fn normalize_filter_call(func_call: Node, bytes: &[u8], config: &FormatterConfig) -> Option<String> {
+fn normalize_filter_call(
+    func_call: Node,
+    bytes: &[u8],
+    config: &FormatterConfig,
+) -> Option<String> {
     // First named child is the identifier (function name).
     let name_node = func_call.named_child(0)?;
     let name = name_node.utf8_text(bytes).ok()?;
@@ -884,7 +945,9 @@ fn normalize_filter_call(func_call: Node, bytes: &[u8], config: &FormatterConfig
                 let arg_text = child.utf8_text(bytes).ok()?;
                 args.push(arg_text.trim().to_owned());
             }
-            if !cursor.goto_next_sibling() { break; }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
         }
     }
 
@@ -926,22 +989,38 @@ pub fn normalize_delimiter(text: &str) -> String {
 /// for `{{ }}`/`{% %}`; comment delimiters (`{# #}`) always use `add_space = true`.
 fn normalize_delimiter_padding(text: &str, add_space: bool) -> String {
     // Detect opening: {{-, {{, {%-, {%, {#-, {#
-    let (open, rest) = if let Some(r) = text.strip_prefix("{{-") { ("{{-", r) }
-        else if let Some(r) = text.strip_prefix("{%-") { ("{%-", r) }
-        else if let Some(r) = text.strip_prefix("{#-") { ("{#-", r) }
-        else if let Some(r) = text.strip_prefix("{{") { ("{{", r) }
-        else if let Some(r) = text.strip_prefix("{%") { ("{%", r) }
-        else if let Some(r) = text.strip_prefix("{#") { ("{#", r) }
-        else { return text.to_owned() };
+    let (open, rest) = if let Some(r) = text.strip_prefix("{{-") {
+        ("{{-", r)
+    } else if let Some(r) = text.strip_prefix("{%-") {
+        ("{%-", r)
+    } else if let Some(r) = text.strip_prefix("{#-") {
+        ("{#-", r)
+    } else if let Some(r) = text.strip_prefix("{{") {
+        ("{{", r)
+    } else if let Some(r) = text.strip_prefix("{%") {
+        ("{%", r)
+    } else if let Some(r) = text.strip_prefix("{#") {
+        ("{#", r)
+    } else {
+        return text.to_owned();
+    };
 
     // Detect closing: -}}, }}, -%}, %}, -#}, #}
-    let (content, close) = if let Some(c) = rest.strip_suffix("-}}") { (c, "-}}") }
-        else if let Some(c) = rest.strip_suffix("-%}") { (c, "-%}") }
-        else if let Some(c) = rest.strip_suffix("-#}") { (c, "-#}") }
-        else if let Some(c) = rest.strip_suffix("}}") { (c, "}}") }
-        else if let Some(c) = rest.strip_suffix("%}") { (c, "%}") }
-        else if let Some(c) = rest.strip_suffix("#}") { (c, "#}") }
-        else { return text.to_owned() };
+    let (content, close) = if let Some(c) = rest.strip_suffix("-}}") {
+        (c, "-}}")
+    } else if let Some(c) = rest.strip_suffix("-%}") {
+        (c, "-%}")
+    } else if let Some(c) = rest.strip_suffix("-#}") {
+        (c, "-#}")
+    } else if let Some(c) = rest.strip_suffix("}}") {
+        (c, "}}")
+    } else if let Some(c) = rest.strip_suffix("%}") {
+        (c, "%}")
+    } else if let Some(c) = rest.strip_suffix("#}") {
+        (c, "#}")
+    } else {
+        return text.to_owned();
+    };
 
     // Trim only horizontal whitespace at boundaries (preserves multi-line interiors).
     let trimmed = content.trim_matches([' ', '\t']);
@@ -965,7 +1044,9 @@ fn normalize_delimiter_padding(text: &str, add_space: bool) -> String {
 fn trim_trailing_whitespace(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for (i, line) in s.split('\n').enumerate() {
-        if i > 0 { out.push('\n'); }
+        if i > 0 {
+            out.push('\n');
+        }
         out.push_str(line.trim_end_matches([' ', '\t']));
     }
     out

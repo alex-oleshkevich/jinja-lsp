@@ -83,14 +83,20 @@ pub fn rename_at_cursor(
 /// Find the narrowest (smallest valid_range) VariableDefinition binding
 /// whose name == `name` and whose valid_range contains `byte`.
 fn tightest_scope_for(name: &str, byte: usize, index: &TemplateIndex) -> Option<Span> {
-    index.variables.iter()
+    index
+        .variables
+        .iter()
         .filter(|v| {
             v.name == name
                 && v.valid_range.start_byte < v.valid_range.end_byte
                 && v.valid_range.start_byte <= byte
                 && byte <= v.valid_range.end_byte
         })
-        .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+        .min_by_key(|v| {
+            v.valid_range
+                .end_byte
+                .saturating_sub(v.valid_range.start_byte)
+        })
         .map(|v| v.valid_range.clone())
 }
 
@@ -183,7 +189,9 @@ pub fn compute_rename(
                 if !super::template_does_not_shadow_macro(tpl, old_name) {
                     continue;
                 }
-                let Some(tpl_source) = sources.get(path) else { continue };
+                let Some(tpl_source) = sources.get(path) else {
+                    continue;
+                };
                 // Block names are scoped to the extends chain — only rename a block
                 // definition in a template that is an ancestor or descendant of `file`.
                 let allow_block_edits = is_in_block_family(workspace, file, path);
@@ -198,7 +206,10 @@ pub fn compute_rename(
     if changes.is_empty() {
         None
     } else {
-        Some(WorkspaceEdit { changes, create_files: vec![] })
+        Some(WorkspaceEdit {
+            changes,
+            create_files: vec![],
+        })
     }
 }
 
@@ -233,7 +244,12 @@ fn definition_name_edit(
 /// Scoped version: only renames identifier/function references whose start_byte falls within `scope`.
 /// Macro/block definitions and from-import names are always included (scope does not apply to them
 /// because local-rename callers only match local variables, which appear as identifier references).
-fn rename_in_index_scoped(old_name: &str, new_name: &str, index: &TemplateIndex, scope: Option<&Span>) -> Vec<TextEdit> {
+fn rename_in_index_scoped(
+    old_name: &str,
+    new_name: &str,
+    index: &TemplateIndex,
+    scope: Option<&Span>,
+) -> Vec<TextEdit> {
     let in_scope = |ref_span: &Span| -> bool {
         match scope {
             None => true,
@@ -285,7 +301,8 @@ fn rename_in_index(
     // Macro definition names.
     for m in &index.macros {
         if m.name == old_name {
-            if let Some(edit) = definition_name_edit(source, m.span.start_byte, old_name, new_name) {
+            if let Some(edit) = definition_name_edit(source, m.span.start_byte, old_name, new_name)
+            {
                 edits.push(edit);
             }
         }
@@ -295,7 +312,9 @@ fn rename_in_index(
     if allow_block_edits {
         for b in &index.blocks {
             if b.name == old_name {
-                if let Some(edit) = definition_name_edit(source, b.span.start_byte, old_name, new_name) {
+                if let Some(edit) =
+                    definition_name_edit(source, b.span.start_byte, old_name, new_name)
+                {
                     edits.push(edit);
                 }
                 if let Some(ref ens) = b.end_name_span {
@@ -313,7 +332,9 @@ fn rename_in_index(
 
     // All identifier and macro-call (Function-kind) references.
     for r in &index.references {
-        if r.name == old_name && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function) {
+        if r.name == old_name
+            && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
+        {
             edits.push(TextEdit {
                 start_line: r.span.start_line,
                 start_col: r.span.start_col,

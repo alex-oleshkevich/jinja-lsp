@@ -19,9 +19,14 @@ fn release_workflow() -> serde_yaml::Value {
 #[test]
 fn ci_lint_job_runs_clippy_and_rustfmt() {
     let ci = ci_workflow();
-    let lint_steps = ci["jobs"]["lint"]["steps"].as_sequence().expect("lint steps");
+    let lint_steps = ci["jobs"]["lint"]["steps"]
+        .as_sequence()
+        .expect("lint steps");
     let step_content: String = serde_yaml::to_string(lint_steps).unwrap();
-    assert!(step_content.contains("rustfmt"), "lint job must run rustfmt");
+    assert!(
+        step_content.contains("rustfmt"),
+        "lint job must run rustfmt"
+    );
     assert!(step_content.contains("clippy"), "lint job must run clippy");
 }
 
@@ -30,9 +35,14 @@ fn ci_lint_job_runs_clippy_and_rustfmt() {
 #[test]
 fn ci_test_job_uses_nextest() {
     let ci = ci_workflow();
-    let test_steps = ci["jobs"]["test"]["steps"].as_sequence().expect("test steps");
+    let test_steps = ci["jobs"]["test"]["steps"]
+        .as_sequence()
+        .expect("test steps");
     let step_content: String = serde_yaml::to_string(test_steps).unwrap();
-    assert!(step_content.contains("nextest"), "test job must use cargo nextest");
+    assert!(
+        step_content.contains("nextest"),
+        "test job must use cargo nextest"
+    );
 }
 
 // ─── REQ-REL-03: Python E2E job runs pytest-lsp ──────────────────────────────
@@ -42,7 +52,10 @@ fn ci_e2e_job_runs_pytest_lsp() {
     let ci = ci_workflow();
     let e2e_steps = ci["jobs"]["e2e"]["steps"].as_sequence().expect("e2e steps");
     let step_content: String = serde_yaml::to_string(e2e_steps).unwrap();
-    assert!(step_content.contains("pytest-lsp"), "e2e job must install pytest-lsp");
+    assert!(
+        step_content.contains("pytest-lsp"),
+        "e2e job must install pytest-lsp"
+    );
     assert!(step_content.contains("pytest"), "e2e job must run pytest");
 }
 
@@ -58,7 +71,10 @@ fn ci_matrix_covers_three_oses() {
         let oses: HashSet<&str> = matrix_os.iter().filter_map(|v| v.as_str()).collect();
         assert!(oses.contains("ubuntu-latest"), "{job}: must include ubuntu");
         assert!(oses.contains("macos-latest"), "{job}: must include macos");
-        assert!(oses.contains("windows-latest"), "{job}: must include windows");
+        assert!(
+            oses.contains("windows-latest"),
+            "{job}: must include windows"
+        );
     }
 }
 
@@ -70,15 +86,24 @@ fn release_builds_four_targets() {
     let matrix = rel["jobs"]["build"]["strategy"]["matrix"]["include"]
         .as_sequence()
         .expect("build matrix.include");
-    let targets: HashSet<&str> = matrix
-        .iter()
-        .filter_map(|e| e["target"].as_str())
-        .collect();
+    let targets: HashSet<&str> = matrix.iter().filter_map(|e| e["target"].as_str()).collect();
 
-    assert!(targets.contains("x86_64-unknown-linux-gnu"), "must build linux x86_64");
-    assert!(targets.contains("aarch64-unknown-linux-gnu"), "must build linux aarch64");
-    assert!(targets.contains("aarch64-apple-darwin"), "must build macos arm64");
-    assert!(targets.contains("x86_64-pc-windows-msvc"), "must build windows x86_64");
+    assert!(
+        targets.contains("x86_64-unknown-linux-gnu"),
+        "must build linux x86_64"
+    );
+    assert!(
+        targets.contains("aarch64-unknown-linux-gnu"),
+        "must build linux aarch64"
+    );
+    assert!(
+        targets.contains("aarch64-apple-darwin"),
+        "must build macos arm64"
+    );
+    assert!(
+        targets.contains("x86_64-pc-windows-msvc"),
+        "must build windows x86_64"
+    );
     assert_eq!(targets.len(), 4, "must build exactly 4 targets");
 }
 
@@ -103,7 +128,10 @@ fn workflows_use_locked_flag() {
     let ci_str = serde_yaml::to_string(&ci).unwrap();
     let rel_str = serde_yaml::to_string(&rel).unwrap();
     assert!(ci_str.contains("--locked"), "ci.yml must use --locked");
-    assert!(rel_str.contains("--locked"), "release.yml must use --locked");
+    assert!(
+        rel_str.contains("--locked"),
+        "release.yml must use --locked"
+    );
 }
 
 // ─── REQ-REL-13: Release generates provenance attestation ────────────────────
@@ -111,7 +139,9 @@ fn workflows_use_locked_flag() {
 #[test]
 fn release_generates_provenance() {
     let rel = release_workflow();
-    let build_steps = rel["jobs"]["build"]["steps"].as_sequence().expect("build steps");
+    let build_steps = rel["jobs"]["build"]["steps"]
+        .as_sequence()
+        .expect("build steps");
     let step_content: String = serde_yaml::to_string(build_steps).unwrap();
     assert!(
         step_content.contains("attest") || step_content.contains("provenance"),
@@ -124,9 +154,16 @@ fn release_generates_provenance() {
 #[test]
 fn changelog_exists_and_has_unreleased() {
     let changelog = include_str!("../CHANGELOG.md");
-    assert!(changelog.contains("Unreleased"), "CHANGELOG.md must have an [Unreleased] section");
-    assert!(changelog.contains("SemVer") || changelog.contains("semver") || changelog.contains("Keep a Changelog"),
-        "CHANGELOG.md must reference versioning policy");
+    assert!(
+        changelog.contains("Unreleased"),
+        "CHANGELOG.md must have an [Unreleased] section"
+    );
+    assert!(
+        changelog.contains("SemVer")
+            || changelog.contains("semver")
+            || changelog.contains("Keep a Changelog"),
+        "CHANGELOG.md must reference versioning policy"
+    );
 }
 
 // ─── REQ-REL-10: Maturin wheels job covers four platforms ────────────────────
@@ -135,7 +172,10 @@ fn changelog_exists_and_has_unreleased() {
 fn release_builds_maturin_wheels() {
     let rel = release_workflow();
     let rel_str = serde_yaml::to_string(&rel).unwrap();
-    assert!(rel_str.contains("maturin"), "release.yml must use maturin for PyPI wheels");
+    assert!(
+        rel_str.contains("maturin"),
+        "release.yml must use maturin for PyPI wheels"
+    );
 }
 
 // ─── REQ-REL-14: Publish ordering — GitHub Release before crates.io before PyPI ─
@@ -143,7 +183,9 @@ fn release_builds_maturin_wheels() {
 #[test]
 fn release_publish_job_depends_on_build_and_wheels() {
     let rel = release_workflow();
-    let needs = rel["jobs"]["publish"]["needs"].as_sequence().expect("publish.needs");
+    let needs = rel["jobs"]["publish"]["needs"]
+        .as_sequence()
+        .expect("publish.needs");
     let deps: Vec<&str> = needs.iter().filter_map(|v| v.as_str()).collect();
     assert!(deps.contains(&"build"), "publish must need: build");
     assert!(deps.contains(&"wheels"), "publish must need: wheels");

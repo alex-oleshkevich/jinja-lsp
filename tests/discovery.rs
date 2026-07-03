@@ -15,8 +15,15 @@ fn e81b_symlink_cycle_does_not_loop() {
     symlink(tmp.path(), sub.join("loop")).unwrap();
     // Symlink dirs must not be recursed: exactly one result, no duplicates.
     let found = discover_templates(&[tmp.path()], &["html"]);
-    assert_eq!(found.len(), 1, "symlink cycle must not produce duplicates: {found:?}");
-    assert_eq!(found[0].file_name(), Some(std::ffi::OsStr::new("page.html")));
+    assert_eq!(
+        found.len(),
+        1,
+        "symlink cycle must not produce duplicates: {found:?}"
+    );
+    assert_eq!(
+        found[0].file_name(),
+        Some(std::ffi::OsStr::new("page.html"))
+    );
 }
 
 fn tdir() -> std::path::PathBuf {
@@ -37,9 +44,18 @@ fn discovers_html_files_recursively() {
     let dir = tdir();
     let found = discover_templates(&[&dir], &["html"]);
     let n = names(&found);
-    assert!(n.contains(&"base.html".to_owned()), "base.html missing: {n:?}");
-    assert!(n.contains(&"post.html".to_owned()), "post.html missing: {n:?}");
-    assert!(n.contains(&"list.html".to_owned()), "list.html missing: {n:?}");
+    assert!(
+        n.contains(&"base.html".to_owned()),
+        "base.html missing: {n:?}"
+    );
+    assert!(
+        n.contains(&"post.html".to_owned()),
+        "post.html missing: {n:?}"
+    );
+    assert!(
+        n.contains(&"list.html".to_owned()),
+        "list.html missing: {n:?}"
+    );
 }
 
 #[test]
@@ -48,9 +64,15 @@ fn filters_by_extension() {
     let found = discover_templates(&[&dir], &["jinja"]);
     let n = names(&found);
     // macros.jinja should appear
-    assert!(n.contains(&"macros.jinja".to_owned()), "macros.jinja missing: {n:?}");
+    assert!(
+        n.contains(&"macros.jinja".to_owned()),
+        "macros.jinja missing: {n:?}"
+    );
     // html files must not appear
-    assert!(!n.contains(&"base.html".to_owned()), "base.html should be excluded: {n:?}");
+    assert!(
+        !n.contains(&"base.html".to_owned()),
+        "base.html should be excluded: {n:?}"
+    );
 }
 
 #[test]
@@ -60,7 +82,10 @@ fn multiple_extensions() {
     let n = names(&found);
     assert!(n.contains(&"base.html".to_owned()));
     assert!(n.contains(&"macros.jinja".to_owned()));
-    assert!(!n.contains(&"styles.css".to_owned()), "css must be excluded: {n:?}");
+    assert!(
+        !n.contains(&"styles.css".to_owned()),
+        "css must be excluded: {n:?}"
+    );
 }
 
 #[test]
@@ -102,13 +127,20 @@ fn build_workspace_abs_populates_template_index() {
     use tempfile::TempDir;
 
     let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("macro.html"), "{% macro greet(name) %}hi{% endmacro %}").unwrap();
+    fs::write(
+        tmp.path().join("macro.html"),
+        "{% macro greet(name) %}hi{% endmacro %}",
+    )
+    .unwrap();
 
     let ws = build_workspace_abs(&[tmp.path()], &["html"]);
     let key = tmp.path().join("macro.html").to_string_lossy().to_string();
 
     let idx = ws.templates.get(&key).expect("template index must exist");
-    assert!(!idx.macros.is_empty(), "macro must be extracted into template index");
+    assert!(
+        !idx.macros.is_empty(),
+        "macro must be extracted into template index"
+    );
     assert_eq!(idx.macros[0].name, "greet");
 }
 
@@ -122,5 +154,9 @@ fn jwfs_uppercase_extension_is_discovered() {
     fs::write(tmp.path().join("index.HTML"), "content").unwrap();
     // extensions list uses lowercase "html"
     let found = discover_templates(&[tmp.path()], &["html"]);
-    assert_eq!(found.len(), 1, "file with uppercase .HTML extension must be discovered when 'html' is in the list");
+    assert_eq!(
+        found.len(),
+        1,
+        "file with uppercase .HTML extension must be discovered when 'html' is in the list"
+    );
 }

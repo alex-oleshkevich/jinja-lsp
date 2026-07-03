@@ -6,7 +6,7 @@ use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::Diagnostic,
     edit::{TextEdit, WorkspaceEdit},
-    features::wrap::{selection_is_well_formed, wrap_selection, WrapKind},
+    features::wrap::{WrapKind, selection_is_well_formed, wrap_selection},
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
         symbols::BlockDefinition,
@@ -63,13 +63,25 @@ pub fn code_actions(
                 }
             }
             "JINJA-E103" => {
-                actions.extend(resolve_undefined_function(source, file, diag, index, workspace, registry));
+                actions.extend(resolve_undefined_function(
+                    source, file, diag, index, workspace, registry,
+                ));
             }
             "JINJA-E102" => {
-                actions.extend(suggest_spelling_correction(file, diag, Category::Filter, registry));
+                actions.extend(suggest_spelling_correction(
+                    file,
+                    diag,
+                    Category::Filter,
+                    registry,
+                ));
             }
             "JINJA-E104" => {
-                actions.extend(suggest_spelling_correction(file, diag, Category::Test, registry));
+                actions.extend(suggest_spelling_correction(
+                    file,
+                    diag,
+                    Category::Test,
+                    registry,
+                ));
             }
             "JINJA-E403" => {
                 if let Some(action) = insert_block_stub(source, file, diag, index) {
@@ -251,9 +263,10 @@ fn remove_unused_import(
     // 2. Check FromImport ({% from "…" import a, b, … %}).
     let from_import = index.from_imports.iter().find(|fi| {
         fi.span.start_line == diag.line
-            && fi.names.iter().any(|n| {
-                n.name == unused_name || n.alias.as_deref() == Some(&unused_name)
-            })
+            && fi
+                .names
+                .iter()
+                .any(|n| n.name == unused_name || n.alias.as_deref() == Some(&unused_name))
     })?;
 
     // Single-name import → delete the whole line.
@@ -374,9 +387,15 @@ fn suggest_spelling_correction(
         .iter_by_category(category)
         .into_iter()
         .filter_map(|e| {
-            if e.name == misspelled { return None; }
+            if e.name == misspelled {
+                return None;
+            }
             let d = levenshtein(&misspelled, &e.name);
-            if d <= threshold { Some((d, e.name.clone())) } else { None }
+            if d <= threshold {
+                Some((d, e.name.clone()))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -415,7 +434,10 @@ fn remove_duplicate_block(
     index: &TemplateIndex,
 ) -> Option<CodeAction> {
     let block_name = extract_quoted_name(&diag.message)?;
-    let block = index.blocks.iter().find(|b| b.name == block_name && b.span.start_line == diag.line)?;
+    let block = index
+        .blocks
+        .iter()
+        .find(|b| b.name == block_name && b.span.start_line == diag.line)?;
     // body.end_byte is not set for blocks; scan source for the matching {% endblock %}.
     // Suppress the action entirely when it can't be found — deleting only the
     // opening tag would leave the body and an orphaned {% endblock %} behind.
@@ -438,7 +460,10 @@ fn remove_duplicate_macro(
     index: &TemplateIndex,
 ) -> Option<CodeAction> {
     let macro_name = extract_quoted_name(&diag.message)?;
-    let macro_def = index.macros.iter().find(|m| m.name == macro_name && m.span.start_line == diag.line)?;
+    let macro_def = index
+        .macros
+        .iter()
+        .find(|m| m.name == macro_name && m.span.start_line == diag.line)?;
     let endmacro_line = byte_to_line(source, macro_def.body.end_byte);
     let edit = delete_region_clean(source, macro_def.span.start_line, endmacro_line + 1);
     Some(CodeAction {
@@ -458,7 +483,10 @@ fn remove_duplicate_import_alias(
     index: &TemplateIndex,
 ) -> Option<CodeAction> {
     let alias_name = extract_quoted_name(&diag.message)?;
-    let alias = index.import_aliases.iter().find(|a| a.alias == alias_name && a.span.start_line == diag.line)?;
+    let alias = index
+        .import_aliases
+        .iter()
+        .find(|a| a.alias == alias_name && a.span.start_line == diag.line)?;
     let edit = delete_region_clean(source, alias.span.start_line, alias.span.start_line + 1);
     Some(CodeAction {
         title: format!("Remove duplicate import alias '{alias_name}'"),
@@ -477,7 +505,10 @@ fn remove_duplicate_from_import(
     index: &TemplateIndex,
 ) -> Option<CodeAction> {
     let name = extract_quoted_name(&diag.message)?;
-    let fi = index.from_imports.iter().find(|fi| fi.span.start_line == diag.line)?;
+    let fi = index
+        .from_imports
+        .iter()
+        .find(|fi| fi.span.start_line == diag.line)?;
 
     // Multi-name import: remove only the duplicate name, keeping the other valid names
     // on the line (mirrors remove_unused_import's surgical single-name removal).
@@ -485,7 +516,13 @@ fn remove_duplicate_from_import(
         let line_idx = fi.span.start_line;
         let line = source_line(source, line_idx);
         let new_line = remove_name_from_import_line(line, &name)?;
-        TextEdit { start_line: line_idx, start_col: 0, end_line: line_idx, end_col: line.len() as u32, new_text: new_line }
+        TextEdit {
+            start_line: line_idx,
+            start_col: 0,
+            end_line: line_idx,
+            end_col: line.len() as u32,
+            new_text: new_line,
+        }
     } else {
         delete_region_clean(source, fi.span.start_line, fi.span.start_line + 1)
     };
@@ -520,8 +557,14 @@ fn rename_shadowing_variable(
 
     // Reference edits: all identifier references to this name on/after the definition line.
     // (valid_range is not populated by the extractor; use line-range as a scope heuristic.)
-    let ref_edits = index.references.iter()
-        .filter(|r| r.name == var_name && r.kind == ReferenceKind::Identifier && r.span.start_line >= diag.line)
+    let ref_edits = index
+        .references
+        .iter()
+        .filter(|r| {
+            r.name == var_name
+                && r.kind == ReferenceKind::Identifier
+                && r.span.start_line >= diag.line
+        })
         .map(|r| TextEdit {
             start_line: r.span.start_line,
             start_col: r.span.start_col,
@@ -542,7 +585,10 @@ fn rename_shadowing_variable(
         kind: ActionKind::QuickFix,
         diagnostics: vec![diag.clone()],
         is_preferred: true,
-        edit: Some(WorkspaceEdit { changes, create_files: vec![] }),
+        edit: Some(WorkspaceEdit {
+            changes,
+            create_files: vec![],
+        }),
         command: None,
     })
 }
@@ -572,7 +618,9 @@ fn find_endblock_line(source: &str, block: &BlockDefinition) -> Option<u32> {
         let t = line.trim();
         if t.contains("{%") && t.contains("endblock") {
             depth -= 1;
-            if depth == 0 { return Some(i as u32); }
+            if depth == 0 {
+                return Some(i as u32);
+            }
         } else if t.contains("{%") && t.split_whitespace().any(|w| w == "block") {
             depth += 1;
         }
@@ -589,9 +637,21 @@ fn delete_region_clean(source: &str, start_line: u32, end_line: u32) -> TextEdit
     if start_line > 0 {
         let prev_len = source_line(source, start_line - 1).len() as u32;
         let last_len = source_line(source, last).len() as u32;
-        TextEdit { start_line: start_line - 1, start_col: prev_len, end_line: last, end_col: last_len, new_text: String::new() }
+        TextEdit {
+            start_line: start_line - 1,
+            start_col: prev_len,
+            end_line: last,
+            end_col: last_len,
+            new_text: String::new(),
+        }
     } else {
-        TextEdit { start_line, start_col: 0, end_line, end_col: 0, new_text: String::new() }
+        TextEdit {
+            start_line,
+            start_col: 0,
+            end_line,
+            end_col: 0,
+            new_text: String::new(),
+        }
     }
 }
 
@@ -732,8 +792,12 @@ fn levenshtein(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let m = a.len();
     let n = b.len();
-    if m == 0 { return n; }
-    if n == 0 { return m; }
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
     // Use two rows to keep O(n) space.
     let mut prev: Vec<usize> = (0..=n).collect();
     let mut curr = vec![0usize; n + 1];
@@ -760,7 +824,10 @@ fn extract_quoted_name(message: &str) -> Option<String> {
 
 /// Return 0-based line number for the given byte offset.
 fn byte_to_line(source: &str, byte: usize) -> u32 {
-    source[..byte.min(source.len())].bytes().filter(|&b| b == b'\n').count() as u32
+    source[..byte.min(source.len())]
+        .bytes()
+        .filter(|&b| b == b'\n')
+        .count() as u32
 }
 
 /// Return the source line (without trailing newline) at 0-based `line`.

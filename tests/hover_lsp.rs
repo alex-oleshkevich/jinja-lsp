@@ -36,7 +36,10 @@ fn hover_returns_doc_for_builtin_filter() {
     let index = state.workspace.templates.get("t.html").unwrap();
     // Cursor on "upper" (col 11)
     let result = hover(source, 0, 11, index, &state.registry, &state.workspace);
-    assert!(result.is_some(), "hover must return Some for builtin filter 'upper'");
+    assert!(
+        result.is_some(),
+        "hover must return Some for builtin filter 'upper'"
+    );
     let h = result.unwrap();
     assert!(
         h.markdown.contains("upper"),
@@ -52,5 +55,8 @@ fn hover_returns_none_outside_jinja() {
     let source = state.sources.get("t.html").unwrap();
     let index = state.workspace.templates.get("t.html").unwrap();
     let result = hover(source, 0, 5, index, &state.registry, &state.workspace);
-    assert!(result.is_none(), "hover must return None outside Jinja delimiters");
+    assert!(
+        result.is_none(),
+        "hover must return None outside Jinja delimiters"
+    );
 }

@@ -2,7 +2,7 @@
 
 use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::features::inlay_hints::{
-    inlay_hint_resolve, inlay_hints, InlayHintData, InlayHintKind, InlayHintsConfig,
+    InlayHintData, InlayHintKind, InlayHintsConfig, inlay_hint_resolve, inlay_hints,
 };
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
@@ -17,7 +17,14 @@ fn hints(src: &str) -> Vec<jinja_lsp::features::inlay_hints::InlayHint> {
     let idx = extract(src);
     let registry = reg();
     let ws = WorkspaceIndex::default();
-    inlay_hints(src, "test.html", &idx, &registry, &ws, &InlayHintsConfig::default())
+    inlay_hints(
+        src,
+        "test.html",
+        &idx,
+        &registry,
+        &ws,
+        &InlayHintsConfig::default(),
+    )
 }
 
 fn hints_with_ws(
@@ -26,13 +33,17 @@ fn hints_with_ws(
 ) -> Vec<jinja_lsp::features::inlay_hints::InlayHint> {
     let idx = extract(src);
     let registry = reg();
-    inlay_hints(src, "test.html", &idx, &registry, ws, &InlayHintsConfig::default())
+    inlay_hints(
+        src,
+        "test.html",
+        &idx,
+        &registry,
+        ws,
+        &InlayHintsConfig::default(),
+    )
 }
 
-fn hints_cfg(
-    src: &str,
-    cfg: InlayHintsConfig,
-) -> Vec<jinja_lsp::features::inlay_hints::InlayHint> {
+fn hints_cfg(src: &str, cfg: InlayHintsConfig) -> Vec<jinja_lsp::features::inlay_hints::InlayHint> {
     let idx = extract(src);
     let registry = reg();
     let ws = WorkspaceIndex::default();
@@ -44,7 +55,8 @@ fn has_param_hint(hs: &[jinja_lsp::features::inlay_hints::InlayHint]) -> bool {
 }
 
 fn has_endblock_hint(hs: &[jinja_lsp::features::inlay_hints::InlayHint]) -> bool {
-    hs.iter().any(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. }))
+    hs.iter()
+        .any(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. }))
 }
 
 // ─── REQ-INLAY-01: label positional macro args ───────────────────────────────
@@ -56,12 +68,14 @@ fn inlay01_local_macro_positional_arg_gets_label() {
     let hs = hints(src);
     // x gets "name:", y gets "msg:"
     assert!(
-        hs.iter().any(|h| h.label == "name:" && h.kind == Some(InlayHintKind::Parameter)),
+        hs.iter()
+            .any(|h| h.label == "name:" && h.kind == Some(InlayHintKind::Parameter)),
         "expected 'name:' parameter hint; got: {:?}",
         hs.iter().map(|h| &h.label).collect::<Vec<_>>()
     );
     assert!(
-        hs.iter().any(|h| h.label == "msg:" && h.kind == Some(InlayHintKind::Parameter)),
+        hs.iter()
+            .any(|h| h.label == "msg:" && h.kind == Some(InlayHintKind::Parameter)),
         "expected 'msg:' parameter hint; got: {:?}",
         hs.iter().map(|h| &h.label).collect::<Vec<_>>()
     );
@@ -84,7 +98,8 @@ fn inlay01_keyword_arg_stops_the_positional_run() {
     let hs = hints(src);
     // No hint on the keyword arg; the positional run stops at first keyword arg
     assert!(
-        !hs.iter().any(|h| h.label == "msg:" && h.kind == Some(InlayHintKind::Parameter)),
+        !hs.iter()
+            .any(|h| h.label == "msg:" && h.kind == Some(InlayHintKind::Parameter)),
         "keyword arg must stop the positional run — no hint on trailing positional 'y'"
     );
 }
@@ -109,8 +124,15 @@ fn inlay01_over_arity_labels_up_to_last_param_extras_get_none() {
     assert!(name_hint.is_some(), "expected 'name:' hint for first arg");
     // The extra arg past the last param must get no hint
     // We only have 1 param so there should be exactly 1 hint total
-    let param_hints: Vec<_> = hs.iter().filter(|h| h.kind == Some(InlayHintKind::Parameter)).collect();
-    assert_eq!(param_hints.len(), 1, "over-arity: only 1 param hint (first arg), extra arg gets none");
+    let param_hints: Vec<_> = hs
+        .iter()
+        .filter(|h| h.kind == Some(InlayHintKind::Parameter))
+        .collect();
+    assert_eq!(
+        param_hints.len(),
+        1,
+        "over-arity: only 1 param hint (first arg), extra arg gets none"
+    );
 }
 
 #[test]
@@ -130,10 +152,20 @@ fn inlay01_positional_after_keyword_gets_no_hint() {
     // url: before href; stop at text=label; no hint on trailing "noopener"
     let src = r#"{% macro greet(url, text, rel) %}hi{% endmacro %}{{ greet(href, text=label, "noopener") }}"#;
     let hs = hints(src);
-    let param_hints: Vec<_> = hs.iter().filter(|h| h.kind == Some(InlayHintKind::Parameter)).collect();
+    let param_hints: Vec<_> = hs
+        .iter()
+        .filter(|h| h.kind == Some(InlayHintKind::Parameter))
+        .collect();
     // Only 'url:' before 'href' — the run stops at text=label
-    assert_eq!(param_hints.len(), 1, "positional-after-keyword must get no hint; only 1 hint expected (url: before href)");
-    assert_eq!(param_hints[0].label, "url:", "the only hint should be 'url:'");
+    assert_eq!(
+        param_hints.len(),
+        1,
+        "positional-after-keyword must get no hint; only 1 hint expected (url: before href)"
+    );
+    assert_eq!(
+        param_hints[0].label, "url:",
+        "the only hint should be 'url:'"
+    );
 }
 
 // ─── REQ-INLAY-06: suppress when arg already spells the param ─────────────────
@@ -204,7 +236,8 @@ fn inlay07_filter_positional_arg_gets_label() {
     let src = "{{ x | truncate(60) }}";
     let hs = hints(src);
     assert!(
-        hs.iter().any(|h| h.label == "length:" && h.kind == Some(InlayHintKind::Parameter)),
+        hs.iter()
+            .any(|h| h.label == "length:" && h.kind == Some(InlayHintKind::Parameter)),
         "filter arg 60 must be labelled 'length:' (params[0]); hints: {:?}",
         hs.iter().map(|h| &h.label).collect::<Vec<_>>()
     );
@@ -251,7 +284,11 @@ fn inlay02_echo_is_kind_none() {
     let hs = hints(src);
     let echo = hs.iter().find(|h| h.label == "body");
     assert!(echo.is_some(), "should have an echo hint for 'body'");
-    assert_eq!(echo.unwrap().kind, None, "endblock echo must be kind-less (not Parameter or Type)");
+    assert_eq!(
+        echo.unwrap().kind,
+        None,
+        "endblock echo must be kind-less (not Parameter or Type)"
+    );
 }
 
 #[test]
@@ -270,7 +307,10 @@ fn inlay02_endblock_echo_positioned_after_endblock_keyword() {
     // hint should be placed at the byte right after "endblock"
     let src = "{% block x %}y{% endblock %}";
     let hs = hints(src);
-    let echo = hs.iter().find(|h| h.label == "x").expect("echo hint must exist");
+    let echo = hs
+        .iter()
+        .find(|h| h.label == "x")
+        .expect("echo hint must exist");
     // "{% endblock %}" starts at byte 13 ("{% block x %}y" is 14 bytes: 0-13)
     // Within "{% endblock %}", "endblock" starts at offset 3 → byte 13+3=16, ends at 16+8=24
     // So col = 24 - line_start (which is 0 since all on one line) = 24
@@ -287,7 +327,10 @@ fn inlay02_endblock_echo_positioned_after_endblock_keyword() {
     //  {  %  sp b  l  o  c  k  sp x  sp %  }  y  {  %  sp e  n  d  b  l  o  c  k  sp %  }
     // endblock starts at col 17, ends at col 25 (17+8=25)
     assert_eq!(echo.line, 0, "echo must be on line 0");
-    assert_eq!(echo.col, 25, "echo col must be right after 'endblock' keyword (col 17 + len 8 = 25)");
+    assert_eq!(
+        echo.col, 25,
+        "echo col must be right after 'endblock' keyword (col 17 + len 8 = 25)"
+    );
 }
 
 #[test]
@@ -307,8 +350,14 @@ fn inlay02_nested_blocks_echo_correct_name() {
     let hs = hints(src);
     // The first bare endblock (at byte ~38) closes "inner"
     // The second bare endblock closes "outer"
-    assert!(hs.iter().any(|h| h.label == "inner"), "first endblock must echo 'inner'");
-    assert!(hs.iter().any(|h| h.label == "outer"), "second endblock must echo 'outer'");
+    assert!(
+        hs.iter().any(|h| h.label == "inner"),
+        "first endblock must echo 'inner'"
+    );
+    assert!(
+        hs.iter().any(|h| h.label == "outer"),
+        "second endblock must echo 'outer'"
+    );
 }
 
 #[test]
@@ -320,8 +369,15 @@ fn jinja_lsp_7h6z_raw_section_endblock_text_does_not_corrupt_real_block_stack() 
     // endblock (after {% endraw %}) with an empty stack and no echo hint at all.
     let src = "{% block outer %}{% raw %}{% endblock %}{% endraw %}{% endblock %}";
     let hs = hints(src);
-    let echoes: Vec<_> = hs.iter().filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. })).collect();
-    assert_eq!(echoes.len(), 1, "exactly one echo hint: the real endblock, not the literal one inside {{% raw %}}");
+    let echoes: Vec<_> = hs
+        .iter()
+        .filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. }))
+        .collect();
+    assert_eq!(
+        echoes.len(),
+        1,
+        "exactly one echo hint: the real endblock, not the literal one inside {{% raw %}}"
+    );
     assert_eq!(echoes[0].label, "outer");
     // The real (last) "endblock" keyword starts at this byte offset.
     let real_endblock_col = src.rfind("endblock").unwrap() as u32 + "endblock".len() as u32;
@@ -339,10 +395,17 @@ fn jinja_lsp_7h6z_raw_section_block_open_text_does_not_push_phantom_entry() {
     // SECOND bare endblock that has no matching real opener at all.
     let src = "{% raw %}{% block x %}{% endraw %}{% block real %}y{% endblock %}{% endblock %}";
     let hs = hints(src);
-    let echoes: Vec<_> = hs.iter().filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. })).collect();
+    let echoes: Vec<_> = hs
+        .iter()
+        .filter(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. }))
+        .collect();
     // Only the first bare endblock has a real matching opener ("real"); the
     // second is a stray endblock with nothing left on a correctly-tracked stack.
-    assert_eq!(echoes.len(), 1, "the phantom 'x' entry must not let the stray second endblock echo anything: {echoes:?}");
+    assert_eq!(
+        echoes.len(),
+        1,
+        "the phantom 'x' entry must not let the stray second endblock echo anything: {echoes:?}"
+    );
     assert_eq!(echoes[0].label, "real");
 }
 
@@ -350,26 +413,50 @@ fn jinja_lsp_7h6z_raw_section_block_open_text_does_not_push_phantom_entry() {
 
 #[test]
 fn inlay04_parameter_names_off_suppresses_only_param_hints() {
-    let src = "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
-    let cfg = InlayHintsConfig { parameter_names: false, endblock_names: true };
+    let src =
+        "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
+    let cfg = InlayHintsConfig {
+        parameter_names: false,
+        endblock_names: true,
+    };
     let hs = hints_cfg(src, cfg);
-    assert!(!has_param_hint(&hs), "parameterNames=off must suppress macro param hints");
-    assert!(has_endblock_hint(&hs), "parameterNames=off must NOT suppress endblock echo");
+    assert!(
+        !has_param_hint(&hs),
+        "parameterNames=off must suppress macro param hints"
+    );
+    assert!(
+        has_endblock_hint(&hs),
+        "parameterNames=off must NOT suppress endblock echo"
+    );
 }
 
 #[test]
 fn inlay04_endblock_names_off_suppresses_only_endblock_echo() {
-    let src = "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
-    let cfg = InlayHintsConfig { parameter_names: true, endblock_names: false };
+    let src =
+        "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
+    let cfg = InlayHintsConfig {
+        parameter_names: true,
+        endblock_names: false,
+    };
     let hs = hints_cfg(src, cfg);
-    assert!(has_param_hint(&hs), "endblockNames=off must NOT suppress macro param hints");
-    assert!(!has_endblock_hint(&hs), "endblockNames=off must suppress endblock echo");
+    assert!(
+        has_param_hint(&hs),
+        "endblockNames=off must NOT suppress macro param hints"
+    );
+    assert!(
+        !has_endblock_hint(&hs),
+        "endblockNames=off must suppress endblock echo"
+    );
 }
 
 #[test]
 fn inlay04_both_off_produces_no_hints() {
-    let src = "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
-    let cfg = InlayHintsConfig { parameter_names: false, endblock_names: false };
+    let src =
+        "{% macro greet(name) %}hi{% endmacro %}{% block content %}{{ greet(x) }}{% endblock %}";
+    let cfg = InlayHintsConfig {
+        parameter_names: false,
+        endblock_names: false,
+    };
     let hs = hints_cfg(src, cfg);
     assert!(hs.is_empty(), "both toggles off must produce no hints");
 }
@@ -380,8 +467,14 @@ fn inlay04_both_off_produces_no_hints() {
 fn inlay05_initial_hint_has_no_tooltip() {
     let src = "{% macro greet(name) %}hi{% endmacro %}{{ greet(x) }}";
     let hs = hints(src);
-    let h = hs.iter().find(|h| h.kind == Some(InlayHintKind::Parameter)).expect("hint must exist");
-    assert!(h.tooltip.is_none(), "initial inlay hint must carry no tooltip (REQ-INLAY-05)");
+    let h = hs
+        .iter()
+        .find(|h| h.kind == Some(InlayHintKind::Parameter))
+        .expect("hint must exist");
+    assert!(
+        h.tooltip.is_none(),
+        "initial inlay hint must carry no tooltip (REQ-INLAY-05)"
+    );
 }
 
 #[test]
@@ -390,10 +483,23 @@ fn inlay05_resolved_macro_param_hint_attaches_tooltip() {
     let idx = extract(src);
     let registry = reg();
     let ws = WorkspaceIndex::default();
-    let hs = inlay_hints(src, "test.html", &idx, &registry, &ws, &InlayHintsConfig::default());
-    let h = hs.into_iter().find(|h| h.kind == Some(InlayHintKind::Parameter)).expect("hint must exist");
+    let hs = inlay_hints(
+        src,
+        "test.html",
+        &idx,
+        &registry,
+        &ws,
+        &InlayHintsConfig::default(),
+    );
+    let h = hs
+        .into_iter()
+        .find(|h| h.kind == Some(InlayHintKind::Parameter))
+        .expect("hint must exist");
     let resolved = inlay_hint_resolve(h, &idx, &registry, &ws);
-    assert!(resolved.tooltip.is_some(), "resolved macro param hint must have a tooltip");
+    assert!(
+        resolved.tooltip.is_some(),
+        "resolved macro param hint must have a tooltip"
+    );
 }
 
 #[test]
@@ -403,10 +509,23 @@ fn inlay05_resolved_filter_param_hint_attaches_tooltip() {
     let idx = extract(src);
     let registry = reg();
     let ws = WorkspaceIndex::default();
-    let hs = inlay_hints(src, "test.html", &idx, &registry, &ws, &InlayHintsConfig::default());
-    let h = hs.into_iter().find(|h| h.label == "length:").expect("length: hint must exist");
+    let hs = inlay_hints(
+        src,
+        "test.html",
+        &idx,
+        &registry,
+        &ws,
+        &InlayHintsConfig::default(),
+    );
+    let h = hs
+        .into_iter()
+        .find(|h| h.label == "length:")
+        .expect("length: hint must exist");
     let resolved = inlay_hint_resolve(h, &idx, &registry, &ws);
-    assert!(resolved.tooltip.is_some(), "resolved filter param hint must have a tooltip");
+    assert!(
+        resolved.tooltip.is_some(),
+        "resolved filter param hint must have a tooltip"
+    );
 }
 
 #[test]
@@ -430,8 +549,14 @@ fn inlay05_stale_resolve_returns_hint_unchanged_no_throw() {
     let ws = WorkspaceIndex::default();
     // Must not panic, must return hint unchanged
     let resolved = inlay_hint_resolve(stale_hint, &idx, &registry, &ws);
-    assert_eq!(resolved.label, "ghost:", "stale resolve must return hint unchanged");
-    assert!(resolved.tooltip.is_none(), "stale resolve must not attach a tooltip");
+    assert_eq!(
+        resolved.label, "ghost:",
+        "stale resolve must return hint unchanged"
+    );
+    assert!(
+        resolved.tooltip.is_none(),
+        "stale resolve must not attach a tooltip"
+    );
 }
 
 #[test]
@@ -442,9 +567,16 @@ fn inlay05_data_is_logical_key_not_byte_offset() {
     let src = "{% macro greet(name) %}hi{% endmacro %}{% block b %}{{ greet(x) }}{% endblock %}";
     let hs = hints(src);
 
-    let param_hint = hs.iter().find(|h| h.kind == Some(InlayHintKind::Parameter)).expect("param hint must exist");
+    let param_hint = hs
+        .iter()
+        .find(|h| h.kind == Some(InlayHintKind::Parameter))
+        .expect("param hint must exist");
     match &param_hint.data {
-        InlayHintData::Parameter { template_path, symbol_name, param_index } => {
+        InlayHintData::Parameter {
+            template_path,
+            symbol_name,
+            param_index,
+        } => {
             assert_eq!(template_path, "test.html");
             assert_eq!(symbol_name, "greet");
             assert_eq!(*param_index, 0, "first arg maps to declared param index 0");
@@ -452,9 +584,15 @@ fn inlay05_data_is_logical_key_not_byte_offset() {
         _ => panic!("param hint data must be InlayHintData::Parameter"),
     }
 
-    let echo = hs.iter().find(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. })).expect("echo must exist");
+    let echo = hs
+        .iter()
+        .find(|h| h.kind.is_none() && matches!(&h.data, InlayHintData::EndBlock { .. }))
+        .expect("echo must exist");
     match &echo.data {
-        InlayHintData::EndBlock { template_path, block_name } => {
+        InlayHintData::EndBlock {
+            template_path,
+            block_name,
+        } => {
             assert_eq!(template_path, "test.html");
             assert_eq!(block_name, "b");
         }
@@ -470,10 +608,23 @@ fn inlay05_resolved_endblock_echo_attaches_tooltip() {
     let idx = extract(src);
     let registry = reg();
     let ws = WorkspaceIndex::default();
-    let hs = inlay_hints(src, "test.html", &idx, &registry, &ws, &InlayHintsConfig::default());
-    let h = hs.into_iter().find(|h| h.label == "content").expect("echo must exist");
+    let hs = inlay_hints(
+        src,
+        "test.html",
+        &idx,
+        &registry,
+        &ws,
+        &InlayHintsConfig::default(),
+    );
+    let h = hs
+        .into_iter()
+        .find(|h| h.label == "content")
+        .expect("echo must exist");
     let resolved = inlay_hint_resolve(h, &idx, &registry, &ws);
-    assert!(resolved.tooltip.is_some(), "resolved endblock echo must have a tooltip");
+    assert!(
+        resolved.tooltip.is_some(),
+        "resolved endblock echo must have a tooltip"
+    );
 }
 
 // ─── REQ-INLAY-01: from-import macro call gets hints ─────────────────────────

@@ -1,16 +1,25 @@
 // F03 — Extension Packs tests: REQ-EXT-01 through REQ-EXT-05.
 
+use jinja_lsp::builtins::packs::{KNOWN_PACK_NAMES, KnownPack, PackError};
 use jinja_lsp::builtins::registry::{Category, Registry, Source};
-use jinja_lsp::builtins::packs::{KnownPack, PackError, KNOWN_PACK_NAMES};
 
 // ---------- REQ-EXT-01: extras activates packs; unknown names are errors -----
 
 #[test]
 fn known_pack_names_are_the_four_frameworks() {
     assert!(KNOWN_PACK_NAMES.contains(&"flask"), "flask must be known");
-    assert!(KNOWN_PACK_NAMES.contains(&"starlette"), "starlette must be known");
-    assert!(KNOWN_PACK_NAMES.contains(&"starlette-babel"), "starlette-babel must be known");
-    assert!(KNOWN_PACK_NAMES.contains(&"starlette-flash"), "starlette-flash must be known");
+    assert!(
+        KNOWN_PACK_NAMES.contains(&"starlette"),
+        "starlette must be known"
+    );
+    assert!(
+        KNOWN_PACK_NAMES.contains(&"starlette-babel"),
+        "starlette-babel must be known"
+    );
+    assert!(
+        KNOWN_PACK_NAMES.contains(&"starlette-flash"),
+        "starlette-flash must be known"
+    );
     assert_eq!(KNOWN_PACK_NAMES.len(), 4, "exactly 4 known packs");
 }
 
@@ -56,7 +65,10 @@ fn disabled_pack_symbol_not_in_registry() {
     let reg = Registry::load_core(); // no packs loaded
     // url_for is not a core Jinja symbol
     let entry = reg.get(Category::Function, "url_for");
-    assert!(entry.is_none(), "url_for must not exist in core-only registry");
+    assert!(
+        entry.is_none(),
+        "url_for must not exist in core-only registry"
+    );
 }
 
 #[test]
@@ -111,8 +123,7 @@ fn starlette_flash_pack_has_1_doc() {
 #[test]
 fn all_packs_total_19_docs() {
     let mut reg = Registry::load_core();
-    let count =
-        reg.load_packs(&["flask", "starlette", "starlette-babel", "starlette-flash"]);
+    let count = reg.load_packs(&["flask", "starlette", "starlette-babel", "starlette-flash"]);
     assert_eq!(count, 19, "all packs together must contribute 19 docs");
 }
 
@@ -166,7 +177,8 @@ fn last_loaded_pack_wins_for_equal_priority() {
     let entry = reg.get(Category::Function, "url_for").unwrap();
     assert!(
         matches!(&entry.source, Source::Pack(name) if name == "starlette"),
-        "starlette (loaded second) must win over flask for url_for; got: {:?}", entry.source
+        "starlette (loaded second) must win over flask for url_for; got: {:?}",
+        entry.source
     );
 }
 
@@ -178,6 +190,7 @@ fn first_loaded_pack_wins_when_loaded_in_opposite_order() {
     let entry = reg.get(Category::Function, "url_for").unwrap();
     assert!(
         matches!(&entry.source, Source::Pack(name) if name == "flask"),
-        "flask (loaded second) must win over starlette for url_for; got: {:?}", entry.source
+        "flask (loaded second) must win over starlette for url_for; got: {:?}",
+        entry.source
     );
 }

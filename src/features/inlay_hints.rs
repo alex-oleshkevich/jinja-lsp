@@ -67,7 +67,10 @@ pub struct InlayHintsConfig {
 
 impl Default for InlayHintsConfig {
     fn default() -> Self {
-        Self { parameter_names: true, endblock_names: true }
+        Self {
+            parameter_names: true,
+            endblock_names: true,
+        }
     }
 }
 
@@ -107,15 +110,27 @@ pub fn inlay_hint_resolve(
     workspace: &WorkspaceIndex,
 ) -> InlayHint {
     match &hint.data {
-        InlayHintData::Parameter { template_path: _, symbol_name, param_index } => {
-            let tooltip =
-                resolve_param_tooltip(symbol_name, *param_index as usize, index, registry, workspace);
+        InlayHintData::Parameter {
+            template_path: _,
+            symbol_name,
+            param_index,
+        } => {
+            let tooltip = resolve_param_tooltip(
+                symbol_name,
+                *param_index as usize,
+                index,
+                registry,
+                workspace,
+            );
             if let Some(tt) = tooltip {
                 hint.tooltip = Some(tt);
             }
             // On miss: return unchanged — never throw (REQ-INLAY-05)
         }
-        InlayHintData::EndBlock { template_path: _, block_name } => {
+        InlayHintData::EndBlock {
+            template_path: _,
+            block_name,
+        } => {
             let bn = block_name.clone();
             if index.blocks.iter().any(|b| b.name == bn) {
                 hint.tooltip = Some(format!("block `{}`", bn));
@@ -140,7 +155,14 @@ fn collect_param_hints(
             ReferenceKind::Function => {
                 // Macro call — check macro first.
                 if let Some(params) = resolve_macro_params(&r.name, index, workspace) {
-                    emit_call_hints(source, template_path, &r.name, r.span.end_byte, &params, out);
+                    emit_call_hints(
+                        source,
+                        template_path,
+                        &r.name,
+                        r.span.end_byte,
+                        &params,
+                        out,
+                    );
                 } else if let Some(entry) = registry.get(Category::Filter, &r.name) {
                     // Filter-with-args (`x | f(args)`) is captured as Function, not Filter,
                     // because the grammar's function_call node matches before the bare-identifier
@@ -148,7 +170,14 @@ fn collect_param_hints(
                     if !entry.params.is_empty() {
                         let names: Vec<String> =
                             entry.params.iter().map(|p| p.name.clone()).collect();
-                        emit_call_hints(source, template_path, &r.name, r.span.end_byte, &names, out);
+                        emit_call_hints(
+                            source,
+                            template_path,
+                            &r.name,
+                            r.span.end_byte,
+                            &names,
+                            out,
+                        );
                     }
                 }
             }
@@ -159,7 +188,14 @@ fn collect_param_hints(
                     if !entry.params.is_empty() {
                         let names: Vec<String> =
                             entry.params.iter().map(|p| p.name.clone()).collect();
-                        emit_call_hints(source, template_path, &r.name, r.span.end_byte, &names, out);
+                        emit_call_hints(
+                            source,
+                            template_path,
+                            &r.name,
+                            r.span.end_byte,
+                            &names,
+                            out,
+                        );
                     }
                 }
             }
@@ -208,13 +244,21 @@ fn emit_call_hints(
     params: &[String],
     out: &mut Vec<InlayHint>,
 ) {
-    let Some(args_start) = find_args_start(source, name_end_byte) else { return };
+    let Some(args_start) = find_args_start(source, name_end_byte) else {
+        return;
+    };
     let args = parse_args(source, args_start);
 
     for (param_idx, param_name) in params.iter().enumerate() {
-        let Some(arg) = args.get(param_idx) else { break };
-        if arg.is_keyword { break } // Stop at the first keyword argument (REQ-INLAY-01).
-        if arg_matches_param(&arg.text, param_name) { continue } // Suppression (REQ-INLAY-06).
+        let Some(arg) = args.get(param_idx) else {
+            break;
+        };
+        if arg.is_keyword {
+            break;
+        } // Stop at the first keyword argument (REQ-INLAY-01).
+        if arg_matches_param(&arg.text, param_name) {
+            continue;
+        } // Suppression (REQ-INLAY-06).
 
         let (line, col) = super::byte_to_line_col(source, arg.start_byte);
         out.push(InlayHint {
@@ -313,7 +357,11 @@ fn push_arg(source: &str, raw_start: usize, raw_end: usize, args: &mut Vec<Arg>)
     let leading_ws = slice.len() - slice.trim_start().len();
     let start_byte = raw_start + leading_ws;
     let is_keyword = has_top_level_assign(source, raw_start, raw_end);
-    args.push(Arg { start_byte, text, is_keyword });
+    args.push(Arg {
+        start_byte,
+        text,
+        is_keyword,
+    });
 }
 
 /// Returns `true` if `source[start..end]` contains a top-level `=` that is not
@@ -410,7 +458,12 @@ fn collect_endblock_echoes(source: &str, template_path: &str, out: &mut Vec<Inla
         };
 
         let inner = &source[tag_start + 2..close_pos];
-        let trimmed = inner.trim().trim_start_matches('-').trim().trim_end_matches('-').trim();
+        let trimmed = inner
+            .trim()
+            .trim_start_matches('-')
+            .trim()
+            .trim_end_matches('-')
+            .trim();
         let mut words = trimmed.split_whitespace();
         let keyword = words.next();
 
@@ -533,7 +586,11 @@ fn resolve_param_tooltip(
     // Registry filter.
     if let Some(entry) = registry.get(Category::Filter, symbol_name) {
         let p = entry.params.get(param_idx)?;
-        return Some(fmt_filter_param(&p.name, p.ty.as_deref(), p.default.as_deref()));
+        return Some(fmt_filter_param(
+            &p.name,
+            p.ty.as_deref(),
+            p.default.as_deref(),
+        ));
     }
 
     None

@@ -18,7 +18,10 @@ fn def01_macro_in_same_template_jumps_to_definition() {
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
     assert!(result.is_some(), "macro call must jump to definition");
     let def = result.unwrap();
-    assert_eq!(def.target_path, "test.html", "same-file macro must point to current file");
+    assert_eq!(
+        def.target_path, "test.html",
+        "same-file macro must point to current file"
+    );
     // The macro name span must be somewhere in line 0
     assert_eq!(def.target_start_line, 0, "macro is on line 0");
 }
@@ -100,7 +103,10 @@ fn def04_block_in_child_jumps_to_ancestor() {
     // Should jump to the "content" block in base.html (nearest ancestor).
     // If DEF-04 is implemented, this succeeds; otherwise None is acceptable.
     if let Some(def) = result {
-        assert_eq!(def.target_path, "base.html", "must jump to ancestor block file");
+        assert_eq!(
+            def.target_path, "base.html",
+            "must jump to ancestor block file"
+        );
     }
     // Not asserting is_some() since DEF-04 may be best-effort.
 }
@@ -133,7 +139,10 @@ fn def05_alias_attribute_jumps_to_macro_in_source() {
     let col = src.rfind("post_url").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
     if let Some(def) = result {
-        assert_eq!(def.target_path, "macros.html", "alias attribute must jump to source macro");
+        assert_eq!(
+            def.target_path, "macros.html",
+            "alias attribute must jump to source macro"
+        );
     }
     // Not asserting is_some() — attribute resolution depends on extraction data.
 }
@@ -151,7 +160,10 @@ fn def03b_from_import_alias_jumps_to_real_macro() {
     let reg = Registry::load_core();
     let col = src.rfind("bar").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "child.html", &idx, &reg, &ws);
-    assert!(result.is_some(), "aliased macro call must jump to real macro definition");
+    assert!(
+        result.is_some(),
+        "aliased macro call must jump to real macro definition"
+    );
     let def = result.unwrap();
     assert_eq!(def.target_path, "m.html", "must jump to source template");
 }
@@ -167,7 +179,10 @@ fn def03b_from_import_alias_in_import_stmt_jumps_to_macro() {
     // "bar" first occurrence is in the import statement
     let col = src.find("bar").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "child.html", &idx, &reg, &ws);
-    assert!(result.is_some(), "alias name in import stmt must jump to macro");
+    assert!(
+        result.is_some(),
+        "alias name in import stmt must jump to macro"
+    );
     let def = result.unwrap();
     assert_eq!(def.target_path, "m.html");
 }
@@ -182,7 +197,10 @@ fn def06_builtin_filter_returns_none() {
     let ws = WorkspaceIndex::default();
     let col = src.find("truncate").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
-    assert!(result.is_none(), "built-in filter must return None (REQ-DEF-06)");
+    assert!(
+        result.is_none(),
+        "built-in filter must return None (REQ-DEF-06)"
+    );
 }
 
 #[test]
@@ -193,7 +211,10 @@ fn def06_builtin_function_returns_none() {
     let ws = WorkspaceIndex::default();
     let col = src.find("range").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
-    assert!(result.is_none(), "built-in function must return None (REQ-DEF-06)");
+    assert!(
+        result.is_none(),
+        "built-in function must return None (REQ-DEF-06)"
+    );
 }
 
 #[test]
@@ -230,9 +251,15 @@ fn def04_self_block_in_same_template_jumps_to_block() {
     // Second occurrence of "content" is the attribute in self.content()
     let col = src.rfind("content").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "t.html", &idx, &reg, &ws);
-    assert!(result.is_some(), "self.content() must resolve to block declaration");
+    assert!(
+        result.is_some(),
+        "self.content() must resolve to block declaration"
+    );
     let def = result.unwrap();
-    assert_eq!(def.target_path, "t.html", "must resolve in current template");
+    assert_eq!(
+        def.target_path, "t.html",
+        "must resolve in current template"
+    );
 }
 
 #[test]
@@ -246,7 +273,10 @@ fn def04_self_block_in_child_jumps_to_inherited_block() {
     let reg = Registry::load_core();
     let col = child_src.rfind("footer").unwrap() as u32;
     let result = go_to_definition(child_src, 0, col, "child.html", &idx, &reg, &ws);
-    assert!(result.is_some(), "self.footer() must resolve to ancestor block");
+    assert!(
+        result.is_some(),
+        "self.footer() must resolve to ancestor block"
+    );
     let def = result.unwrap();
     assert_eq!(def.target_path, "base.html", "must jump to base.html");
 }
@@ -268,14 +298,21 @@ fn def04_super_inside_block_jumps_to_parent_block() {
     let base_src = "{% block content %}base content{% endblock %}";
     let mut ws = WorkspaceIndex::default();
     ws.index_inline("base.html", base_src);
-    let child_src = r#"{% extends "base.html" %}{% block content %}{{ super() }}extra{% endblock %}"#;
+    let child_src =
+        r#"{% extends "base.html" %}{% block content %}{{ super() }}extra{% endblock %}"#;
     let idx = extract(child_src);
     let reg = Registry::load_core();
     let col = child_src.find("super").unwrap() as u32;
     let result = go_to_definition(child_src, 0, col, "child.html", &idx, &reg, &ws);
-    assert!(result.is_some(), "super() inside overriding block must resolve to parent block");
+    assert!(
+        result.is_some(),
+        "super() inside overriding block must resolve to parent block"
+    );
     let def = result.unwrap();
-    assert_eq!(def.target_path, "base.html", "must jump to base.html's block");
+    assert_eq!(
+        def.target_path, "base.html",
+        "must jump to base.html's block"
+    );
 }
 
 #[test]
@@ -287,7 +324,10 @@ fn def04_super_with_no_parent_block_returns_none() {
     let ws = WorkspaceIndex::default(); // no workspace inheritance
     let col = src.find("super").unwrap() as u32;
     let result = go_to_definition(src, 0, col, "t.html", &idx, &reg, &ws);
-    assert!(result.is_none(), "super() with no parent block must return None");
+    assert!(
+        result.is_none(),
+        "super() with no parent block must return None"
+    );
 }
 
 // ─── REQ-DEF-08: scope-local variable → binding site ─────────────────────────
@@ -303,7 +343,10 @@ fn def08_for_loop_variable_jumps_to_binding() {
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
     let def = result.expect("for-loop variable must resolve to its binding");
     assert_eq!(def.target_path, "test.html");
-    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the for statement)");
+    assert_eq!(
+        def.target_start_line, 0,
+        "binding is on line 0 (the for statement)"
+    );
 }
 
 #[test]
@@ -316,7 +359,10 @@ fn def08_set_variable_jumps_to_binding() {
     let result = go_to_definition(src, 1, 3, "test.html", &idx, &reg, &ws);
     let def = result.expect("set variable must resolve to its binding");
     assert_eq!(def.target_path, "test.html");
-    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the set statement)");
+    assert_eq!(
+        def.target_start_line, 0,
+        "binding is on line 0 (the set statement)"
+    );
 }
 
 #[test]
@@ -329,7 +375,10 @@ fn def08_with_variable_jumps_to_binding() {
     let result = go_to_definition(src, 0, col, "test.html", &idx, &reg, &ws);
     let def = result.expect("with variable must resolve to its binding");
     assert_eq!(def.target_path, "test.html");
-    assert_eq!(def.target_start_line, 0, "binding is on line 0 (the with statement)");
+    assert_eq!(
+        def.target_start_line, 0,
+        "binding is on line 0 (the with statement)"
+    );
 }
 
 #[test]

@@ -89,14 +89,8 @@ fn core_registry_variable_count() {
 fn truncate_filter_has_signature_and_params() {
     let reg = Registry::load_core();
     let entry = reg.get(Category::Filter, "truncate").unwrap();
-    assert!(
-        entry.signature.is_some(),
-        "truncate must have a signature"
-    );
-    assert!(
-        !entry.params.is_empty(),
-        "truncate must have params"
-    );
+    assert!(entry.signature.is_some(), "truncate must have a signature");
+    assert!(!entry.params.is_empty(), "truncate must have params");
 }
 
 #[test]
@@ -121,7 +115,10 @@ fn malformed_frontmatter_is_skipped() {
     // Unclosed flow sequence — definitely invalid YAML
     let bad = "---\nname: [unclosed\n---\nsome body";
     let result = parse_doc_str(bad, Source::Custom);
-    assert!(result.is_none(), "malformed YAML frontmatter must be skipped");
+    assert!(
+        result.is_none(),
+        "malformed YAML frontmatter must be skipped"
+    );
 }
 
 #[test]
@@ -153,8 +150,14 @@ fn loop_variable_has_attribute_docs() {
 #[test]
 fn loop_variable_first_last_attrs() {
     let reg = Registry::load_core();
-    assert!(reg.get_attr("loop", "first").is_some(), "loop.first must exist");
-    assert!(reg.get_attr("loop", "last").is_some(), "loop.last must exist");
+    assert!(
+        reg.get_attr("loop", "first").is_some(),
+        "loop.first must exist"
+    );
+    assert!(
+        reg.get_attr("loop", "last").is_some(),
+        "loop.last must exist"
+    );
 }
 
 // ---------- REQ-BLTN-02: four-source merge, highest priority wins -----------
@@ -209,7 +212,11 @@ fn merge_lower_priority_does_not_override() {
         template: None,
     });
     let entry = reg.get(Category::Filter, "upper").unwrap();
-    assert_eq!(entry.source, Source::Custom, "Core must not override Custom");
+    assert_eq!(
+        entry.source,
+        Source::Custom,
+        "Core must not override Custom"
+    );
 }
 
 // ---------- REQ-BLTN-07: custom_builtins loads disk docs non-fatally --------
@@ -227,7 +234,10 @@ fn custom_builtins_dir_loads_docs() {
     reg.load_custom_builtins(dir.path());
 
     let entry = reg.get(Category::Filter, "my_filter");
-    assert!(entry.is_some(), "custom builtin must be loaded into registry");
+    assert!(
+        entry.is_some(),
+        "custom builtin must be loaded into registry"
+    );
     assert_eq!(entry.unwrap().source, Source::Custom);
 }
 
@@ -274,8 +284,14 @@ fn hai3_insert_attr_lower_priority_does_not_overwrite_higher() {
         ty: Some("custom-type".to_owned()),
         source: Source::Custom,
     });
-    let attr = reg.get_attr("loop", "index").expect("loop.index must exist");
-    assert_eq!(attr.ty.as_deref(), Some("pack-type"), "pack (priority 2) must beat custom (priority 1)");
+    let attr = reg
+        .get_attr("loop", "index")
+        .expect("loop.index must exist");
+    assert_eq!(
+        attr.ty.as_deref(),
+        Some("pack-type"),
+        "pack (priority 2) must beat custom (priority 1)"
+    );
 }
 
 #[test]
@@ -293,6 +309,12 @@ fn hai3_insert_attr_higher_priority_overwrites_lower() {
         ty: Some("pack-type".to_owned()),
         source: Source::Pack("starlette".to_owned()),
     });
-    let attr = reg.get_attr("loop", "index").expect("loop.index must exist");
-    assert_eq!(attr.ty.as_deref(), Some("pack-type"), "pack (priority 2) must win even when inserted second");
+    let attr = reg
+        .get_attr("loop", "index")
+        .expect("loop.index must exist");
+    assert_eq!(
+        attr.ty.as_deref(),
+        Some("pack-type"),
+        "pack (priority 2) must win even when inserted second"
+    );
 }

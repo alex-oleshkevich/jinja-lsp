@@ -19,7 +19,10 @@ fn file_based_index(dir_suffix: &str) -> jinja_lsp::workspace::index::TemplateIn
 }
 
 fn inline_index() -> jinja_lsp::workspace::index::TemplateIndex {
-    let mut ws = WorkspaceIndex { templates: HashMap::new(), ..Default::default() };
+    let mut ws = WorkspaceIndex {
+        templates: HashMap::new(),
+        ..Default::default()
+    };
     ws.index_inline("render#0", JINJA);
     ws.templates.into_values().next().unwrap()
 }
@@ -55,14 +58,23 @@ fn inline_regions_have_same_variables_as_files() {
     let file_var = file_idx.variables.iter().find(|v| v.name == "site");
     let inline_var = inline_idx.variables.iter().find(|v| v.name == "site");
     assert!(file_var.is_some(), "file index must have 'site' variable");
-    assert!(inline_var.is_some(), "inline index must have 'site' variable");
+    assert!(
+        inline_var.is_some(),
+        "inline index must have 'site' variable"
+    );
 }
 
 #[test]
 fn inline_entry_is_in_workspace_index() {
-    let mut ws = WorkspaceIndex { templates: HashMap::new(), ..Default::default() };
+    let mut ws = WorkspaceIndex {
+        templates: HashMap::new(),
+        ..Default::default()
+    };
     ws.index_inline("render#0", JINJA);
-    assert!(ws.templates.contains_key("render#0"), "inline entry must be keyed by the given key");
+    assert!(
+        ws.templates.contains_key("render#0"),
+        "inline entry must be keyed by the given key"
+    );
 }
 
 #[test]
@@ -75,7 +87,13 @@ fn workspace_with_inline_and_file_entries_coexist() {
     let mut ws = build_workspace(&[&tmp], &["html"]);
     ws.index_inline("render#0", JINJA);
 
-    assert!(ws.templates.contains_key("base.html"), "file entry must be present");
-    assert!(ws.templates.contains_key("render#0"), "inline entry must be present");
+    assert!(
+        ws.templates.contains_key("base.html"),
+        "file entry must be present"
+    );
+    assert!(
+        ws.templates.contains_key("render#0"),
+        "inline entry must be present"
+    );
     assert_eq!(ws.templates.len(), 2);
 }

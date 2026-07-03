@@ -29,7 +29,10 @@ impl WorkspaceEdit {
     pub fn single(file: &str, edit: TextEdit) -> Self {
         let mut changes = HashMap::new();
         changes.insert(file.to_owned(), vec![edit]);
-        WorkspaceEdit { changes, create_files: vec![] }
+        WorkspaceEdit {
+            changes,
+            create_files: vec![],
+        }
     }
 
     pub fn create_file(path: &str) -> Self {

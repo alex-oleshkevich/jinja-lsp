@@ -19,8 +19,10 @@ pub enum NoqaDirective {
 impl NoqaDirective {
     pub fn line(&self) -> u32 {
         match self {
-            Self::All { line } | Self::Codes { line, .. } |
-            Self::FileAll { line } | Self::FileCodes { line, .. } => *line,
+            Self::All { line }
+            | Self::Codes { line, .. }
+            | Self::FileAll { line }
+            | Self::FileCodes { line, .. } => *line,
         }
     }
 }
@@ -92,10 +94,7 @@ fn parse_comment(content: &str, line: u32) -> Option<NoqaDirective> {
 /// Returns `(kept, w107s)` where:
 /// - `kept` are diagnostics not suppressed
 /// - `w107s` are new JINJA-W107 diagnostics for invalid noqa IDs
-pub fn suppress_by_noqa(
-    diags: &[Diagnostic],
-    source: &str,
-) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+pub fn suppress_by_noqa(diags: &[Diagnostic], source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let lines: Vec<&str> = source.lines().collect();
     // jinja-lsp-rm5r: individual codes are derived from DiagCode::ALL (the single
     // source of truth next to the enum) instead of a hand-duplicated string list —
@@ -104,10 +103,14 @@ pub fn suppress_by_noqa(
     // hand-curated set (not every possible prefix is a meaningful suppression class).
     let known_codes: Vec<&str> = DiagCode::ALL.iter().map(|c| c.code_str()).collect();
     const CLASS_PREFIXES: &[&str] = &[
-        "JINJA-E", "JINJA-W", "JINJA-E1", "JINJA-W1", "JINJA-W2",
-        "JINJA-W3", "JINJA-E4", "JINJA-W4", "JINJA-E5", "JINJA-E6",
+        "JINJA-E", "JINJA-W", "JINJA-E1", "JINJA-W1", "JINJA-W2", "JINJA-W3", "JINJA-E4",
+        "JINJA-W4", "JINJA-E5", "JINJA-E6",
     ];
-    let all_known_codes: Vec<&str> = known_codes.iter().copied().chain(CLASS_PREFIXES.iter().copied()).collect();
+    let all_known_codes: Vec<&str> = known_codes
+        .iter()
+        .copied()
+        .chain(CLASS_PREFIXES.iter().copied())
+        .collect();
     let all_known_codes: &[&str] = &all_known_codes;
 
     // Collect all directives indexed by line
@@ -141,9 +144,9 @@ pub fn suppress_by_noqa(
     }
 
     // Check for file-level suppression
-    let file_suppress_all = all_directives.iter().any(|d| {
-        matches!(d, NoqaDirective::FileAll { .. })
-    });
+    let file_suppress_all = all_directives
+        .iter()
+        .any(|d| matches!(d, NoqaDirective::FileAll { .. }));
     let file_suppress_codes: Vec<String> = all_directives
         .iter()
         .filter_map(|d| match d {
@@ -161,7 +164,10 @@ pub fn suppress_by_noqa(
                 return false;
             }
             if !file_suppress_codes.is_empty()
-                && file_suppress_codes.iter().any(|f| is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())) {
+                && file_suppress_codes.iter().any(|f| {
+                    is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())
+                })
+            {
                 return false;
             }
             // REQ-DIAG-05: line-level suppression — check the diagnostic's own line
@@ -179,7 +185,8 @@ pub fn suppress_by_noqa(
                     NoqaDirective::All { .. } => return false,
                     NoqaDirective::Codes { codes, .. }
                         if codes.iter().any(|f| {
-                            is_valid_noqa_id(f, all_known_codes) && diag.code.starts_with(f.as_str())
+                            is_valid_noqa_id(f, all_known_codes)
+                                && diag.code.starts_with(f.as_str())
                         }) =>
                     {
                         return false;

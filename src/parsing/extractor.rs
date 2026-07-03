@@ -7,8 +7,8 @@ use crate::workspace::{
     index::TemplateIndex,
     symbols::{
         BlockDefinition, FromImport, ImportAlias, ImportedName, MacroCallSite, MacroDefinition,
-        Parameter, Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind,
-        TemplateReference, VariableDefinition, VariableScope,
+        Parameter, Reference, ReferenceKind, Span, SyntaxError, TemplateRefKind, TemplateReference,
+        VariableDefinition, VariableScope,
     },
 };
 
@@ -54,23 +54,23 @@ macro_rules! jinja_query {
     };
 }
 
-jinja_query!(Q_MACROS,         "queries/macros.scm");
-jinja_query!(Q_PARAMS,         "queries/params.scm");
-jinja_query!(Q_BLOCKS,         "queries/blocks.scm");
-jinja_query!(Q_SET_UNPACKING,  "queries/set_unpacking.scm");
-jinja_query!(Q_SET,            "queries/set.scm");
-jinja_query!(Q_FOR_UNPACKING,  "queries/for_unpacking.scm");
-jinja_query!(Q_FOR,            "queries/for.scm");
-jinja_query!(Q_WITH,           "queries/with.scm");
-jinja_query!(Q_TRANS,          "queries/trans.scm");
-jinja_query!(Q_CALLER_ARGS,    "queries/caller_args.scm");
-jinja_query!(Q_EXTENDS,        "queries/extends.scm");
-jinja_query!(Q_INCLUDES,       "queries/includes.scm");
-jinja_query!(Q_IMPORTS,        "queries/imports.scm");
-jinja_query!(Q_FROM_IMPORTS,   "queries/from_imports.scm");
-jinja_query!(Q_IMPORT_NAMES,   "queries/import_names.scm");
-jinja_query!(Q_REFERENCES,     "queries/references.scm");
-jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
+jinja_query!(Q_MACROS, "queries/macros.scm");
+jinja_query!(Q_PARAMS, "queries/params.scm");
+jinja_query!(Q_BLOCKS, "queries/blocks.scm");
+jinja_query!(Q_SET_UNPACKING, "queries/set_unpacking.scm");
+jinja_query!(Q_SET, "queries/set.scm");
+jinja_query!(Q_FOR_UNPACKING, "queries/for_unpacking.scm");
+jinja_query!(Q_FOR, "queries/for.scm");
+jinja_query!(Q_WITH, "queries/with.scm");
+jinja_query!(Q_TRANS, "queries/trans.scm");
+jinja_query!(Q_CALLER_ARGS, "queries/caller_args.scm");
+jinja_query!(Q_EXTENDS, "queries/extends.scm");
+jinja_query!(Q_INCLUDES, "queries/includes.scm");
+jinja_query!(Q_IMPORTS, "queries/imports.scm");
+jinja_query!(Q_FROM_IMPORTS, "queries/from_imports.scm");
+jinja_query!(Q_IMPORT_NAMES, "queries/import_names.scm");
+jinja_query!(Q_REFERENCES, "queries/references.scm");
+jinja_query!(Q_CALL_SITES, "queries/call_sites.scm");
 
 // ── public API ───────────────────────────────────────────────────────────────
 
@@ -78,23 +78,23 @@ jinja_query!(Q_CALL_SITES,     "queries/call_sites.scm");
 /// Used by tests to verify queries are pre-compiled and non-empty.
 pub fn query_pattern_counts() -> Vec<(&'static str, usize)> {
     vec![
-        ("Q_MACROS",        Q_MACROS.pattern_count()),
-        ("Q_PARAMS",        Q_PARAMS.pattern_count()),
-        ("Q_BLOCKS",        Q_BLOCKS.pattern_count()),
+        ("Q_MACROS", Q_MACROS.pattern_count()),
+        ("Q_PARAMS", Q_PARAMS.pattern_count()),
+        ("Q_BLOCKS", Q_BLOCKS.pattern_count()),
         ("Q_SET_UNPACKING", Q_SET_UNPACKING.pattern_count()),
-        ("Q_SET",           Q_SET.pattern_count()),
+        ("Q_SET", Q_SET.pattern_count()),
         ("Q_FOR_UNPACKING", Q_FOR_UNPACKING.pattern_count()),
-        ("Q_FOR",           Q_FOR.pattern_count()),
-        ("Q_WITH",          Q_WITH.pattern_count()),
-        ("Q_TRANS",         Q_TRANS.pattern_count()),
-        ("Q_CALLER_ARGS",   Q_CALLER_ARGS.pattern_count()),
-        ("Q_EXTENDS",       Q_EXTENDS.pattern_count()),
-        ("Q_INCLUDES",      Q_INCLUDES.pattern_count()),
-        ("Q_IMPORTS",       Q_IMPORTS.pattern_count()),
-        ("Q_FROM_IMPORTS",  Q_FROM_IMPORTS.pattern_count()),
-        ("Q_IMPORT_NAMES",  Q_IMPORT_NAMES.pattern_count()),
-        ("Q_REFERENCES",    Q_REFERENCES.pattern_count()),
-        ("Q_CALL_SITES",    Q_CALL_SITES.pattern_count()),
+        ("Q_FOR", Q_FOR.pattern_count()),
+        ("Q_WITH", Q_WITH.pattern_count()),
+        ("Q_TRANS", Q_TRANS.pattern_count()),
+        ("Q_CALLER_ARGS", Q_CALLER_ARGS.pattern_count()),
+        ("Q_EXTENDS", Q_EXTENDS.pattern_count()),
+        ("Q_INCLUDES", Q_INCLUDES.pattern_count()),
+        ("Q_IMPORTS", Q_IMPORTS.pattern_count()),
+        ("Q_FROM_IMPORTS", Q_FROM_IMPORTS.pattern_count()),
+        ("Q_IMPORT_NAMES", Q_IMPORT_NAMES.pattern_count()),
+        ("Q_REFERENCES", Q_REFERENCES.pattern_count()),
+        ("Q_CALL_SITES", Q_CALL_SITES.pattern_count()),
     ]
 }
 
@@ -141,7 +141,9 @@ pub fn extract(source: &str) -> TemplateIndex {
 
 fn collect_errors(node: Node, out: &mut Vec<SyntaxError>) {
     if node.is_error() {
-        out.push(SyntaxError { span: node_span(node) });
+        out.push(SyntaxError {
+            span: node_span(node),
+        });
     }
     let mut c = node.walk();
     if c.goto_first_child() {
@@ -205,7 +207,10 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                 }
             }
             if let (Some(n), Some(k)) = (name, key) {
-                param_map.entry(k).or_default().push(Parameter { name: n, default });
+                param_map
+                    .entry(k)
+                    .or_default()
+                    .push(Parameter { name: n, default });
             }
         }
     }
@@ -214,7 +219,14 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         let parameters = param_map.remove(&key).unwrap_or_default();
         let body = macro_body_span(tree.root_node(), ctrl_end, bytes);
         let doc = extract_first_comment(bytes, body.start_byte, body.end_byte);
-        idx.macros.push(MacroDefinition { name, parameters, body, span, name_span, doc });
+        idx.macros.push(MacroDefinition {
+            name,
+            parameters,
+            body,
+            span,
+            name_span,
+            doc,
+        });
     }
 }
 
@@ -272,7 +284,12 @@ fn macro_body_span(root: Node, ctrl_end: usize, bytes: &[u8]) -> Span {
 
 // ── blocks ───────────────────────────────────────────────────────────────────
 
-fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, scope_regions: &[ScopeRegion]) {
+fn do_blocks(
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    scope_regions: &[ScopeRegion],
+) {
     let bq = &*Q_BLOCKS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(bq, tree.root_node(), bytes);
@@ -309,11 +326,15 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, sc
                             // from anywhere else in the file. `-%}` is unreachable as a
                             // separate case since `%}` is already a substring of it.
                             let bound = (0..after.len())
-                                .find(|&i| after[i] == b'\n'
-                                    || after[i..].starts_with(b"{%")
-                                    || after[i..].starts_with(b"{{"))
+                                .find(|&i| {
+                                    after[i] == b'\n'
+                                        || after[i..].starts_with(b"{%")
+                                        || after[i..].starts_with(b"{{")
+                                })
                                 .unwrap_or(after.len());
-                            let close = after[..bound].windows(2).position(|w| w == b"%}")
+                            let close = after[..bound]
+                                .windows(2)
+                                .position(|w| w == b"%}")
                                 .unwrap_or(bound);
                             if let Ok(segment) = std::str::from_utf8(&after[..close]) {
                                 if segment.split_whitespace().any(|w| w == "scoped") {
@@ -333,11 +354,22 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, sc
         }
 
         if let Some(&(i, _)) = seen.get(&key) {
-            if scoped { idx.blocks[i].scoped = true; }
-            if required { idx.blocks[i].required = true; }
+            if scoped {
+                idx.blocks[i].scoped = true;
+            }
+            if required {
+                idx.blocks[i].required = true;
+            }
         } else {
             seen.insert(key, (idx.blocks.len(), ctrl_end));
-            idx.blocks.push(BlockDefinition { name, scoped, required, body: Span::default(), span, end_name_span: None });
+            idx.blocks.push(BlockDefinition {
+                name,
+                scoped,
+                required,
+                body: Span::default(),
+                span,
+                end_name_span: None,
+            });
         }
     }
 
@@ -345,9 +377,10 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, sc
     // {% endblock %} (no trailing name) → normal control node, handled by scope regions.
     // {% endblock name %} (trailing name)  → ERROR node in tree-sitter; handled below.
     for (i, ctrl_end) in seen.values() {
-        if let Some(region) = scope_regions.iter().find(|r| {
-            r.scope == VariableScope::Block && r.body_start == *ctrl_end
-        }) {
+        if let Some(region) = scope_regions
+            .iter()
+            .find(|r| r.scope == VariableScope::Block && r.body_start == *ctrl_end)
+        {
             idx.blocks[*i].body = byte_span(region.body_start, region.body_end);
             // No trailing name in a proper endblock control node.
         }
@@ -363,15 +396,16 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, sc
             if node.is_error() {
                 let tag_start = node.start_byte();
                 if let Some(ns) = endblock_trailing_name_span(bytes, tag_start) {
-                    let trail_name = std::str::from_utf8(&bytes[ns.start_byte..ns.end_byte])
-                        .unwrap_or("");
+                    let trail_name =
+                        std::str::from_utf8(&bytes[ns.start_byte..ns.end_byte]).unwrap_or("");
                     // seen.values() iterates a HashMap (nondeterministic order). When a
                     // same-named block appears after this endblock tag (duplicate block
                     // names, or a stray `{% endblock name %}`), `ctrl_end < tag_start`
                     // would be false and the body span would invert; pick only the
                     // nearest PRECEDING block (largest ctrl_end still < tag_start) so the
                     // result is deterministic and never inverted.
-                    let nearest = seen.values()
+                    let nearest = seen
+                        .values()
                         .filter(|(bi, ctrl_end)| {
                             idx.blocks[*bi].name == trail_name
                                 && idx.blocks[*bi].body == Span::default()
@@ -384,7 +418,9 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, sc
                     }
                 }
             }
-            if !cur.goto_next_sibling() { break; }
+            if !cur.goto_next_sibling() {
+                break;
+            }
         }
     }
 }
@@ -399,30 +435,52 @@ fn endblock_trailing_name_span(bytes: &[u8], tag_start: usize) -> Option<Span> {
     let after_kw = tag_start + kw_pos + kw.len();
     let rest = bytes.get(after_kw..)?;
     // Skip whitespace
-    let ws = rest.iter().take_while(|&&b| b == b' ' || b == b'\t' || b == b'\n' || b == b'\r').count();
+    let ws = rest
+        .iter()
+        .take_while(|&&b| b == b' ' || b == b'\t' || b == b'\n' || b == b'\r')
+        .count();
     let name_start = after_kw + ws;
     let name_bytes = bytes.get(name_start..)?;
     // Read identifier chars (alphanumeric or _)
-    let name_len = name_bytes.iter().take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_').count();
+    let name_len = name_bytes
+        .iter()
+        .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
+        .count();
     if name_len == 0 {
         return None;
     }
     let name_end = name_start + name_len;
     let (sl, sc) = bytes_to_line_col(bytes, name_start);
     let (el, ec) = bytes_to_line_col(bytes, name_end);
-    Some(Span { start_byte: name_start, end_byte: name_end, start_line: sl, start_col: sc, end_line: el, end_col: ec })
+    Some(Span {
+        start_byte: name_start,
+        end_byte: name_end,
+        start_line: sl,
+        start_col: sc,
+        end_line: el,
+        end_col: ec,
+    })
 }
 
 fn bytes_to_line_col(bytes: &[u8], offset: usize) -> (u32, u32) {
     let before = &bytes[..offset.min(bytes.len())];
     let line = before.iter().filter(|&&b| b == b'\n').count() as u32;
-    let col = before.iter().rposition(|&b| b == b'\n').map(|p| offset - p - 1).unwrap_or(offset) as u32;
+    let col = before
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map(|p| offset - p - 1)
+        .unwrap_or(offset) as u32;
     (line, col)
 }
 
 // ── variables ────────────────────────────────────────────────────────────────
 
-fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, scope_regions: &[ScopeRegion]) {
+fn do_variables(
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    scope_regions: &[ScopeRegion],
+) {
     let source_len = bytes.len();
     let mut seen_set: HashSet<usize> = HashSet::new();
     let mut seen_for: HashSet<usize> = HashSet::new();
@@ -438,9 +496,12 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex,
 }
 
 fn run_set_unpacking(
-    tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, seen: &mut HashSet<usize>,
-    scope_regions: &[ScopeRegion], source_len: usize,
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    seen: &mut HashSet<usize>,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let q = &*Q_SET_UNPACKING;
     let mut cur = QueryCursor::new();
@@ -480,9 +541,12 @@ fn run_set_unpacking(
 }
 
 fn run_set(
-    tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, skip: &HashSet<usize>,
-    scope_regions: &[ScopeRegion], source_len: usize,
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    skip: &HashSet<usize>,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let q = &*Q_SET;
     let mut cur = QueryCursor::new();
@@ -510,7 +574,13 @@ fn run_set(
             let valid_end = enclosing_region(scope_regions, set_ctrl_end)
                 .map(|r| r.body_end)
                 .unwrap_or(source_len);
-            push_var(idx, name, scope, name_span, byte_span(set_ctrl_end, valid_end));
+            push_var(
+                idx,
+                name,
+                scope,
+                name_span,
+                byte_span(set_ctrl_end, valid_end),
+            );
         }
     }
 }
@@ -526,7 +596,9 @@ fn run_set(
 // exact discriminator between block-set (no `=`) and regular set (has `=`).
 fn run_set_block(
     bytes: &[u8],
-    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion], source_len: usize,
+    idx: &mut TemplateIndex,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let mut i = 0;
     // jinja-lsp-smvv: track {% raw %}...{% endraw %} bodies and skip {# ... #}
@@ -556,7 +628,10 @@ fn run_set_block(
 
         if in_raw {
             if bytes.get(j..j + 6) == Some(b"endraw")
-                && bytes.get(j + 6).map(|b| !b.is_ascii_alphanumeric() && *b != b'_').unwrap_or(true)
+                && bytes
+                    .get(j + 6)
+                    .map(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+                    .unwrap_or(true)
             {
                 in_raw = false;
             }
@@ -564,7 +639,10 @@ fn run_set_block(
             continue;
         }
         if bytes.get(j..j + 3) == Some(b"raw")
-            && bytes.get(j + 3).map(|b| !b.is_ascii_alphanumeric() && *b != b'_').unwrap_or(true)
+            && bytes
+                .get(j + 3)
+                .map(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+                .unwrap_or(true)
         {
             in_raw = true;
             i += 1;
@@ -577,13 +655,21 @@ fn run_set_block(
             continue;
         }
         let k_after_set = j + 3;
-        if !bytes.get(k_after_set).map(|b| b.is_ascii_whitespace()).unwrap_or(false) {
+        if !bytes
+            .get(k_after_set)
+            .map(|b| b.is_ascii_whitespace())
+            .unwrap_or(false)
+        {
             i += 1;
             continue;
         }
         let mut k = skip_ascii_ws(bytes, k_after_set);
         // Capture identifier: starts with letter or '_'.
-        if !bytes.get(k).map(|b| b.is_ascii_alphabetic() || *b == b'_').unwrap_or(false) {
+        if !bytes
+            .get(k)
+            .map(|b| b.is_ascii_alphabetic() || *b == b'_')
+            .unwrap_or(false)
+        {
             i += 1;
             continue;
         }
@@ -605,34 +691,59 @@ fn run_set_block(
         let ctrl_end = k + 2;
         let name = match std::str::from_utf8(&bytes[name_start..name_end]) {
             Ok(s) if !s.is_empty() => s,
-            _ => { i += 1; continue; }
+            _ => {
+                i += 1;
+                continue;
+            }
         };
         let (sl, sc) = bytes_to_line_col(bytes, name_start);
         let (el, ec) = bytes_to_line_col(bytes, name_end);
-        let name_span = Span { start_byte: name_start, end_byte: name_end, start_line: sl, start_col: sc, end_line: el, end_col: ec };
+        let name_span = Span {
+            start_byte: name_start,
+            end_byte: name_end,
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        };
         let scope = scope_for_byte(scope_regions, tag_start);
         let valid_end = enclosing_region(scope_regions, ctrl_end)
             .map(|r| r.body_end)
             .unwrap_or(source_len);
-        push_var(idx, name.to_owned(), scope, name_span, byte_span(ctrl_end, valid_end));
+        push_var(
+            idx,
+            name.to_owned(),
+            scope,
+            name_span,
+            byte_span(ctrl_end, valid_end),
+        );
         i += 1;
     }
 }
 
 fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() { i += 1; }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
     i
 }
 
 /// Absolute byte position of `needle`'s first occurrence at or after `from`, if any.
 fn find_subslice(bytes: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-    bytes.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|p| from + p)
+    bytes
+        .get(from..)?
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .map(|p| from + p)
 }
 
 fn run_for_unpacking(
-    tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, seen: &mut HashSet<usize>,
-    scope_regions: &[ScopeRegion], source_len: usize,
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    seen: &mut HashSet<usize>,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let q = &*Q_FOR_UNPACKING;
     let mut cur = QueryCursor::new();
@@ -661,7 +772,8 @@ fn run_for_unpacking(
             seen.insert(k);
             // Find the ForLoop region whose body_start matches this for-tag's ctrl end.
             // Fallback to end-of-source for incomplete templates (no {% endfor %}).
-            let valid_range = scope_regions.iter()
+            let valid_range = scope_regions
+                .iter()
                 .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
                 .map(|r| byte_span(r.body_start, r.body_end))
                 .unwrap_or(byte_span(for_ctrl_end, source_len));
@@ -673,9 +785,12 @@ fn run_for_unpacking(
 }
 
 fn run_for(
-    tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, skip: &HashSet<usize>,
-    scope_regions: &[ScopeRegion], source_len: usize,
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    skip: &HashSet<usize>,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let q = &*Q_FOR;
     let mut cur = QueryCursor::new();
@@ -699,7 +814,8 @@ fn run_for(
         }
         if !name.is_empty() && !skip.contains(&key.unwrap_or(0)) {
             // Fallback to end-of-source for incomplete templates (no {% endfor %}).
-            let valid_range = scope_regions.iter()
+            let valid_range = scope_regions
+                .iter()
                 .find(|r| r.scope == VariableScope::ForLoop && r.body_start == for_ctrl_end)
                 .map(|r| byte_span(r.body_start, r.body_end))
                 .unwrap_or(byte_span(for_ctrl_end, source_len));
@@ -709,8 +825,11 @@ fn run_for(
 }
 
 fn run_with(
-    tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion], source_len: usize,
+    tree: &tree_sitter::Tree,
+    bytes: &[u8],
+    idx: &mut TemplateIndex,
+    scope_regions: &[ScopeRegion],
+    source_len: usize,
 ) {
     let q = &*Q_WITH;
     let mut cur = QueryCursor::new();
@@ -726,11 +845,18 @@ fn run_with(
                 // jinja-lsp-8my3: fall back to end-of-source for incomplete templates
                 // (no {% endwith %}), matching run_for/run_set, instead of an empty
                 // range that would leave every use inside the unclosed with unresolved.
-                let valid_range = scope_regions.iter()
+                let valid_range = scope_regions
+                    .iter()
                     .find(|r| r.scope == VariableScope::With && r.body_start == with_ctrl_end)
                     .map(|r| byte_span(r.body_start, r.body_end))
                     .unwrap_or(byte_span(with_ctrl_end, source_len));
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::With, name_span, valid_range);
+                push_var(
+                    idx,
+                    txt(cap.node, bytes).to_owned(),
+                    VariableScope::With,
+                    name_span,
+                    valid_range,
+                );
             }
         }
     }
@@ -743,7 +869,13 @@ fn run_trans(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "name" {
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::Trans, node_span(cap.node), Span::default());
+                push_var(
+                    idx,
+                    txt(cap.node, bytes).to_owned(),
+                    VariableScope::Trans,
+                    node_span(cap.node),
+                    Span::default(),
+                );
             }
         }
     }
@@ -756,20 +888,41 @@ fn run_caller_args(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
     while let Some(m) = ms.next() {
         for cap in m.captures {
             if q.capture_names()[cap.index as usize] == "caller_var" {
-                push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::CallBlock, node_span(cap.node), Span::default());
+                push_var(
+                    idx,
+                    txt(cap.node, bytes).to_owned(),
+                    VariableScope::CallBlock,
+                    node_span(cap.node),
+                    Span::default(),
+                );
             }
         }
     }
 }
 
-fn push_var(idx: &mut TemplateIndex, name: String, scope: VariableScope, span: Span, valid_range: Span) {
-    idx.variables.push(VariableDefinition { name, scope, span, valid_range });
+fn push_var(
+    idx: &mut TemplateIndex,
+    name: String,
+    scope: VariableScope,
+    span: Span,
+    valid_range: Span,
+) {
+    idx.variables.push(VariableDefinition {
+        name,
+        scope,
+        span,
+        valid_range,
+    });
 }
 
 /// Compute a Span with only byte offsets set (line/col left default).
 /// Used for valid_range where line/col are not needed by the resolver.
 fn byte_span(start_byte: usize, end_byte: usize) -> Span {
-    Span { start_byte, end_byte, ..Span::default() }
+    Span {
+        start_byte,
+        end_byte,
+        ..Span::default()
+    }
 }
 
 /// A byte range within the template source that belongs to a named scope body.
@@ -813,7 +966,8 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                     stack.push((scope, node.end_byte(), stack.len()));
                 } else {
                     let kw_full = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
-                        .unwrap_or("").trim();
+                        .unwrap_or("")
+                        .trim();
                     let kw = kw_full.split_whitespace().next().unwrap_or("");
                     let expected_scope = match kw {
                         "endmacro" => Some(VariableScope::Macro),
@@ -830,9 +984,12 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                         // reaches this branch). Unwind down to the matching entry instead of
                         // blindly popping the top, discarding any mismatched entries above it
                         // without emitting a (wrongly-scoped) region for them.
-                        if let Some(match_idx) = stack.iter().rposition(|(scope, _, _)| *scope == expected) {
+                        if let Some(match_idx) =
+                            stack.iter().rposition(|(scope, _, _)| *scope == expected)
+                        {
                             stack.truncate(match_idx + 1);
-                            let (scope, body_start, depth) = stack.pop().expect("just verified index exists");
+                            let (scope, body_start, depth) =
+                                stack.pop().expect("just verified index exists");
                             regions.push(ScopeRegion {
                                 scope,
                                 body_start,
@@ -853,7 +1010,8 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
 
 /// Return the innermost scope region that contains `byte`, or Template if none.
 fn scope_for_byte(regions: &[ScopeRegion], byte: usize) -> VariableScope {
-    regions.iter()
+    regions
+        .iter()
         .filter(|r| r.body_start <= byte && byte < r.body_end)
         .max_by_key(|r| r.depth)
         .map(|r| r.scope)
@@ -862,7 +1020,8 @@ fn scope_for_byte(regions: &[ScopeRegion], byte: usize) -> VariableScope {
 
 /// Return the innermost scope region enclosing `byte`, if any.
 fn enclosing_region(regions: &[ScopeRegion], byte: usize) -> Option<&ScopeRegion> {
-    regions.iter()
+    regions
+        .iter()
         .filter(|r| r.body_start <= byte && byte < r.body_end)
         .max_by_key(|r| r.depth)
 }
@@ -958,7 +1117,10 @@ fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIn
         // include diagnostics in an unstable order across runs. Matches do_from_imports.
         let mut keys: Vec<usize> = inc_map.keys().cloned().collect();
         keys.sort_unstable();
-        idx.template_refs.extend(keys.into_iter().map(|k| inc_map.remove(&k).expect("key from inc_map")));
+        idx.template_refs.extend(
+            keys.into_iter()
+                .map(|k| inc_map.remove(&k).expect("key from inc_map")),
+        );
     }
 }
 
@@ -987,7 +1149,12 @@ fn do_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
             }
         }
         if !source.is_empty() && !alias.is_empty() {
-            idx.import_aliases.push(ImportAlias { alias, source: source.clone(), span: span.clone(), alias_span: alias_span.clone() });
+            idx.import_aliases.push(ImportAlias {
+                alias,
+                source: source.clone(),
+                span: span.clone(),
+                alias_span: alias_span.clone(),
+            });
             idx.template_refs.push(TemplateReference {
                 kind: TemplateRefKind::Import,
                 path: source,
@@ -1071,10 +1238,18 @@ fn do_from_imports(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateInd
         let name_alias = names_map.remove(&key).unwrap_or_default();
         let mut names: Vec<ImportedName> = name_alias
             .into_iter()
-            .map(|(name, (alias, name_span))| ImportedName { name, alias, name_span })
+            .map(|(name, (alias, name_span))| ImportedName {
+                name,
+                alias,
+                name_span,
+            })
             .collect();
         names.sort_unstable_by_key(|a| a.name_span.start_byte);
-        idx.from_imports.push(FromImport { source: source.clone(), names, span: span.clone() });
+        idx.from_imports.push(FromImport {
+            source: source.clone(),
+            names,
+            span: span.clone(),
+        });
         idx.template_refs.push(TemplateReference {
             kind: TemplateRefKind::From,
             path: source,
@@ -1124,17 +1299,29 @@ fn do_call_sites(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
             let callee = txt(cap.node, bytes).to_owned();
             let span = node_span(cap.node);
             // Navigate to function_call parent to count args.
-            let Some(fn_call) = cap.node.parent() else { continue };
-            if fn_call.kind() != "function_call" { continue }
+            let Some(fn_call) = cap.node.parent() else {
+                continue;
+            };
+            if fn_call.kind() != "function_call" {
+                continue;
+            }
             let mut positional_count = 0usize;
             let mut keyword_names = Vec::new();
             let mut c = fn_call.walk();
             for child in fn_call.children(&mut c) {
-                if child.kind() != "arg" { continue }
+                if child.kind() != "arg" {
+                    continue;
+                }
                 // A keyword arg has an identifier child followed by a binary_operator ("=").
                 let is_keyword = child.child_count() >= 2 && {
-                    child.child(0).map(|n| n.kind() == "identifier").unwrap_or(false)
-                        && child.child(1).map(|n| n.kind() == "binary_operator").unwrap_or(false)
+                    child
+                        .child(0)
+                        .map(|n| n.kind() == "identifier")
+                        .unwrap_or(false)
+                        && child
+                            .child(1)
+                            .map(|n| n.kind() == "binary_operator")
+                            .unwrap_or(false)
                 };
                 if is_keyword {
                     if let Some(name_node) = child.child(0) {
@@ -1168,5 +1355,9 @@ fn extract_first_comment(bytes: &[u8], start: usize, end: usize) -> Option<Strin
     let rest = &slice[open + 2..];
     let close = rest.find("#}")?;
     let inner = rest[..close].trim();
-    if inner.is_empty() { None } else { Some(inner.to_owned()) }
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_owned())
+    }
 }

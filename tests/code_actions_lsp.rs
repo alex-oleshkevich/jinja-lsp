@@ -2,11 +2,11 @@
 // These tests call the feature functions directly (the handler wiring is thin);
 // end-to-end LSP wiring is covered by architecture/e2e tests.
 
-use jinja_lsp::features::code_actions::{code_actions, ActionKind};
+use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::diagnostic::{Diagnostic, DiagnosticSeverity};
+use jinja_lsp::features::code_actions::{ActionKind, code_actions};
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
-use jinja_lsp::builtins::registry::Registry;
 
 fn w_diag(code: &str, msg: &str, line: u32, col: u32) -> Diagnostic {
     Diagnostic {
@@ -35,7 +35,10 @@ fn act09_t01_quick_fix_has_workspace_edit() {
     assert!(!actions.is_empty(), "expected at least one action for W302");
     let action = &actions[0];
     // REQ-ACT-09: direct fixes carry an inline WorkspaceEdit, not a command.
-    assert!(action.edit.is_some(), "quick-fix must have inline WorkspaceEdit");
+    assert!(
+        action.edit.is_some(),
+        "quick-fix must have inline WorkspaceEdit"
+    );
     assert_eq!(action.kind, ActionKind::QuickFix);
 }
 
@@ -87,9 +90,15 @@ fn act09_t03b_create_template_action_has_create_files() {
     };
     let actions = code_actions(source, "/tpl.html", &[diag], &idx, &ws, &reg);
     let create_action = actions.iter().find(|a| a.title.contains("Create template"));
-    assert!(create_action.is_some(), "E101 should offer a 'Create template' action");
+    assert!(
+        create_action.is_some(),
+        "E101 should offer a 'Create template' action"
+    );
     let edit = create_action.unwrap().edit.as_ref().unwrap();
-    assert!(!edit.create_files.is_empty(), "create-template action must populate create_files");
+    assert!(
+        !edit.create_files.is_empty(),
+        "create-template action must populate create_files"
+    );
     assert_eq!(edit.create_files[0].0, "missing/base.html");
 }
 
@@ -107,7 +116,9 @@ fn act09_t03c_workspace_edit_create_before_text_edit_in_source() {
     );
     // The CreateFile block must appear before the changes iteration.
     let create_pos = src.find("ResourceOp::Create").unwrap_or(usize::MAX);
-    let changes_pos = src.rfind("for (path, edits) in we.changes").unwrap_or(usize::MAX);
+    let changes_pos = src
+        .rfind("for (path, edits) in we.changes")
+        .unwrap_or(usize::MAX);
     assert!(
         create_pos < changes_pos,
         "ResourceOp::Create must appear before the 'we.changes' loop in document_changes builder"
