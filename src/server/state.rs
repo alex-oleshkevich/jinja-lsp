@@ -263,9 +263,15 @@ impl ServerState {
         }
 
         // REQ-HINT-01: rebuild the per-template sidecar registry when the template changes.
-        // Use base_registry_for (not registry_for) so the stale sidecar is never its own seed.
-        let base = self.base_registry_for(key).clone();
-        self.refresh_sidecar(key, base);
+        // jinja-lsp-0zz7: only clone the (potentially large) base registry when a sidecar
+        // actually exists — this runs on every keystroke, and most templates have none.
+        if crate::builtins::hints::find_sidecar(Path::new(key)).is_some() {
+            // Use base_registry_for (not registry_for) so the stale sidecar is never its own seed.
+            let base = self.base_registry_for(key).clone();
+            self.refresh_sidecar(key, base);
+        } else {
+            self.sidecar_registries.remove(key);
+        }
     }
 
     /// Check for `{key}.hints.md` and (re)build the sidecar registry entry.

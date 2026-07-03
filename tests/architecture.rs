@@ -159,6 +159,42 @@ fn jinja_lsp_5qqy_tokens_to_lsp_data_does_not_rescan_source_per_token() {
 }
 
 #[test]
+fn jinja_lsp_0zz7_update_file_does_not_clone_registry_when_no_sidecar() {
+    // jinja-lsp-0zz7: update_file ran base_registry_for(key).clone() unconditionally
+    // on every didChange keystroke, even though the clone (all core/pack doc entries,
+    // nested HashMaps of markdown strings) is thrown away by refresh_sidecar unless a
+    // `.hints.md` sidecar actually exists for the template. It must check
+    // find_sidecar first and only clone when a sidecar is present.
+    let src = include_str!("../src/server/state.rs");
+    let start = src.find("pub fn update_file(").expect("update_file must exist");
+    let end = start + src[start..].find("\n    /// Check for `{key}.hints.md`").expect("refresh_sidecar doc comment must follow update_file");
+    let func = &src[start..end];
+    assert!(
+        func.contains("find_sidecar"),
+        "update_file must check find_sidecar before cloning the base registry: {func}"
+    );
+    assert!(
+        func.contains("if crate::builtins::hints::find_sidecar")
+            || func.contains("if find_sidecar"),
+        "update_file must gate the base_registry_for(..).clone() call behind a find_sidecar check: {func}"
+    );
+}
+
+#[test]
+fn jinja_lsp_0zz7_cli_lint_loop_does_not_clone_registry_when_no_sidecar() {
+    // jinja-lsp-0zz7: the CLI check loop cloned base_registry for every template
+    // unconditionally. It must only clone when a sidecar file actually exists.
+    let src = include_str!("../src/main.rs");
+    let start = src.find("for idx in workspace.templates.values()").expect("CLI lint loop must exist");
+    let end = start + src[start..].find("all_diags.extend(raw);").expect("loop body must extend all_diags");
+    let loop_body = &src[start..end];
+    assert!(
+        loop_body.contains("find_sidecar"),
+        "CLI lint loop must check find_sidecar before cloning base_registry: {loop_body}"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");

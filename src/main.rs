@@ -180,9 +180,19 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     for idx in workspace.templates.values() {
         let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
         // REQ-HINT-01: overlay per-template sidecar hints on top of the base registry.
-        let mut effective_registry = base_registry.clone();
-        load_sidecar(std::path::Path::new(&idx.path), &mut effective_registry);
-        let raw = run_checks(&source, &idx.path, idx, &effective_registry, &workspace);
+        // jinja-lsp-0zz7: only clone the base registry when a sidecar actually exists —
+        // most templates have none, and the clone dwarfs the per-file check cost.
+        let path = std::path::Path::new(&idx.path);
+        let overlay;
+        let effective_registry: &Registry = if jinja_lsp::builtins::hints::find_sidecar(path).is_some() {
+            let mut reg = base_registry.clone();
+            load_sidecar(path, &mut reg);
+            overlay = reg;
+            &overlay
+        } else {
+            &base_registry
+        };
+        let raw = run_checks(&source, &idx.path, idx, effective_registry, &workspace);
         all_diags.extend(raw);
     }
     if verbose {
