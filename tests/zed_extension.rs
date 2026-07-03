@@ -165,3 +165,29 @@ fn zed_binary_sha256_published_by_release_workflow() {
         "release.yml must publish a .binary.sha256 asset containing the extracted-binary hash"
     );
 }
+
+#[test]
+fn jinja_lsp_r52g_package_script_does_not_mutate_source_tree_and_resolves_repo_root() {
+    let src = include_str!("../scripts/package-zed-extension.sh");
+    // The script used to `cp LICENSE "$ZED_SRC/"`, leaving an untracked
+    // editors/zed/LICENSE behind — redundant since LICENSE is already copied
+    // straight into the packaging stage dir.
+    assert!(
+        !src.contains(r#"cp LICENSE "$ZED_SRC/""#),
+        "package-zed-extension.sh must not copy LICENSE into the editors/zed source tree"
+    );
+    // It must resolve paths from the script's own location (like install-zed-extension.sh's
+    // REPO_ROOT convention) instead of assuming the repo root as cwd.
+    assert!(
+        src.contains("REPO_ROOT="),
+        "package-zed-extension.sh must resolve REPO_ROOT from the script location, not cwd"
+    );
+    assert!(
+        src.contains(r#"ZED_SRC="$REPO_ROOT/editors/zed""#),
+        "ZED_SRC must be resolved relative to REPO_ROOT"
+    );
+    assert!(
+        src.contains("--manifest-path \"$REPO_ROOT/Cargo.toml\""),
+        "cargo metadata must use an explicit --manifest-path so VERSION resolves correctly regardless of cwd"
+    );
+}
