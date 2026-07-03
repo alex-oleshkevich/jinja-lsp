@@ -78,18 +78,29 @@ fn snap_range_to_constructs(source: &str, start_line: u32, end_line: u32) -> (u3
     let lines: Vec<&str> = source.split('\n').collect();
     let total = lines.len() as u32;
 
-    // Snap start: walk backward from start_line; if any line has `{%` without `%}` on the
-    // same line (opener), and start_line is strictly after it (inside a construct), expand.
+    // Snap start: walk backward from start_line looking for the nearest UNCLOSED
+    // `{%` opener. An opener-only line encountered first might belong to a tag
+    // that already closed before start_line (its `%}`-only continuation line
+    // would have been seen first, scanning upward) — track that balance instead
+    // of stopping at the first opener-only line seen (jinja-lsp-tjr3).
     let snapped_start = {
         let mut s = start_line;
-        // Scan upward for an unclosed `{%` tag.
-        let mut depth: i32 = 0;
+        let mut pending_close: i32 = 0;
         for i in (0..start_line.min(total)).rev() {
             let line = lines[i as usize];
-            if line.contains("{%") && !line.contains("%}") {
-                // An opening tag without its close on the same line.
-                depth += 1;
-                if depth > 0 {
+            let has_open = line.contains("{%");
+            let has_close = line.contains("%}");
+            if has_close && !has_open {
+                // A closer-only line: its matching opener (found later, scanning
+                // upward) belongs to an already-resolved construct, not one that
+                // encloses start_line.
+                pending_close += 1;
+            } else if has_open && !has_close {
+                if pending_close > 0 {
+                    pending_close -= 1;
+                } else {
+                    // No pending close to match against — this opener genuinely
+                    // encloses start_line.
                     s = i;
                     break;
                 }
@@ -98,16 +109,22 @@ fn snap_range_to_constructs(source: &str, start_line: u32, end_line: u32) -> (u3
         s
     };
 
-    // Snap end: walk forward from end_line; if any line has `%}` without `{%` on the
-    // same line (closer), expand to include it.
+    // Snap end: walk forward from end_line looking for the nearest UNCLOSED `%}`
+    // closer, with the symmetric balance check for openers that start (and later
+    // close) a new construct after end_line.
     let snapped_end = {
         let mut e = end_line;
-        let mut depth: i32 = 0;
+        let mut pending_open: i32 = 0;
         for i in end_line.min(total - 1) + 1..total {
             let line = lines[i as usize];
-            if line.contains("%}") && !line.contains("{%") {
-                depth += 1;
-                if depth > 0 {
+            let has_open = line.contains("{%");
+            let has_close = line.contains("%}");
+            if has_open && !has_close {
+                pending_open += 1;
+            } else if has_close && !has_open {
+                if pending_open > 0 {
+                    pending_open -= 1;
+                } else {
                     e = i;
                     break;
                 }

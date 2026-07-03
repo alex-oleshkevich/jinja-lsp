@@ -111,6 +111,39 @@ fn fmt7ym9_range_unchanged_when_no_snap_needed() {
 }
 
 #[test]
+fn jinja_lsp_tjr3_snap_does_not_over_expand_past_an_already_closed_multiline_tag() {
+    // The multi-line {% if ... %} tag on lines 0-1 is already closed before the
+    // selected line 2 — snapping must NOT expand upward into it. The dead
+    // `depth > 0` check (always true right after `depth += 1`) used to latch onto
+    // the nearest opener-only line regardless of whether an intervening
+    // closer-only line had already resolved it.
+    let source = "{%if c\n   and d %}\n{{x}}";
+    let opts = default_opts();
+    let edits = format_range(source, 2, 2, opts);
+    assert!(
+        edits.iter().all(|e| e.start_line >= 2),
+        "must not touch the already-closed opener line 0 when only line 2 is selected: {edits:?}"
+    );
+    // The actually-selected line must still be formatted.
+    assert!(edits.iter().any(|e| e.start_line == 2 && e.new_text.contains("{{ x }}")));
+}
+
+#[test]
+fn jinja_lsp_tjr3_snap_end_does_not_over_expand_past_a_construct_that_opens_and_closes_after() {
+    // Symmetric case: a new self-contained {% if ... %} construct starts and
+    // fully closes AFTER end_line — snapping the end forward must not latch onto
+    // its closer-only continuation line.
+    let source = "{{x}}\n{%if c\n   and d %}";
+    let opts = default_opts();
+    let edits = format_range(source, 0, 0, opts);
+    assert!(
+        edits.iter().all(|e| e.end_line <= 0),
+        "must not touch the later, unrelated multi-line tag when only line 0 is selected: {edits:?}"
+    );
+    assert!(edits.iter().any(|e| e.start_line == 0 && e.new_text.contains("{{ x }}")));
+}
+
+#[test]
 fn fmt07_default_options_produces_4space_indent() {
     let source = "{% block content %}\n{% for x in items %}\n{% endfor %}\n{% endblock %}";
     let opts = FormatOptions::default();
