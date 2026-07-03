@@ -304,6 +304,22 @@ fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
 }
 
 #[test]
+fn jinja_lsp_qved_empty_root_queries_dir_removed() {
+    // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
+    // tree-sitter query files live in src/parsing/queries/ (included via
+    // include_str! in extractor.rs). The empty dir misled readers into thinking
+    // queries lived at the root.
+    assert!(
+        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/queries")).exists(),
+        "repo-root queries/ must be removed, not left as an empty, misleading directory"
+    );
+    assert!(
+        std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parsing/queries")).is_dir(),
+        "src/parsing/queries/ must still exist — it holds the real query files"
+    );
+}
+
+#[test]
 fn jinja_lsp_mb3b_dead_error_module_removed() {
     // jinja-lsp-mb3b: ParseError/ExtractionError/ConfigError/DiagnosticError in
     // src/error.rs were referenced nowhere in the crate outside their own module,
