@@ -104,6 +104,26 @@ fn apply_init_options_surfaces_unknown_extras_error() {
 }
 
 #[test]
+fn jinja_lsp_8wlr_invalid_overlay_does_not_mutate_config_or_persist() {
+    // E15 §12.2: invalid config retains the previous one. apply_init_options used to
+    // store the overlay, apply it to self.config, and rebuild the registry BEFORE
+    // calling validate() — so an invalid overlay (unknown extra) was fully applied
+    // and persisted in init_overlay (re-applied on every future file reload) even
+    // though the Err return means callers treat it as rejected.
+    let default_config = JinjaConfig::default();
+    let mut state = ServerState::with_config(default_config.clone());
+    let overlay = ConfigOverlay {
+        extras: Some(vec!["nonexistent-pack".to_owned()]),
+        ..Default::default()
+    };
+    let result = state.apply_init_options(overlay);
+    assert!(matches!(result, Err(ConfigError::UnknownExtra(_))), "must reject unknown extra: {result:?}");
+
+    assert_eq!(state.config, default_config, "rejected overlay must not mutate the active config");
+    assert!(state.init_overlay.is_none(), "rejected overlay must not be persisted for future reloads");
+}
+
+#[test]
 fn apply_init_options_surfaces_overlapping_filter_warning() {
     let mut state = ServerState::with_config(JinjaConfig::default());
     let overlay = ConfigOverlay {

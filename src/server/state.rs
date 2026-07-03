@@ -101,10 +101,19 @@ impl ServerState {
         &mut self,
         overlay: ConfigOverlay,
     ) -> Result<Vec<ConfigWarning>, ConfigError> {
-        self.init_overlay = Some(overlay.clone());
-        self.config.apply_overlay(overlay);
-        self.registry = Self::build_registry(&self.config);
-        self.config.validate()
+        // E15 §12.2: invalid config retains the previous one — validate a candidate
+        // config first and only commit (store overlay, mutate config, rebuild
+        // registry) once it passes. Warnings are non-fatal, so a warning result
+        // still commits.
+        let mut candidate = self.config.clone();
+        candidate.apply_overlay(overlay.clone());
+        let result = candidate.validate();
+        if result.is_ok() {
+            self.init_overlay = Some(overlay);
+            self.config = candidate;
+            self.registry = Self::build_registry(&self.config);
+        }
+        result
     }
 
     /// Replace the active config and rebuild the registry from it.
