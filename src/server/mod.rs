@@ -948,36 +948,29 @@ impl LanguageServer for Backend {
     ) -> Result<Option<CodeActionResponse>> {
         let key = Self::uri_to_key(&params.text_document.uri);
 
-        // Clone everything needed and drop the read guard before CPU-bound work.
-        let (source, index, workspace, registry, utf8, sources_snapshot) = {
-            let state = self.state.read().await;
-            let ws = state.workspace_for(&key);
-            let Some(source) = state.sources.get(&key) else { return Ok(None) };
-            let Some(index) = ws.templates.get(&key) else { return Ok(None) };
-            (
-                source.clone(),
-                index.clone(),
-                ws.clone(),
-                state.registry_for(&key).clone(),
-                state.position_encoding_utf8,
-                state.sources.clone(),
-            )
-        };
+        // Synchronous, read-only work — hold the read guard throughout instead of
+        // cloning sources/workspace/registry per request (jinja-lsp-0ar1).
+        let state = self.state.read().await;
+        let workspace = state.workspace_for(&key);
+        let Some(source) = state.sources.get(&key) else { return Ok(None) };
+        let Some(index) = workspace.templates.get(&key) else { return Ok(None) };
+        let utf8 = state.position_encoding_utf8;
+        let registry = state.registry_for(&key);
 
         // Convert LSP diagnostics to internal ones.
         let diags: Vec<crate::diagnostic::Diagnostic> = params.context.diagnostics
             .iter()
-            .filter_map(|d| from_lsp_diagnostic(d, &key, &source, utf8))
+            .filter_map(|d| from_lsp_diagnostic(d, &key, source, utf8))
             .collect();
 
-        let mut actions = code_actions(&source, &key, &diags, &index, &workspace, &registry);
+        let mut actions = code_actions(source, &key, &diags, index, workspace, registry);
 
         // REQ-ACT-07 / REQ-ACT-08: when the client sends a non-empty range (selection),
         // also emit refactor actions for wrap and extract-to-macro.
         let range = &params.range;
         if range.start != range.end {
             let sel = selection_code_actions(
-                &source,
+                source,
                 &key,
                 range.start.line,
                 range.end.line,
@@ -991,7 +984,7 @@ impl LanguageServer for Backend {
 
         let lsp_actions: Vec<CodeActionOrCommand> = actions
             .into_iter()
-            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key, &sources_snapshot, utf8)))
+            .map(|a| CodeActionOrCommand::CodeAction(to_lsp_action(a, &key, &state.sources, utf8)))
             .collect();
 
         Ok(Some(lsp_actions))

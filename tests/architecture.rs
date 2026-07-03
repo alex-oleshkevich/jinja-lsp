@@ -112,6 +112,32 @@ fn jinja_lsp_gqdd_empty_linter_module_removed() {
 }
 
 #[test]
+fn jinja_lsp_0ar1_code_action_handler_does_not_clone_workspace_state() {
+    // jinja-lsp-0ar1: code_action fired on every cursor move in some editors, and
+    // was cloning the full sources map, the workspace index, and the registry per
+    // request "to release the lock before CPU-bound work" — but the handler is
+    // fully synchronous (no .await between the read and the response), so those
+    // clones only added cost with no benefit. The handler must borrow from the
+    // held read guard instead of calling .clone() on workspace/registry_for.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src.find("async fn code_action(").expect("code_action handler must exist");
+    let end = start + src[start..].find("\n    async fn code_action_resolve").expect("code_action_resolve must follow code_action");
+    let handler = &src[start..end];
+    assert!(
+        !handler.contains("ws.clone()") && !handler.contains("workspace.clone()"),
+        "code_action must not clone the workspace index per request: {handler}"
+    );
+    assert!(
+        !handler.contains("registry_for(&key).clone()"),
+        "code_action must not clone the registry per request: {handler}"
+    );
+    assert!(
+        !handler.contains("state.sources.clone()"),
+        "code_action must not clone the full sources map per request: {handler}"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
