@@ -228,6 +228,38 @@ fn act02_t04_import_fix_after_extends() {
     );
 }
 
+// ─── REQ-ACT-02: server-mode workspace (absolute keys) inserts relative path ──
+
+#[test]
+fn act02_import_fix_uses_relative_path_when_workspace_keyed_absolute() {
+    // Mirrors build_workspace_abs: templates keyed by absolute filesystem path,
+    // with relative_path recording the templates-root-relative form.
+    let src = "{% extends \"base.html\" %}\n{{ post_url(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let mut ws = WorkspaceIndex::default();
+    let mut idx = extract(macro_src);
+    idx.path = "/srv/templates/blog/macros.html".to_owned();
+    idx.relative_path = Some("blog/macros.html".to_owned());
+    ws.templates.insert("/srv/templates/blog/macros.html".to_owned(), idx);
+
+    let idx = extract(src);
+    let diags = vec![e103(1, 3, "post_url")];
+    let actions = code_actions(src, "/srv/templates/blog/post.html", &diags, &idx, &ws, &reg());
+    let import_action = actions.iter().find(|a| a.title.contains("Import")).unwrap();
+    assert!(
+        import_action.title.contains("blog/macros.html")
+            && !import_action.title.contains("/srv/templates"),
+        "quick-fix title must show the template-relative path, not the absolute key: {}",
+        import_action.title
+    );
+    let result = apply_by_title(src, "/srv/templates/blog/post.html", &actions, "Import");
+    assert_eq!(
+        result,
+        "{% extends \"base.html\" %}\n{% from \"blog/macros.html\" import post_url %}\n{{ post_url(post) }}",
+        "inserted import must use the relative path so Jinja can resolve it"
+    );
+}
+
 // ─── REQ-ACT-02: T-04b — No extends: insert import at top ───────────────────
 
 #[test]

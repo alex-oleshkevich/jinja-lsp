@@ -640,10 +640,16 @@ fn import_text_edit(index: &TemplateIndex, macro_path: &str, macro_name: &str) -
     }
 }
 
-/// Search all workspace templates for a macro named `name`; return its template path.
+/// Search all workspace templates for a macro named `name`; return its template-root-relative
+/// path (suitable for a `{% from "..." import ... %}` statement), falling back to the workspace
+/// key when the template has no recorded `relative_path` (e.g. workspace already keyed by
+/// relative paths).
 fn find_macro_in_workspace(workspace: &WorkspaceIndex, name: &str) -> Option<String> {
     workspace.templates.iter().find_map(|(path, idx)| {
-        idx.macros.iter().any(|m| m.name == name).then(|| path.clone())
+        idx.macros
+            .iter()
+            .any(|m| m.name == name)
+            .then(|| idx.relative_path.clone().unwrap_or_else(|| path.clone()))
     })
 }
 
@@ -670,7 +676,8 @@ fn near_matches(
             if m.name != name {
                 let d = levenshtein(name, &m.name);
                 if d <= threshold {
-                    results.push((d, m.name.clone(), Some(path.clone())));
+                    let rel = idx.relative_path.clone().unwrap_or_else(|| path.clone());
+                    results.push((d, m.name.clone(), Some(rel)));
                 }
             }
         }
