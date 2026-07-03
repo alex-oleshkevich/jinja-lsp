@@ -134,10 +134,15 @@ pub fn incoming_calls(item: &CallHierarchyItem, workspace: &WorkspaceIndex) -> V
         }
     }
 
-    groups
+    let mut calls: Vec<IncomingCall> = groups
         .into_values()
         .map(|(from, from_ranges)| IncomingCall { from, from_ranges })
-        .collect()
+        .collect();
+    // jinja-lsp-x6e9: HashMap::into_values has no stable order — sort for
+    // byte-for-byte determinism so the call list doesn't jump around in the
+    // editor UI between identical requests (matches symbols.rs's precedent).
+    calls.sort_by(|a, b| (&a.from.uri, &a.from.name).cmp(&(&b.from.uri, &b.from.name)));
+    calls
 }
 
 /// Return the direct dependencies of a macro's body (REQ-CALL-03).
@@ -215,10 +220,13 @@ pub fn outgoing_calls(
         edges.insert(key, (to_item, vec![range]));
     }
 
-    edges
+    let mut calls: Vec<OutgoingCall> = edges
         .into_values()
         .map(|(to, from_ranges)| OutgoingCall { to, from_ranges })
-        .collect()
+        .collect();
+    // jinja-lsp-x6e9: same determinism fix as incoming_calls.
+    calls.sort_by(|a, b| (&a.to.uri, &a.to.name).cmp(&(&b.to.uri, &b.to.name)));
+    calls
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

@@ -234,6 +234,35 @@ fn call02_incoming_two_macros_in_one_template_are_two_entries() {
     assert!(names.contains(&"b"), "b must be in from items");
 }
 
+#[test]
+fn jinja_lsp_x6e9_incoming_calls_sorted_deterministically_by_uri_and_name() {
+    // incoming_calls collects grouped results via HashMap::into_values, whose
+    // iteration order is unspecified — three callers across different templates
+    // must always come back sorted by (uri, name), not in hash order.
+    let macro_src = "{% macro ping() %}{% endmacro %}";
+    let z_caller = "{{ ping() }}";
+    let a_caller = "{{ ping() }}";
+    let m_caller = "{{ ping() }}";
+    let w = ws(&[
+        ("macro.html", macro_src),
+        ("z_caller.html", z_caller),
+        ("a_caller.html", a_caller),
+        ("m_caller.html", m_caller),
+    ]);
+    let macro_idx = extract(macro_src);
+    let mut items = prepare_call_hierarchy(
+        macro_src, 0, col_of(macro_src, "ping"), "macro.html", &macro_idx, &w, &reg(),
+    );
+    let item = items.remove(0);
+    let calls = incoming_calls(&item, &w);
+    let uris: Vec<&str> = calls.iter().map(|c| c.from.uri.as_str()).collect();
+    assert_eq!(
+        uris,
+        vec!["a_caller.html", "m_caller.html", "z_caller.html"],
+        "incoming calls must be sorted by uri, not HashMap iteration order"
+    );
+}
+
 // ─── REQ-CALL-03: Outgoing calls ─────────────────────────────────────────────
 
 #[test]
@@ -289,6 +318,29 @@ fn call03_outgoing_import_is_module_edge() {
     assert!(
         calls.iter().any(|c| c.to.kind == ItemKind::Module && c.to.name.contains("helpers.html")),
         "import inside macro body → Module outgoing edge"
+    );
+}
+
+#[test]
+fn jinja_lsp_x6e9_outgoing_calls_sorted_deterministically_by_uri_and_name() {
+    // outgoing_calls collects edges via HashMap::into_values too — multiple
+    // dependencies (macro calls + template edges) must come back sorted by
+    // (uri, name), not in hash order.
+    let src = "{% macro m() %}{{ z_dep() }}{{ a_dep() }}{% include 'm_dep.html' %}{% endmacro %}\
+        {% macro z_dep() %}{% endmacro %}{% macro a_dep() %}{% endmacro %}";
+    let w = ws(&[("t.html", src), ("m_dep.html", "")]);
+    let idx = extract(src);
+    let m_col = src.find("macro m").map(|i| i + 6).unwrap() as u32;
+    let mut items = prepare_call_hierarchy(src, 0, m_col, "t.html", &idx, &w, &reg());
+    let item = items.remove(0);
+    let calls = outgoing_calls(&item, &w, &reg());
+    let pairs: Vec<(&str, &str)> = calls.iter().map(|c| (c.to.uri.as_str(), c.to.name.as_str())).collect();
+    // a_dep/z_dep are both local macros (uri="t.html"); m_dep.html is a template
+    // edge. Sorted by (uri, name): "m_dep.html" < "t.html", then "a_dep" < "z_dep".
+    assert_eq!(
+        pairs,
+        vec![("m_dep.html", "m_dep.html"), ("t.html", "a_dep"), ("t.html", "z_dep")],
+        "outgoing calls must be sorted by (uri, name), not HashMap iteration order"
     );
 }
 
