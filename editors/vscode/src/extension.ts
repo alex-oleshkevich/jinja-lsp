@@ -12,11 +12,11 @@ import { buildInitOptions } from './init-options';
 
 let client: LanguageClient | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+// REQ-EDIT-03: build a fresh client from the current settings.
+function createClient(): LanguageClient {
   const config = vscode.workspace.getConfiguration('jinja-lsp');
   const serverPath = config.get<string>('server.path') || 'jinja-lsp';
 
-  // REQ-EDIT-03: spawn jinja-lsp lsp over stdio.
   const serverOptions: ServerOptions = {
     command: serverPath,
     args: ['lsp'],
@@ -38,9 +38,11 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   };
 
-  client = new LanguageClient('jinja-lsp', 'Jinja LSP', serverOptions, clientOptions);
+  return new LanguageClient('jinja-lsp', 'Jinja LSP', serverOptions, clientOptions);
+}
 
-  client.start().catch(() => {
+function startClient(): void {
+  client?.start().catch(() => {
     // REQ-EDIT-03: surface not-found toast with install instructions.
     vscode.window.showErrorMessage(
       'jinja-lsp not found.\n\n' +
@@ -54,11 +56,28 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     });
   });
+}
 
-  // REQ-EDIT-05: re-push settings on workspace/didChangeConfiguration.
+export function activate(context: vscode.ExtensionContext): void {
+  client = createClient();
+  startClient();
+
+  // jinja-lsp-x6us: server.path selects the spawned binary, so changing it can't
+  // take effect via a settings notification alone — the client (and its child
+  // process) must be stopped and a new one started against the new path.
+  // Every other jinja-lsp.* setting still just re-pushes InitializationOptions.
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('jinja-lsp') && client) {
+    vscode.workspace.onDidChangeConfiguration(async e => {
+      if (!e.affectsConfiguration('jinja-lsp')) {
+        return;
+      }
+      if (e.affectsConfiguration('jinja-lsp.server.path')) {
+        await client?.stop();
+        client = createClient();
+        startClient();
+        return;
+      }
+      if (client) {
         const updated = vscode.workspace.getConfiguration('jinja-lsp');
         client.sendNotification('workspace/didChangeConfiguration', {
           settings: buildInitOptions(updated),

@@ -175,3 +175,20 @@ fn vscode_extension_ts_launches_jinja_lsp_lsp() {
     );
     assert!(src.contains("stdio"), "extension.ts must use stdio transport");
 }
+
+#[test]
+fn jinja_lsp_x6us_server_path_change_restarts_the_client() {
+    // serverPath was read once at activation; onDidChangeConfiguration only
+    // re-sent init options, so pointing jinja-lsp.server.path at a new binary had
+    // no effect until a manual window reload. A server.path change must now stop
+    // the running client and start a fresh one built from the new setting.
+    let src = include_str!("../editors/vscode/src/extension.ts");
+    assert!(
+        src.contains("affectsConfiguration('jinja-lsp.server.path')"),
+        "extension.ts must specifically detect jinja-lsp.server.path changes"
+    );
+    assert!(
+        src.contains("client?.stop()") || src.contains("client.stop()"),
+        "extension.ts must stop the running client before restarting it"
+    );
+}
