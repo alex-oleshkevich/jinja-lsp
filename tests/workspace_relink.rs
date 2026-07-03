@@ -118,3 +118,28 @@ fn workspace_contains_all_discovered_templates() {
     assert!(workspace.templates.contains_key("blog/post.html"), "keys: {:?}", workspace.templates.keys().collect::<Vec<_>>());
 }
 
+#[test]
+fn jinja_lsp_l8ve_first_dir_wins_on_relative_path_collision() {
+    // jinja-lsp-l8ve: when two templates_dirs both contain the same relative path,
+    // build_workspace inserted in discover_templates order, so the LAST dir silently
+    // won — the opposite of Jinja's FileSystemLoader (first-match-wins). The first
+    // dir's content must be the one indexed.
+    let first = std::env::temp_dir().join("jinja_lsp_l8ve_first");
+    let second = std::env::temp_dir().join("jinja_lsp_l8ve_second");
+    let _ = std::fs::remove_dir_all(&first);
+    let _ = std::fs::remove_dir_all(&second);
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("shared.html"), "{% block from_first %}{% endblock %}").unwrap();
+    std::fs::write(second.join("shared.html"), "{% block from_second %}{% endblock %}").unwrap();
+
+    let workspace = build_workspace(&[&first, &second], &["html"]);
+    let idx = workspace.templates.get("shared.html").expect("shared.html must be indexed");
+    assert_eq!(
+        idx.blocks.first().map(|b| b.name.as_str()),
+        Some("from_first"),
+        "the first templates_dir must win on a relative-path collision: {:?}",
+        idx.blocks
+    );
+}
+

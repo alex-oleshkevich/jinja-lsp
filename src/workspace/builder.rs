@@ -16,6 +16,12 @@ pub fn build_workspace(templates_dirs: &[&Path], extensions: &[&str]) -> Workspa
 
     for abs_path in paths {
         if let Some(key) = relative_key(&abs_path, templates_dirs) {
+            // jinja-lsp-l8ve: discover_templates returns files in templates_dirs order;
+            // when two dirs share a relative path, the FIRST dir must win (matching
+            // Jinja's FileSystemLoader), so skip insertion if the key is already taken.
+            if workspace.templates.contains_key(&key) {
+                continue;
+            }
             let source = fs::read_to_string(&abs_path).unwrap_or_default();
             let mut idx = extract(&source);
             idx.path = abs_path.to_string_lossy().to_string();
