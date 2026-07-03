@@ -139,6 +139,32 @@ fn sem04_parameter_token_carries_no_modifiers() {
     }
 }
 
+#[test]
+fn jinja_lsp_2iqx_param_after_string_default_containing_close_paren_gets_a_token() {
+    // find_param_in_macro_tag found the matching `)` by pure depth counting with
+    // no string-literal awareness. The `)` inside `a=")"`'s default value used to
+    // terminate the scan early, so parameter `b` got no token at all.
+    let src = r#"{% macro m(a=")", b) %}{{ a }}{{ b }}{% endmacro %}"#;
+    let tokens = full(src);
+    let param_toks = tokens_of_type(&tokens, TT_PARAMETER);
+    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens: {param_toks:?}");
+
+    let b_tok = param_toks.iter().find(|t| t.length == 1 && t.start_char == src.find(", b").unwrap() as u32 + 2)
+        .expect("parameter 'b' must have a correctly-positioned token");
+    assert_eq!(b_tok.length, 1);
+}
+
+#[test]
+fn jinja_lsp_2iqx_comma_inside_string_default_does_not_split_params() {
+    // The comma-splitting pass for parameter slots needs the same string
+    // awareness — a comma inside a default value's string must not be treated
+    // as a parameter separator.
+    let src = r#"{% macro m(a=", ", b) %}{{ a }}{{ b }}{% endmacro %}"#;
+    let tokens = full(src);
+    let param_toks = tokens_of_type(&tokens, TT_PARAMETER);
+    assert_eq!(param_toks.len(), 2, "both 'a' and 'b' must emit parameter tokens: {param_toks:?}");
+}
+
 // ─── REQ-SEM-04: parameter body use → variable, not parameter ───────────────
 
 #[test]

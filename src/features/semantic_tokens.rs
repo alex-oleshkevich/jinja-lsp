@@ -280,11 +280,30 @@ fn find_param_in_macro_tag(
     let paren_open = tag_slice.find('(')?;
     let after_open = &tag_slice[paren_open + 1..];
 
-    // Find the matching close paren via depth tracking.
+    // Find the matching close paren via depth tracking, skipping parens that
+    // appear inside string-literal default values (e.g. `{% macro m(a=")", b) %}`) —
+    // reuses the same in-string/escape state machine as parse_args (inlay_hints.rs).
     let mut depth = 1usize;
     let mut paren_close_rel = None;
+    let mut in_str = false;
+    let mut str_char = '"';
+    let mut escaped = false;
     for (j, c) in after_open.char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == str_char {
+                in_str = false;
+            }
+            continue;
+        }
         match c {
+            '"' | '\'' => {
+                in_str = true;
+                str_char = c;
+            }
             '(' => depth += 1,
             ')' => {
                 depth -= 1;
@@ -300,11 +319,30 @@ fn find_param_in_macro_tag(
     let content_abs = macro_start + paren_open + 1;
 
     // Split content on top-level commas to get individual parameter slots.
+    // Same string-literal awareness as above — a comma inside a default value's
+    // string (e.g. `a=", "`) must not be treated as a parameter separator.
     let mut slots: Vec<(usize, usize)> = Vec::new();
     let mut slot_start = 0usize;
     let mut depth2 = 0usize;
+    let mut in_str2 = false;
+    let mut str_char2 = '"';
+    let mut escaped2 = false;
     for (j, c) in content.char_indices() {
+        if in_str2 {
+            if escaped2 {
+                escaped2 = false;
+            } else if c == '\\' {
+                escaped2 = true;
+            } else if c == str_char2 {
+                in_str2 = false;
+            }
+            continue;
+        }
         match c {
+            '"' | '\'' => {
+                in_str2 = true;
+                str_char2 = c;
+            }
             '(' | '[' => depth2 += 1,
             ')' | ']' => { depth2 = depth2.saturating_sub(1); }
             ',' if depth2 == 0 => {
