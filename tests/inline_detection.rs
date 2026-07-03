@@ -215,6 +215,47 @@ fn inline_diagnostic_position_translated_to_host_coords() {
     }
 }
 
+// ---------- jinja-lsp-9wki: triple-quoted strings ----------------------------
+
+#[test]
+fn detects_triple_double_quoted_multiline_literal() {
+    // Triple-quoted strings are the most common way to write multiline inline
+    // Jinja in Python — extract_string_literal used to see the first `"` after
+    // the opener as the closing quote and return an empty content string.
+    let source = "render_template_string(\"\"\"\n{% for x in items %}\n{{ x }}\n{% endfor %}\n\"\"\")";
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert_eq!(regions.len(), 1, "must detect one inline region");
+    assert_eq!(
+        regions[0].content,
+        "\n{% for x in items %}\n{{ x }}\n{% endfor %}\n",
+        "content must be the full multiline body, not empty"
+    );
+}
+
+#[test]
+fn detects_triple_single_quoted_multiline_literal() {
+    let source = "render_template_string('''\n{{ x }}\n''')";
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert_eq!(regions.len(), 1);
+    assert_eq!(regions[0].content, "\n{{ x }}\n");
+}
+
+#[test]
+fn triple_quote_content_contains_embedded_single_quote() {
+    // A single embedded `"` must not be mistaken for the closing delimiter.
+    let source = "render_template_string(\"\"\"{{ \"a\" }} more{{ x }}\"\"\")";
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert_eq!(regions.len(), 1);
+    assert_eq!(regions[0].content, "{{ \"a\" }} more{{ x }}");
+}
+
+#[test]
+fn unterminated_triple_quote_is_skipped() {
+    let source = "render_template_string(\"\"\"{{ x }}";
+    let regions = detect_inline_regions(source, &["render_template_string"]);
+    assert!(regions.is_empty(), "unterminated triple-quoted literal must be skipped: {regions:?}");
+}
+
 // ---------- REQ-INLN-05: inline ranges are ordinary TemplateIndex entries ---
 
 #[test]

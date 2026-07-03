@@ -58,10 +58,20 @@ fn extract_string_literal(source: &str, pos: usize) -> Option<InlineRegion> {
     if quote != b'"' && quote != b'\'' {
         return None; // not a literal
     }
-    let content_start = literal_start + 1;
+    // Triple-quoted strings ("""..."""/'''...''') are the common way to write
+    // multiline inline Jinja in Python — detect the opener and scan for the
+    // matching triple-quote terminator instead of the single-quote closer.
+    let triple = [quote; 3];
+    let is_triple = source.as_bytes().get(literal_start..literal_start + 3) == Some(&triple);
+    let (content_start, delim_len) = if is_triple {
+        (literal_start + 3, 3)
+    } else {
+        (literal_start + 1, 1)
+    };
     let after_quote = source.get(content_start..)?;
-    // find closing quote (simple scan, no escape handling for v1)
-    let content_len = after_quote.find(quote as char)?;
+    let delim = &source[literal_start..literal_start + delim_len];
+    // find closing delimiter (simple scan, no escape handling for v1)
+    let content_len = after_quote.find(delim)?;
     let content = after_quote[..content_len].to_owned();
     let host_offset = content_start;
     let (host_line, host_col) = line_col(source, host_offset);
