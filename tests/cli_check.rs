@@ -243,6 +243,23 @@ fn t6zo5_invalid_noqa_w107_appears_in_check_output() {
     assert_eq!(code, 1, "W107 is a finding → exit 1");
 }
 
+#[test]
+fn jinja_lsp_8dqt_invalid_noqa_reported_when_file_has_no_other_diagnostics() {
+    // jinja-lsp-8dqt: the CLI built per_file only from files that already had
+    // filtered diagnostics, so a template whose ONLY problem is an invalid noqa
+    // directive produced no findings at all. Content here is otherwise clean.
+    let tmp = tmpdir("w107-only-finding");
+    fs::write(tmp.join("t.html"), "<p>hello</p>\n{# noqa: bad-code #}\n").unwrap();
+    let (stdout, _, code) = check(&["--format", "json", tmp.to_str().unwrap()]);
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let codes: Vec<&str> = arr.iter()
+        .filter_map(|v| v["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"JINJA-W107"),
+        "W107 must be reported even when it is the file's only diagnostic, got codes: {codes:?}");
+    assert_eq!(code, 1, "W107 is a finding → exit 1");
+}
+
 // ---------- jinja-lsp-6g3l: invalid --format must exit 2 -------------------
 
 #[test]

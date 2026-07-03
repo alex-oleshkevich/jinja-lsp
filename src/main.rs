@@ -206,7 +206,12 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
     {
         let mut per_file: std::collections::HashMap<&str, Vec<&Diagnostic>> = std::collections::HashMap::new();
         for d in &filtered { per_file.entry(d.file.as_str()).or_default().push(d); }
-        for (file_path, file_diags) in per_file {
+        // REQ-DIAG-06: scan every discovered template, not just files with existing
+        // findings — a file whose only problem is an invalid `noqa` directive must
+        // still surface its W107, even though it has no other diagnostics.
+        for idx in workspace.templates.values() {
+            let file_path = idx.path.as_str();
+            let file_diags = per_file.remove(file_path).unwrap_or_default();
             let source = std::fs::read_to_string(file_path).unwrap_or_default();
             let file_vec: Vec<Diagnostic> = file_diags.iter().map(|d| (*d).clone()).collect();
             let (kept, w107s) = suppress_by_noqa(&file_vec, &source);
