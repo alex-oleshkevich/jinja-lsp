@@ -486,14 +486,21 @@ fn check_w201(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
 // ── W202: unused-macro ────────────────────────────────────────────────────────
 
 fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out: &mut Vec<Diagnostic>) {
+    // jinja-lsp-md8e: a template with no macros can never produce a W202, so skip the
+    // O(workspace) scan entirely for the common case.
+    if index.macros.is_empty() {
+        return;
+    }
+
     // Pass 2 (cross-file): collect every macro name referenced anywhere in the workspace.
     // A macro is "used" if called locally OR imported/called from any other template.
-    let mut used: HashSet<String> = HashSet::new();
+    // jinja-lsp-md8e: borrow &str keys instead of cloning every reference/import name.
+    let mut used: HashSet<&str> = HashSet::new();
 
     // Own references (local calls inside the macro library itself).
     for r in &index.references {
         if matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier) {
-            used.insert(r.name.clone());
+            used.insert(r.name.as_str());
         }
     }
 
@@ -502,7 +509,7 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
         // Direct function calls and references in any template.
         for r in &tmpl.references {
             if r.kind == ReferenceKind::Function {
-                used.insert(r.name.clone());
+                used.insert(r.name.as_str());
             }
         }
         // from-imports that source from the current template count as "exporting" the macro.
@@ -511,7 +518,7 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 || fi.source == path
             {
                 for n in &fi.names {
-                    used.insert(n.name.clone());
+                    used.insert(n.name.as_str());
                 }
             }
         }

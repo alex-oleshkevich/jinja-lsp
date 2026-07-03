@@ -195,6 +195,22 @@ fn jinja_lsp_0zz7_cli_lint_loop_does_not_clone_registry_when_no_sidecar() {
 }
 
 #[test]
+fn jinja_lsp_md8e_check_w202_early_returns_when_no_macros() {
+    // jinja-lsp-md8e: check_w202 scanned every other template's references and
+    // from-imports (O(templates^2 x refs) for a full lint run) even for templates
+    // that define no macros at all — the common case, and one where the scan can
+    // never produce a diagnostic. It must bail out before the workspace scan.
+    let src = include_str!("../src/diagnostics/checks/mod.rs");
+    let start = src.find("fn check_w202(").expect("check_w202 must exist");
+    let end = start + src[start..].find("\n// ── W203").expect("W203 section must follow check_w202");
+    let func = &src[start..end];
+    assert!(
+        func.contains("index.macros.is_empty()"),
+        "check_w202 must early-return when index.macros is empty: {func}"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
