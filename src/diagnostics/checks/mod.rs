@@ -424,7 +424,7 @@ fn check_w301(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     for b in &index.blocks {
         let count = seen.entry(b.name.as_str()).or_insert(0);
         *count += 1;
-        if *count == 2 {
+        if *count >= 2 {
             out.push(Diagnostic {
                 file: path.to_owned(),
                 line: b.span.start_line,
@@ -445,7 +445,7 @@ fn check_w302(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     for m in &index.macros {
         let count = seen.entry(m.name.as_str()).or_insert(0);
         *count += 1;
-        if *count == 2 {
+        if *count >= 2 {
             out.push(Diagnostic {
                 file: path.to_owned(),
                 line: m.span.start_line,
@@ -598,7 +598,7 @@ fn check_w303(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     for a in &index.import_aliases {
         let count = seen.entry(a.alias.as_str()).or_insert(0);
         *count += 1;
-        if *count == 2 {
+        if *count >= 2 {
             out.push(Diagnostic {
                 file: path.to_owned(),
                 line: a.span.start_line,
@@ -621,7 +621,7 @@ fn check_w304(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
             let effective = n.alias.as_deref().unwrap_or(n.name.as_str());
             let count = seen.entry(effective).or_insert(0);
             *count += 1;
-            if *count == 2 {
+            if *count >= 2 {
                 out.push(Diagnostic {
                     file: path.to_owned(),
                     line: fi.span.start_line,

@@ -158,6 +158,18 @@ fn w301_emitted_for_duplicate_block() {
 }
 
 #[test]
+fn jinja_lsp_v43s_w301_emitted_for_third_duplicate_block() {
+    // jinja-lsp-v43s: a name defined 3+ times must be flagged on every occurrence
+    // after the first, not just the 2nd.
+    let src = "{% block foo %}a{% endblock %}{% block foo %}b{% endblock %}{% block foo %}c{% endblock %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w301_count = diags.iter().filter(|d| d.code == "JINJA-W301").count();
+    assert_eq!(w301_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+}
+
+#[test]
 fn no_w301_for_unique_blocks() {
     let src = "{% block header %}a{% endblock %}{% block footer %}b{% endblock %}";
     let idx = extract(src);
@@ -177,6 +189,16 @@ fn w302_emitted_for_duplicate_macro() {
     let w302 = diags.iter().find(|d| d.code == "JINJA-W302");
     assert!(w302.is_some(), "W302 must be emitted for duplicate macro name");
     assert!(w302.unwrap().message.contains("render"), "message must name the duplicate macro");
+}
+
+#[test]
+fn jinja_lsp_v43s_w302_emitted_for_third_duplicate_macro() {
+    let src = "{% macro render() %}a{% endmacro %}{% macro render() %}b{% endmacro %}{% macro render() %}c{% endmacro %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w302_count = diags.iter().filter(|d| d.code == "JINJA-W302").count();
+    assert_eq!(w302_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
 }
 
 // ─── W201: unused-variable ───────────────────────────────────────────────────
@@ -300,6 +322,16 @@ fn w303_emitted_when_same_alias_imported_twice() {
 }
 
 #[test]
+fn jinja_lsp_v43s_w303_emitted_for_third_duplicate_alias() {
+    let src = r#"{% import "a.html" as m %}{% import "b.html" as m %}{% import "c.html" as m %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("a.html", ""), ("b.html", ""), ("c.html", "")]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w303_count = diags.iter().filter(|d| d.code == "JINJA-W303").count();
+    assert_eq!(w303_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
+}
+
+#[test]
 fn no_w303_when_aliases_are_distinct() {
     let src = r#"{% import "a.html" as m1 %}{% import "b.html" as m2 %}"#;
     let idx = extract(src);
@@ -319,6 +351,20 @@ fn w304_emitted_when_same_name_imported_twice() {
     let w304 = diags.iter().find(|d| d.code == "JINJA-W304");
     assert!(w304.is_some(), "W304 must be emitted for duplicate from-import name: {diags:?}");
     assert!(w304.unwrap().message.contains("foo"), "message must name the duplicate: {:?}", w304);
+}
+
+#[test]
+fn jinja_lsp_v43s_w304_emitted_for_third_duplicate_name() {
+    let src = r#"{% from "a.html" import foo %}{% from "b.html" import foo %}{% from "c.html" import foo %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[
+        ("a.html", "{% macro foo() %}{% endmacro %}"),
+        ("b.html", "{% macro foo() %}{% endmacro %}"),
+        ("c.html", "{% macro foo() %}{% endmacro %}"),
+    ]);
+    let diags = run_checks(src, "t.html", &idx, &registry(), &ws);
+    let w304_count = diags.iter().filter(|d| d.code == "JINJA-W304").count();
+    assert_eq!(w304_count, 2, "the 2nd and 3rd occurrences must both be flagged: {diags:?}");
 }
 
 #[test]
