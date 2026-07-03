@@ -392,6 +392,18 @@ fn fmt02_t14_block_set_indents_via_reindent() {
 }
 
 #[test]
+fn jinja_lsp_zkrx_string_literal_with_percent_brace_does_not_desync_reindent() {
+    // jinja-lsp-zkrx: tag_text_is_balanced counted raw '{%'/'%}' substrings with no
+    // string-literal awareness, so a tag whose string argument contains a literal
+    // '%}' permanently unbalanced the count — the multi-line-tag accumulator never
+    // terminated and swallowed every subsequent line in the file as an unindented
+    // "continuation", losing all formatting for everything after that tag.
+    let src = "{% block content %}\n{% set sep = \"50%} off\" %}\n{% if x %}\nhi\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% set sep = \"50%} off\" %}\n  {% if x %}\nhi\n  {% endif %}\n{% endblock %}";
+    assert_eq!(jinja_lsp::format::reindent(src, "  "), want);
+}
+
+#[test]
 fn fmt02_t15_raw_block_content_untouched() {
     // Jinja-looking lines inside {% raw %} are literal output — must not be
     // re-indented, and must not corrupt depth tracking for what follows.

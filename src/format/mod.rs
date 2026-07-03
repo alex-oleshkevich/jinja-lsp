@@ -476,8 +476,51 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
 /// True when `text`'s `{%`/`%}` occurrences balance — used to detect when a tag
 /// that started on one line has reached its closing delimiter, possibly several
 /// physical lines later.
+///
+/// jinja-lsp-zkrx: counts only occurrences OUTSIDE string literals — a naive
+/// substring count treated `{% set sep = "50%} off" %}` as permanently
+/// unbalanced (2 `%}` vs 1 `{%`), so the multi-line-tag accumulator in
+/// `reindent` never terminated and swallowed the rest of the file as an
+/// unindented "continuation".
 fn tag_text_is_balanced(text: &str) -> bool {
-    text.matches("{%").count() == text.matches("%}").count()
+    let bytes = text.as_bytes();
+    let mut open = 0u32;
+    let mut close = 0u32;
+    let mut in_str = false;
+    let mut str_char = b'"';
+    let mut escaped = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == str_char {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => {
+                in_str = true;
+                str_char = b;
+                i += 1;
+            }
+            b'{' if bytes.get(i + 1) == Some(&b'%') => {
+                open += 1;
+                i += 2;
+            }
+            b'%' if bytes.get(i + 1) == Some(&b'}') => {
+                close += 1;
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+    open == close
 }
 
 /// Mirrors Jinja2's runtime `trim_blocks` option: strip the first newline
