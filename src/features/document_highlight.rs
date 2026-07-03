@@ -102,9 +102,21 @@ pub fn document_highlight(
         return with_write_and_reads(write, word, index);
     }
 
-    // Variable defined in this file?
+    // Variable defined in this file? jinja-lsp-kj7z: pick the binding whose
+    // valid_range actually contains the cursor (tightest match, mirroring
+    // rename.rs's tightest_scope_for) instead of text-scanning for the first
+    // same-named for/set target in the whole file — with two loops
+    // (`{% for x in a %}...{% for x in b %}`), the text scan always resolved to
+    // the first loop's target regardless of which one the cursor is inside.
     if index.variables.iter().any(|v| v.name == word) {
-        let write = find_variable_write_span(source, word);
+        let write = index.variables.iter()
+            .filter(|v| {
+                v.name == word
+                    && v.valid_range.start_byte <= byte
+                    && byte <= v.valid_range.end_byte
+            })
+            .min_by_key(|v| v.valid_range.end_byte.saturating_sub(v.valid_range.start_byte))
+            .map(|v| v.span.clone());
         return match write {
             Some(w) => with_write_and_reads(w, word, index),
             None => reads_only(word, index),
@@ -168,63 +180,6 @@ fn is_host_owned(name: &str, registry: &Registry) -> bool {
     ]
     .iter()
     .any(|&cat| registry.get(cat, name).is_some())
-}
-
-/// Find the Write span for a variable binding (for-loop target or set target)
-/// via source-text scan. Variable spans are all-zero in the index, so we scan.
-fn find_variable_write_span(source: &str, name: &str) -> Option<Span> {
-    let name_bytes = name.as_bytes();
-    let src = source.as_bytes();
-    let mut i = 0;
-    while i + name.len() <= source.len() {
-        if &src[i..i + name.len()] == name_bytes {
-            let before_ok = i == 0 || {
-                let c = src[i - 1];
-                !c.is_ascii_alphanumeric() && c != b'_'
-            };
-            let after_ok = i + name.len() >= source.len() || {
-                let c = src[i + name.len()];
-                !c.is_ascii_alphanumeric() && c != b'_'
-            };
-            if before_ok && after_ok {
-                let before = source[..i].trim_end_matches(|c: char| c.is_whitespace());
-                let after = source[i + name.len()..].trim_start_matches(|c: char| c.is_whitespace());
-                let is_for = ends_with_keyword(before, "for") || before.ends_with(',');
-                let is_set = ends_with_keyword(before, "set");
-                let for_ok = is_for && (starts_with_keyword(after, "in") || after.starts_with(','));
-                let set_ok = is_set;
-                if for_ok || set_ok {
-                    return Some(make_span(source, i, i + name.len()));
-                }
-            }
-        }
-        i += source[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
-    }
-    None
-}
-
-/// True when `s` ends with `kw` and the character before it (if any) is not an identifier char.
-fn ends_with_keyword(s: &str, kw: &str) -> bool {
-    if let Some(prefix) = s.strip_suffix(kw) {
-        prefix.is_empty() || {
-            let c = prefix.chars().next_back().unwrap();
-            !c.is_alphanumeric() && c != '_'
-        }
-    } else {
-        false
-    }
-}
-
-/// True when `s` starts with `kw` and the character after it (if any) is not an identifier char.
-fn starts_with_keyword(s: &str, kw: &str) -> bool {
-    if let Some(rest) = s.strip_prefix(kw) {
-        rest.is_empty() || {
-            let c = rest.chars().next().unwrap();
-            !c.is_alphanumeric() && c != '_'
-        }
-    } else {
-        false
-    }
 }
 
 /// Return the span of `name` within the tag starting at `tag_start_byte`.

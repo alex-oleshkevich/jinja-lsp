@@ -234,3 +234,25 @@ fn hl_eafo_for_keyword_requires_word_boundary() {
     let for_item_col = src.find("{% for item").unwrap() as u32 + 7;
     assert_eq!(write[0].range.start_col, for_item_col, "write span must be the for binding");
 }
+
+#[test]
+fn jinja_lsp_kj7z_write_resolves_to_the_cursors_own_loop_not_the_first_same_named_loop() {
+    // Two loops bind the same name "x". find_variable_write_span used to text-scan
+    // top-to-bottom and always resolve to the FIRST loop's target regardless of
+    // which loop's body the cursor is actually inside — highlighting "x" inside
+    // the second loop must mark the SECOND loop's target as the Write, not the first.
+    let src = "{% for x in a %}{{ x }}{% endfor %}{% for x in b %}{{ x }}{% endfor %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+
+    let second_read_col = src.rfind("{{ x }}").unwrap() as u32 + 3;
+    let results = document_highlight(src, 0, second_read_col, &idx, &reg);
+    let write: Vec<_> = results.iter().filter(|r| r.kind == HighlightKind::Write).collect();
+    assert_eq!(write.len(), 1, "must find exactly one Write for the cursor's own loop");
+
+    let second_for_x_col = src.rfind("{% for x").unwrap() as u32 + 7;
+    assert_eq!(
+        write[0].range.start_col, second_for_x_col,
+        "write span must be the SECOND loop's target (the cursor's own scope), not the first"
+    );
+}
