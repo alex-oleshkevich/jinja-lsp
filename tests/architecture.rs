@@ -95,6 +95,23 @@ fn textedit_and_workspaceedit_defined_in_edit_module() {
 }
 
 #[test]
+fn jinja_lsp_gqdd_empty_linter_module_removed() {
+    // The linter module was a stale placeholder: a comment claiming it held CLI
+    // orchestration for `jinja-lsp check` and rich/compact/json formatters, but
+    // all of that logic actually lives in src/main.rs — the module itself was
+    // completely empty. Neither the module nor its declaration should exist.
+    assert!(
+        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/linter")).exists(),
+        "src/linter/ must be removed, not left as an empty placeholder"
+    );
+    let lib_src = include_str!("../src/lib.rs");
+    assert!(
+        !lib_src.contains("mod linter"),
+        "lib.rs must not declare a linter module that no longer exists"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
