@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     builtins::registry::{Category, Registry},
-    diagnostic::{Diagnostic, DiagnosticSeverity},
+    diagnostic::Diagnostic,
+    diagnostics::DiagCode,
     workspace::{
         index::{ResolvedBinding, TemplateIndex, WorkspaceIndex},
         symbols::{MacroDefinition, ReferenceKind, TemplateRefKind},
@@ -57,9 +58,9 @@ fn check_e001(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
             file: path.to_owned(),
             line: err.span.start_line,
             col: err.span.start_col,
-            code: "JINJA-E001".to_owned(),
-            slug: "syntax-error".to_owned(),
-            severity: DiagnosticSeverity::Error,
+            code: DiagCode::E001.code_str().to_owned(),
+            slug: DiagCode::E001.slug().to_owned(),
+            severity: DiagCode::E001.severity(),
             message: "syntax error".to_owned(),
         });
     }
@@ -149,9 +150,9 @@ fn check_e101(
             file: path.to_owned(),
             line: r.span.start_line,
             col: r.span.start_col,
-            code: "JINJA-E101".to_owned(),
-            slug: "undefined-variable".to_owned(),
-            severity: DiagnosticSeverity::Error,
+            code: DiagCode::E101.code_str().to_owned(),
+            slug: DiagCode::E101.slug().to_owned(),
+            severity: DiagCode::E101.severity(),
             message: format!("'{}' is not defined", name),
         });
     }
@@ -188,9 +189,9 @@ fn check_e103(
             file: path.to_owned(),
             line: r.span.start_line,
             col: r.span.start_col,
-            code: "JINJA-E103".to_owned(),
-            slug: "undefined-function".to_owned(),
-            severity: DiagnosticSeverity::Error,
+            code: DiagCode::E103.code_str().to_owned(),
+            slug: DiagCode::E103.slug().to_owned(),
+            severity: DiagCode::E103.severity(),
             message: format!("'{}' is not defined", name),
         });
     }
@@ -221,9 +222,9 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
             file: path.to_owned(),
             line: r.span.start_line,
             col: r.span.start_col,
-            code: "JINJA-W106".to_owned(),
-            slug: "unknown-attribute".to_owned(),
-            severity: DiagnosticSeverity::Warning,
+            code: DiagCode::W106.code_str().to_owned(),
+            slug: DiagCode::W106.slug().to_owned(),
+            severity: DiagCode::W106.severity(),
             message: format!("'{}' has no declared attribute '{}'", parent, attr),
         });
     }
@@ -245,9 +246,9 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
             file: path.to_owned(),
             line,
             col,
-            code: "JINJA-W106".to_owned(),
-            slug: "unknown-attribute".to_owned(),
-            severity: DiagnosticSeverity::Warning,
+            code: DiagCode::W106.code_str().to_owned(),
+            slug: DiagCode::W106.slug().to_owned(),
+            severity: DiagCode::W106.severity(),
             message: format!("'{}' has no declared attribute '{}'", parent, attr),
         });
     }
@@ -338,9 +339,9 @@ fn check_e102_e104(path: &str, index: &TemplateIndex, registry: &Registry, out: 
                     file: path.to_owned(),
                     line: r.span.start_line,
                     col: r.span.start_col,
-                    code: "JINJA-E102".to_owned(),
-                    slug: "undefined-filter".to_owned(),
-                    severity: DiagnosticSeverity::Error,
+                    code: DiagCode::E102.code_str().to_owned(),
+                    slug: DiagCode::E102.slug().to_owned(),
+                    severity: DiagCode::E102.severity(),
                     message: format!("undefined filter '{}'", r.name),
                 });
             }
@@ -349,9 +350,9 @@ fn check_e102_e104(path: &str, index: &TemplateIndex, registry: &Registry, out: 
                     file: path.to_owned(),
                     line: r.span.start_line,
                     col: r.span.start_col,
-                    code: "JINJA-E104".to_owned(),
-                    slug: "undefined-test".to_owned(),
-                    severity: DiagnosticSeverity::Error,
+                    code: DiagCode::E104.code_str().to_owned(),
+                    slug: DiagCode::E104.slug().to_owned(),
+                    severity: DiagCode::E104.severity(),
                     message: format!("undefined test '{}'", r.name),
                 });
             }
@@ -372,9 +373,9 @@ fn check_w301(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 file: path.to_owned(),
                 line: b.span.start_line,
                 col: b.span.start_col,
-                code: "JINJA-W301".to_owned(),
-                slug: "duplicate-block".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W301.code_str().to_owned(),
+                slug: DiagCode::W301.slug().to_owned(),
+                severity: DiagCode::W301.severity(),
                 message: format!("duplicate block '{}'", b.name),
             });
         }
@@ -393,9 +394,9 @@ fn check_w302(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 file: path.to_owned(),
                 line: m.span.start_line,
                 col: m.span.start_col,
-                code: "JINJA-W302".to_owned(),
-                slug: "duplicate-macro".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W302.code_str().to_owned(),
+                slug: DiagCode::W302.slug().to_owned(),
+                severity: DiagCode::W302.severity(),
                 message: format!("duplicate macro '{}'", m.name),
             });
         }
@@ -417,9 +418,9 @@ fn check_w201(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 file: path.to_owned(),
                 line: v.span.start_line,
                 col: v.span.start_col,
-                code: "JINJA-W201".to_owned(),
-                slug: "unused-variable".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W201.code_str().to_owned(),
+                slug: DiagCode::W201.slug().to_owned(),
+                severity: DiagCode::W201.severity(),
                 message: format!("variable '{}' is assigned but never used", v.name),
             });
         }
@@ -466,9 +467,9 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: m.span.start_line,
                 col: m.span.start_col,
-                code: "JINJA-W202".to_owned(),
-                slug: "unused-macro".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W202.code_str().to_owned(),
+                slug: DiagCode::W202.slug().to_owned(),
+                severity: DiagCode::W202.severity(),
                 message: format!("macro '{}' is defined but never called in this template", m.name),
             });
         }
@@ -508,9 +509,9 @@ fn check_w203(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Dia
                 file: path.to_owned(),
                 line: a.span.start_line,
                 col: a.span.start_col,
-                code: "JINJA-W203".to_owned(),
-                slug: "unused-import".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W203.code_str().to_owned(),
+                slug: DiagCode::W203.slug().to_owned(),
+                severity: DiagCode::W203.severity(),
                 message: format!("import alias '{}' is never used", a.alias),
             });
         }
@@ -524,9 +525,9 @@ fn check_w203(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Dia
                     file: path.to_owned(),
                     line: fi.span.start_line,
                     col: fi.span.start_col,
-                    code: "JINJA-W203".to_owned(),
-                    slug: "unused-import".to_owned(),
-                    severity: DiagnosticSeverity::Warning,
+                    code: DiagCode::W203.code_str().to_owned(),
+                    slug: DiagCode::W203.slug().to_owned(),
+                    severity: DiagCode::W203.severity(),
                     message: format!("imported name '{}' is never used", effective),
                 });
             }
@@ -546,9 +547,9 @@ fn check_w303(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                 file: path.to_owned(),
                 line: a.span.start_line,
                 col: a.span.start_col,
-                code: "JINJA-W303".to_owned(),
-                slug: "duplicate-import-alias".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W303.code_str().to_owned(),
+                slug: DiagCode::W303.slug().to_owned(),
+                severity: DiagCode::W303.severity(),
                 message: format!("import alias '{}' defined more than once", a.alias),
             });
         }
@@ -569,9 +570,9 @@ fn check_w304(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                     file: path.to_owned(),
                     line: fi.span.start_line,
                     col: fi.span.start_col,
-                    code: "JINJA-W304".to_owned(),
-                    slug: "duplicate-from-import".to_owned(),
-                    severity: DiagnosticSeverity::Warning,
+                    code: DiagCode::W304.code_str().to_owned(),
+                    slug: DiagCode::W304.slug().to_owned(),
+                    severity: DiagCode::W304.severity(),
                     message: format!("'{}' imported more than once", effective),
                 });
             }
@@ -604,9 +605,9 @@ fn check_w305(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
                     file: path.to_owned(),
                     line: inner.span.start_line,
                     col: inner.span.start_col,
-                    code: "JINJA-W305".to_owned(),
-                    slug: "name-shadowing".to_owned(),
-                    severity: DiagnosticSeverity::Warning,
+                    code: DiagCode::W305.code_str().to_owned(),
+                    slug: DiagCode::W305.slug().to_owned(),
+                    severity: DiagCode::W305.severity(),
                     message: format!("'{}' shadows an outer-scope variable", inner.name),
                 });
                 break; // one diagnostic per shadowed var is enough
@@ -632,9 +633,9 @@ fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: 0,
                 col: 0,
-                code: "JINJA-E403".to_owned(),
-                slug: "missing-required-block".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E403.code_str().to_owned(),
+                slug: DiagCode::E403.slug().to_owned(),
+                severity: DiagCode::E403.severity(),
                 message: format!("required block '{}' is not overridden in this template", pb.name),
             });
         }
@@ -675,9 +676,9 @@ fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>)
                 file: path.to_owned(),
                 line: v.span.start_line,
                 col: v.span.start_col,
-                code: "JINJA-W402".to_owned(),
-                slug: "unreachable-content".to_owned(),
-                severity: DiagnosticSeverity::Warning,
+                code: DiagCode::W402.code_str().to_owned(),
+                slug: DiagCode::W402.slug().to_owned(),
+                severity: DiagCode::W402.severity(),
                 message: format!("'{}' is outside any block and will not render in this extends template", v.name),
             });
         }
@@ -693,9 +694,9 @@ fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>)
                 file: path.to_owned(),
                 line: r.span.start_line,
                 col: r.span.start_col,
-                code: "JINJA-E401".to_owned(),
-                slug: "invalid-super".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E401.code_str().to_owned(),
+                slug: DiagCode::E401.slug().to_owned(),
+                severity: DiagCode::E401.severity(),
                 message: "super() called outside a block".to_owned(),
             });
         }
@@ -719,9 +720,9 @@ fn check_e404(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: tr.span.start_line,
                 col: tr.span.start_col,
-                code: "JINJA-E404".to_owned(),
-                slug: "recursive-import".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E404.code_str().to_owned(),
+                slug: DiagCode::E404.slug().to_owned(),
+                severity: DiagCode::E404.severity(),
                 message: format!("import of '{}' creates a recursive cycle", tr.path),
             });
         }
@@ -774,9 +775,9 @@ fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                     file: path.to_owned(),
                     line: call.span.start_line,
                     col: call.span.start_col,
-                    code: "JINJA-E501".to_owned(),
-                    slug: "wrong-call-args".to_owned(),
-                    severity: DiagnosticSeverity::Error,
+                    code: DiagCode::E501.code_str().to_owned(),
+                    slug: DiagCode::E501.slug().to_owned(),
+                    severity: DiagCode::E501.severity(),
                     message: format!("'{}': unexpected keyword argument '{}'", call.callee, kw),
                 });
             }
@@ -795,9 +796,9 @@ fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: call.span.start_line,
                 col: call.span.start_col,
-                code: "JINJA-E501".to_owned(),
-                slug: "wrong-call-args".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E501.code_str().to_owned(),
+                slug: DiagCode::E501.slug().to_owned(),
+                severity: DiagCode::E501.severity(),
                 message: format!(
                     "'{}': missing {} required argument(s) (expected at least {}, got {})",
                     call.callee, missing, required_count, given_positional
@@ -812,9 +813,9 @@ fn check_e501(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: call.span.start_line,
                 col: call.span.start_col,
-                code: "JINJA-E501".to_owned(),
-                slug: "wrong-call-args".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E501.code_str().to_owned(),
+                slug: DiagCode::E501.slug().to_owned(),
+                severity: DiagCode::E501.severity(),
                 message: format!(
                     "'{}': too many positional arguments (expected at most {}, got {})",
                     call.callee, total_count, given_positional
@@ -859,9 +860,9 @@ fn check_e601(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 file: path.to_owned(),
                 line: tr.span.start_line,
                 col: tr.span.start_col,
-                code: "JINJA-E601".to_owned(),
-                slug: "template-does-not-exist".to_owned(),
-                severity: DiagnosticSeverity::Error,
+                code: DiagCode::E601.code_str().to_owned(),
+                slug: DiagCode::E601.slug().to_owned(),
+                severity: DiagCode::E601.severity(),
                 message: format!("template '{}' does not exist", tr.path),
             });
         }

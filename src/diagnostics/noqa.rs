@@ -97,16 +97,18 @@ pub fn suppress_by_noqa(
     source: &str,
 ) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let lines: Vec<&str> = source.lines().collect();
-    let all_known_codes: &[&str] = &[
-        "JINJA-E001", "JINJA-E101", "JINJA-E102", "JINJA-E103", "JINJA-E104",
-        "JINJA-W106", "JINJA-W107", "JINJA-W201", "JINJA-W202", "JINJA-W203",
-        "JINJA-W301", "JINJA-W302", "JINJA-W303", "JINJA-W304", "JINJA-W305",
-        "JINJA-E401", "JINJA-W402", "JINJA-E403", "JINJA-E404",
-        "JINJA-E501", "JINJA-E601",
-        // class prefixes
+    // jinja-lsp-rm5r: individual codes are derived from DiagCode::ALL (the single
+    // source of truth next to the enum) instead of a hand-duplicated string list —
+    // adding a new DiagCode variant can no longer silently leave it unsuppressable
+    // and its noqa usage falsely flagged as W107. Class prefixes remain an explicit,
+    // hand-curated set (not every possible prefix is a meaningful suppression class).
+    let known_codes: Vec<&str> = DiagCode::ALL.iter().map(|c| c.code_str()).collect();
+    const CLASS_PREFIXES: &[&str] = &[
         "JINJA-E", "JINJA-W", "JINJA-E1", "JINJA-W1", "JINJA-W2",
         "JINJA-W3", "JINJA-E4", "JINJA-W4", "JINJA-E5", "JINJA-E6",
     ];
+    let all_known_codes: Vec<&str> = known_codes.iter().copied().chain(CLASS_PREFIXES.iter().copied()).collect();
+    let all_known_codes: &[&str] = &all_known_codes;
 
     // Collect all directives indexed by line
     let mut all_directives: Vec<NoqaDirective> = vec![];
@@ -124,8 +126,8 @@ pub fn suppress_by_noqa(
                                 file: String::new(),
                                 line: *line,
                                 col: 0,
-                                code: "JINJA-W107".to_owned(),
-                                slug: "invalid-noqa".to_owned(),
+                                code: DiagCode::W107.code_str().to_owned(),
+                                slug: DiagCode::W107.slug().to_owned(),
                                 severity: DiagCode::W107.severity(),
                                 message: format!("invalid noqa ID: '{code}'"),
                             });

@@ -63,6 +63,28 @@ fn diag_code_severity_matches_prefix() {
 }
 
 #[test]
+fn jinja_lsp_rm5r_all_lists_every_diagcode_variant_exhaustively() {
+    // Compile-time enforcement: this match has no wildcard arm, so adding a new
+    // DiagCode variant makes it fail to compile — forcing DiagCode::ALL (the
+    // single source noqa's known-codes list derives from) to be updated in the
+    // same change instead of silently drifting out of sync.
+    fn check(c: DiagCode) {
+        assert!(DiagCode::ALL.contains(&c), "{c:?} is missing from DiagCode::ALL");
+        match c {
+            DiagCode::E001 | DiagCode::E102 | DiagCode::E104 | DiagCode::W201 | DiagCode::W301
+            | DiagCode::W302 | DiagCode::W303 | DiagCode::W304 | DiagCode::W305 | DiagCode::W106
+            | DiagCode::W107 | DiagCode::E101 | DiagCode::E103 | DiagCode::W202 | DiagCode::W203
+            | DiagCode::E401 | DiagCode::W402 | DiagCode::E403 | DiagCode::E404 | DiagCode::E501
+            | DiagCode::E601 => {}
+        }
+    }
+    for &c in DiagCode::ALL {
+        check(c);
+    }
+    assert_eq!(DiagCode::ALL.len(), 21, "DiagCode::ALL must list all 21 variants exactly once");
+}
+
+#[test]
 fn w107_noqa_warning_uses_derived_severity() {
     // noqa.rs W107 diagnostic must derive its severity from the code, not hardcode it
     let src = include_str!("../src/diagnostics/noqa.rs");

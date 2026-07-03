@@ -39,6 +39,34 @@ pub enum DiagCode {
 }
 
 impl DiagCode {
+    /// jinja-lsp-rm5r: every variant, kept next to the enum so adding a new
+    /// code and forgetting to list it here is a one-line diff to catch in
+    /// review — the single source noqa's known-codes list derives from,
+    /// instead of a hand-duplicated string array in a different file.
+    pub const ALL: &'static [DiagCode] = &[
+        Self::E001,
+        Self::E102,
+        Self::E104,
+        Self::W201,
+        Self::W301,
+        Self::W302,
+        Self::W303,
+        Self::W304,
+        Self::W305,
+        Self::W106,
+        Self::W107,
+        Self::E101,
+        Self::E103,
+        Self::W202,
+        Self::W203,
+        Self::E401,
+        Self::W402,
+        Self::E403,
+        Self::E404,
+        Self::E501,
+        Self::E601,
+    ];
+
     pub fn slug(self) -> &'static str {
         match self {
             Self::E001 => "syntax-error",
