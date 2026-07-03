@@ -44,6 +44,34 @@ fn state_overlay_absent_key_keeps_existing_value() {
     assert_eq!(state.config.extras, vec!["flask"], "extras applied from overlay");
 }
 
+#[test]
+fn jinja_lsp_j32g_clearing_an_overlay_key_reverts_to_base_config_not_stale_value() {
+    // The VS Code client rebuilds InitializationOptions from scratch on every
+    // didChangeConfiguration, omitting any key the user hasn't explicitly set
+    // (including one they just cleared). apply_init_options used to rebase each
+    // new overlay onto self.config — which already carried the PREVIOUS overlay —
+    // so a key omitted from the new overlay kept the stale value from the old one
+    // forever instead of reverting to the file/default config.
+    let mut state = ServerState::with_config(JinjaConfig::default());
+    // Default extras is empty.
+    assert!(state.config.extras.is_empty());
+
+    // First overlay: user sets extras=flask.
+    let set_extras = ConfigOverlay { extras: Some(vec!["flask".to_owned()]), ..Default::default() };
+    state.apply_init_options(set_extras).expect("valid overlay must apply");
+    assert_eq!(state.config.extras, vec!["flask"]);
+
+    // Second overlay: user cleared the setting — buildInitOptions now omits extras
+    // entirely (extras: None), same as if it had never been set.
+    let cleared = ConfigOverlay { extras: None, ..Default::default() };
+    state.apply_init_options(cleared).expect("valid overlay must apply");
+    assert!(
+        state.config.extras.is_empty(),
+        "clearing the setting must revert extras to the base config, not keep the stale 'flask' value: {:?}",
+        state.config.extras
+    );
+}
+
 // ─── T-04: JSON InitializationOptions deserialized and applied ───────────────
 
 #[test]

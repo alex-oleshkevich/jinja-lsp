@@ -26,6 +26,13 @@ pub struct ServerState {
     pub workspace: WorkspaceIndex,
     /// Active config (discovered jinja.toml + InitializationOptions overlay).
     pub config: JinjaConfig,
+    /// jinja-lsp-j32g: the file-discovered config BEFORE any InitializationOptions
+    /// overlay is applied. `apply_init_options` rebases onto this (not `config`,
+    /// which already carries the previous overlay) so that clearing a VS Code
+    /// setting — which omits the key from the next overlay entirely — correctly
+    /// falls back to the file/default value instead of leaving the stale
+    /// previously-overlaid value in place forever.
+    pub base_config: JinjaConfig,
     /// Raw source text per file key — used by formatting handlers.
     pub sources: HashMap<String, String>,
     /// Incremented by every Pass 1 on the primary folder; Pass 2 checks it to discard stale relinks.
@@ -65,6 +72,7 @@ impl ServerState {
         let registry = Self::build_registry(&config);
         Self {
             workspace: build_workspace(templates_dirs, extensions),
+            base_config: config.clone(),
             config,
             sources: HashMap::new(),
             generation: 0,
@@ -85,6 +93,7 @@ impl ServerState {
         let registry = Self::build_registry(&config);
         Self {
             workspace: WorkspaceIndex::default(),
+            base_config: config.clone(),
             config,
             sources: HashMap::new(),
             generation: 0,
@@ -111,7 +120,12 @@ impl ServerState {
         // config first and only commit (store overlay, mutate config, rebuild
         // registry) once it passes. Warnings are non-fatal, so a warning result
         // still commits.
-        let mut candidate = self.config.clone();
+        //
+        // jinja-lsp-j32g: rebase onto base_config (the file-discovered config), NOT
+        // self.config (which already carries the previous overlay) — otherwise a
+        // key omitted from this overlay (e.g. the user cleared a VS Code setting)
+        // would leave the stale value from the last overlay in place forever.
+        let mut candidate = self.base_config.clone();
         candidate.apply_overlay(overlay.clone());
         let result = candidate.validate();
         if result.is_ok() {
@@ -126,6 +140,7 @@ impl ServerState {
     /// Called during `initialize` when config is discovered before overlays are applied.
     pub fn reset_config(&mut self, config: JinjaConfig) {
         self.registry = Self::build_registry(&config);
+        self.base_config = config.clone();
         self.config = config;
     }
 
@@ -133,6 +148,7 @@ impl ServerState {
     /// Use this instead of `reset_config` when reloading jinja.toml at runtime so that
     /// the editor's initializationOptions always win (E15 §5.7).
     pub fn reload_base_config(&mut self, base: JinjaConfig) {
+        self.base_config = base.clone();
         self.config = base;
         if let Some(overlay) = self.init_overlay.clone() {
             self.config.apply_overlay(overlay);
@@ -152,6 +168,7 @@ impl ServerState {
         if registry_changed {
             self.reload_base_config(new_config);
         } else {
+            self.base_config = new_config.clone();
             self.config = new_config;
             if let Some(overlay) = self.init_overlay.clone() {
                 self.config.apply_overlay(overlay);
