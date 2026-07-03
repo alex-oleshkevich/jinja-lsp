@@ -304,6 +304,23 @@ fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
 }
 
 #[test]
+fn jinja_lsp_mb3b_dead_error_module_removed() {
+    // jinja-lsp-mb3b: ParseError/ExtractionError/ConfigError/DiagnosticError in
+    // src/error.rs were referenced nowhere in the crate outside their own module,
+    // didn't implement Display/std::error::Error, and duplicated the actually-used
+    // config::ConfigError. The whole module was dead documentation, not code.
+    assert!(
+        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/error.rs")).exists(),
+        "src/error.rs must be removed, not left as dead/unwired code"
+    );
+    let lib_src = include_str!("../src/lib.rs");
+    assert!(
+        !lib_src.contains("mod error"),
+        "lib.rs must not declare an error module that no longer exists"
+    );
+}
+
+#[test]
 fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
     // suite used it) and failed its own traversal-defence contract for absolute

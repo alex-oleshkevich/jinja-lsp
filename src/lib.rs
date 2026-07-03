@@ -3,7 +3,6 @@ pub mod config;
 pub mod diagnostic;
 pub mod diagnostics;
 pub mod edit;
-pub mod error;
 pub mod features;
 pub mod format;
 pub mod parsing;
