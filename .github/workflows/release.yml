@@ -194,9 +194,16 @@ jobs:
           generate_release_notes: true
 
       # REQ-REL-14: 2) crates.io.
+      # NOTE: crates.io rejects git dependencies, and tree-sitter-jinja(-inline)
+      # here are pinned via `git = ...` to a specific grammar-repo revision, not
+      # a published crates.io version — `cargo publish` will fail on that until
+      # the grammar is published separately and Cargo.toml switches to a version
+      # dependency. continue-on-error keeps that failure from blocking PyPI/VS
+      # Code/AUR, which don't share this constraint.
       - uses: dtolnay/rust-toolchain@stable
       # REQ-REL-12: --locked ensures grammar dependency matches committed Cargo.lock.
       - name: Publish to crates.io
+        continue-on-error: true
         run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -222,3 +229,44 @@ jobs:
           npx vsce publish --no-dependencies
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+  # REQ-REL-14: 5) AUR (jinja-lsp-bin) — depends on `publish` so the GitHub Release
+  # (and its checksummed binaries) exists before the AUR package references it.
+  # Requires repo secrets AUR_USERNAME, AUR_EMAIL, AUR_SSH_PRIVATE_KEY (an SSH
+  # keypair registered against an AUR account with the jinja-lsp-bin package
+  # reserved) — see aur/README.md for setup.
+  aur-publish:
+    name: Publish to AUR
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Fill in this release's version and the Linux binaries' checksums (already
+      # computed during the build job) so the AUR package installs the exact
+      # binary this release published, with no re-download/re-hash round trip.
+      - name: Render PKGBUILD for this release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          X86_SHA=$(awk '{print $1}' artifacts/binary-x86_64-unknown-linux-gnu/*.tar.gz.sha256)
+          ARM_SHA=$(awk '{print $1}' artifacts/binary-aarch64-unknown-linux-gnu/*.tar.gz.sha256)
+          sed \
+            -e "s/^pkgver=.*/pkgver=${VERSION}/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SHA}')/" \
+            -e "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" \
+            aur/PKGBUILD > /tmp/PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4
+        with:
+          pkgname: jinja-lsp-bin
+          pkgbuild: /tmp/PKGBUILD
+          test: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ github.ref_name }}"

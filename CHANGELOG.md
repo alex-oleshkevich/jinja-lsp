@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 ## [Unreleased]
 
+<!-- Add entries above this line when cutting a release -->
+
+## [0.1.0] - 2026-07-03
+
+First release. A Jinja2 language server (`jinja-lsp lsp`) and standalone linter/formatter
+CLI (`jinja-lsp check` / `jinja-lsp format`), covering:
+
+- **Diagnostics** — 21 checks: undefined variables/filters/functions/tests, unused
+  macros/imports, duplicate & shadowed bindings, template-inheritance errors, wrong
+  call arguments, missing templates; inline `noqa` suppression.
+- **Navigation** — go-to-definition (macros, blocks, templates, imports), find
+  references, document symbols and workspace symbol search, call hierarchy.
+- **Editing support** — hover docs, completions, signature help, semantic tokens,
+  folding ranges, inlay hints, code lenses.
+- **Code actions** — quick-fixes from the diagnostic catalog, extract-to-macro,
+  wrap-in-block/if/for, and rename.
+- **Formatting** — a Jinja-aware formatter for the template layer, available via
+  `textDocument/formatting`/`rangeFormatting` and `jinja-lsp format`.
+- **Configuration** — zero-config template discovery, `jinja.toml`/`pyproject.toml`
+  file config, editor `InitializationOptions` overlay, framework extras
+  (Flask/Starlette), custom builtin/hint docs.
+- **Editor integrations** — VS Code extension, Zed extension, and documented
+  Neovim/Helix recipes.
+
 ### Added
 - F20: VS Code extension with language client, activation events, settings schema, and tmLanguage grammars (REQ-EDIT-03/04/05/06)
 - F20: Zed extension crate with grammar registration and release-binary download+checksum (REQ-EDIT-07/08/12)

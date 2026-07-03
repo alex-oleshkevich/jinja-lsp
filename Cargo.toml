@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
+description = "Language server for Jinja templates — diagnostics, navigation, completions, hover, and Jinja-aware formatting"
+repository = "https://github.com/alex-oleshkevich/jinja-lsp"
+readme = "README.md"
+keywords = ["jinja", "lsp", "language-server", "templates"]
+categories = ["development-tools", "template-engine"]
 
 [dependencies]
 tower-lsp = "0.20"

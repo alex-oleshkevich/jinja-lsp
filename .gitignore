@@ -1,5 +1,6 @@
 
 /target/
+/editors/zed/target/
 node_modules/
 /editors/vscode/out/
 

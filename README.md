@@ -35,6 +35,12 @@ pip install jinja-lsp
 
 Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases), or `cargo install jinja-lsp`.
 
+Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-bin)):
+
+```bash
+yay -S jinja-lsp-bin
+```
+
 ## Editor setup
 
 The server is launched as a subprocess and speaks LSP over stdio (`jinja-lsp lsp`). There is no TCP/socket transport.
