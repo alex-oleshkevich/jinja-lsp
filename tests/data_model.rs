@@ -470,6 +470,25 @@ fn jinja_lsp_izfw_workspace_wide_macro_fallback_is_deterministic() {
 }
 
 #[test]
+fn jinja_lsp_6jx0_endblock_with_name_does_not_corrupt_enclosing_for_scope() {
+    // {% endblock b %} (trailing name — valid Jinja) parses as an ERROR node and
+    // never pops the Block entry build_scope_regions pushed. Without validating
+    // the end keyword against the top-of-stack scope, the next {% endfor %} popped
+    // that stale Block entry instead of the ForLoop entry, so no ForLoop scope
+    // region was ever created and the loop variable's valid_range fell back to
+    // "rest of the source" instead of ending at {% endfor %}.
+    use jinja_lsp::parsing::extract;
+    let src = "{% for x in xs %}{% block b %}{% endblock b %}\n{% endfor %}TAIL";
+    let idx = extract(src);
+    let x = idx.variables.iter().find(|v| v.name == "x").expect("for-loop variable 'x' must be extracted");
+    let endfor_pos = src.find("{% endfor %}").unwrap();
+    assert_eq!(
+        x.valid_range.end_byte, endfor_pos,
+        "loop variable's valid_range must end at {{% endfor %}}, not leak past it to include TAIL"
+    );
+}
+
+#[test]
 fn resolve_set_variable_at_top_level_binds_correctly() {
     use jinja_lsp::parsing::extract;
     let src = "{% set title = 'Hello' %}{{ title }}";

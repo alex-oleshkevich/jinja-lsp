@@ -759,8 +759,24 @@ fn build_scope_regions(root: tree_sitter::Node, bytes: &[u8]) -> Vec<ScopeRegion
                     let kw_full = std::str::from_utf8(&bytes[stmt.start_byte()..stmt.end_byte()])
                         .unwrap_or("").trim();
                     let kw = kw_full.split_whitespace().next().unwrap_or("");
-                    if matches!(kw, "endmacro" | "endblock" | "endfilter" | "endautoescape" | "endfor" | "endwith") {
-                        if let Some((scope, body_start, depth)) = stack.pop() {
+                    let expected_scope = match kw {
+                        "endmacro" => Some(VariableScope::Macro),
+                        "endblock" => Some(VariableScope::Block),
+                        "endfilter" => Some(VariableScope::Filter),
+                        "endautoescape" => Some(VariableScope::Autoescape),
+                        "endfor" => Some(VariableScope::ForLoop),
+                        "endwith" => Some(VariableScope::With),
+                        _ => None,
+                    };
+                    if let Some(expected) = expected_scope {
+                        // A stale entry can sit on top when its own end tag failed to pop it
+                        // (e.g. `{% endblock name %}` parses as an ERROR node and never
+                        // reaches this branch). Unwind down to the matching entry instead of
+                        // blindly popping the top, discarding any mismatched entries above it
+                        // without emitting a (wrongly-scoped) region for them.
+                        if let Some(match_idx) = stack.iter().rposition(|(scope, _, _)| *scope == expected) {
+                            stack.truncate(match_idx + 1);
+                            let (scope, body_start, depth) = stack.pop().expect("just verified index exists");
                             regions.push(ScopeRegion {
                                 scope,
                                 body_start,
