@@ -252,11 +252,9 @@ fn resolve_signature(
     }
 
     // Then registry functions and tests.
-    let category = [Category::Function, Category::Test]
+    let entry = [Category::Function, Category::Test]
         .iter()
-        .copied()
-        .find_map(|cat| registry.get(cat, callee).map(|_| cat))?;
-    let entry = registry.get(category, callee)?;
+        .find_map(|&cat| registry.get(cat, callee))?;
     let params: Vec<SignatureParam> = entry
         .params
         .iter()

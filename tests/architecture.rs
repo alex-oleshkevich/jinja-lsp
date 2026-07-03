@@ -315,6 +315,22 @@ fn jinja_lsp_v944_unused_submodule_layer_name_stubs_removed() {
 }
 
 #[test]
+fn jinja_lsp_9cyy_resolve_signature_does_not_double_lookup_registry() {
+    // jinja-lsp-9cyy: resolve_signature first find_map'd over categories to find
+    // WHICH category the callee was in, then called registry.get(category, callee)
+    // a second time to fetch the same entry. One find_map over registry.get
+    // directly returns the entry itself.
+    let src = include_str!("../src/features/signature_help.rs");
+    let start = src.find("fn resolve_signature(").expect("resolve_signature must exist");
+    let end = start + src[start..].find("\nfn macro_signature(").expect("macro_signature must follow resolve_signature");
+    let func = &src[start..end];
+    assert!(
+        !func.contains("registry.get(category, callee)"),
+        "resolve_signature must not look up the same entry twice: {func}"
+    );
+}
+
+#[test]
 fn jinja_lsp_qved_empty_root_queries_dir_removed() {
     // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
     // tree-sitter query files live in src/parsing/queries/ (included via
