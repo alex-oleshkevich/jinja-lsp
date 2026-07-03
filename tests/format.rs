@@ -268,6 +268,26 @@ fn fmt02_t01_block_body_indented() {
     assert_eq!(format(src), want);
 }
 
+// ─── jinja-lsp-cjlb: multi-line {% %} tags must still be counted for depth ────
+
+#[test]
+fn fmt02_multiline_if_tag_opener_still_counted_and_endif_dedents_correctly() {
+    // {% if x\n   and y %} splits {%/%} across two physical lines. The opener
+    // keyword must still be counted (so the body indents and {% endif %}
+    // correctly dedents back), while the continuation line itself is left
+    // exactly as written (no reindent — its own hanging alignment is the
+    // author's choice, not something this pass tries to fix).
+    let src = "{% block content %}\n{% if x\n   and y %}\nhello\n{% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_multiline_tag_reindent_is_idempotent() {
+    let src = "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), src, "re-formatting already-correct output must be a no-op");
+}
+
 #[test]
 fn fmt02_t02_nested_blocks_compound() {
     // Nested blocks: depth 1 = 4 spaces, depth 2 = 8 spaces.

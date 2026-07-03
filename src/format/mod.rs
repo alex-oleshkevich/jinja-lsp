@@ -367,7 +367,10 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
     // a Jinja tag. Only the matching `endraw` line is still processed normally.
     let mut in_raw = false;
 
-    for (i, line) in source.split('\n').enumerate() {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
         if i > 0 {
             out.push('\n');
         }
@@ -380,6 +383,7 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
                     == Some("endraw");
             if !is_endraw {
                 out.push_str(line);
+                i += 1;
                 continue;
             }
             in_raw = false;
@@ -388,10 +392,25 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         if !is_jinja_tag_line(line) {
             // Host-language line: emit verbatim.
             out.push_str(line);
+            i += 1;
             continue;
         }
 
-        let keywords = jinja_tag_keywords_on_line(line);
+        // jinja-lsp-cjlb: a tag can split its `{% ... %}` across multiple physical
+        // lines. Accumulate lines until `{%`/`%}` counts balance (or EOF) so the
+        // opener is still correctly counted for depth — a tag whose keyword is
+        // never seen would otherwise leave its matching end-tag's decrement
+        // silently absorbed by the `depth > 0` guard. Continuation lines are
+        // emitted verbatim (unchanged) — only the tag's first line is re-indented.
+        let mut end = i;
+        let mut full_tag = line.to_owned();
+        while !tag_text_is_balanced(&full_tag) && end + 1 < lines.len() {
+            end += 1;
+            full_tag.push('\n');
+            full_tag.push_str(lines[end]);
+        }
+
+        let keywords = jinja_tag_keywords_on_line(&full_tag);
         let first_kw = keywords.first().map(|(kw, _)| kw.as_str()).unwrap_or("");
 
         // Closers (endblock, endif, …) and re-aligners (elif, else) print at depth-1.
@@ -399,14 +418,21 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
             depth -= 1;
         }
 
-        // Write with current depth indentation.
+        // Write the tag's first line with current depth indentation.
         let stripped = line.trim_start_matches([' ', '\t']);
         for _ in 0..depth {
             out.push_str(indent_unit);
         }
         out.push_str(stripped);
 
-        // Compute net depth delta from ALL tags on this line.
+        // Continuation lines (if any) are emitted verbatim.
+        for cont_line in &lines[i + 1..=end] {
+            out.push('\n');
+            out.push_str(cont_line);
+        }
+        i = end;
+
+        // Compute net depth delta from ALL tags in the (possibly multi-line) text.
         //
         // First keyword: if it is a closer, the decrement was already applied in the
         // pre-step above; count it only as an opener (+1) if applicable.
@@ -440,9 +466,18 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         if first_kw == "raw" && !keywords.iter().skip(1).any(|(kw, _)| kw == "endraw") {
             in_raw = true;
         }
+
+        i += 1;
     }
 
     out
+}
+
+/// True when `text`'s `{%`/`%}` occurrences balance — used to detect when a tag
+/// that started on one line has reached its closing delimiter, possibly several
+/// physical lines later.
+fn tag_text_is_balanced(text: &str) -> bool {
+    text.matches("{%").count() == text.matches("%}").count()
 }
 
 /// Mirrors Jinja2's runtime `trim_blocks` option: strip the first newline
