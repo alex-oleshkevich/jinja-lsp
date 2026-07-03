@@ -252,15 +252,26 @@ impl WorkspaceIndex {
 
     // Maps an extends target (relative path) to the actual map key, handling
     // the mismatch between relative keys (build_workspace) and absolute keys (server).
+    //
+    // When `target` isn't an exact key, multiple templates can share a basename
+    // (e.g. `app1/base.html` and `app2/base.html` both satisfy `"base.html"`).
+    // Picking the first HashMap-iteration hit made resolution flaky across runs;
+    // pick the shortest matching key instead (the closest match), tie-broken
+    // lexicographically so the result is always the same regardless of hash
+    // iteration order. No format! allocation: a suffix match requires the byte
+    // just before it to be a path separator.
     pub(crate) fn resolve_key<'a>(&'a self, target: &'a str) -> Option<&'a str> {
         if self.templates.contains_key(target) {
             return Some(target);
         }
-        let suffix_fwd = format!("/{target}");
-        let suffix_bwd = format!("\\{target}");
         self.templates
             .keys()
-            .find(|k| k.ends_with(&suffix_fwd) || k.ends_with(&suffix_bwd))
+            .filter(|k| {
+                k.len() > target.len()
+                    && k.ends_with(target)
+                    && matches!(k.as_bytes()[k.len() - target.len() - 1], b'/' | b'\\')
+            })
+            .min_by_key(|k| (k.len(), k.as_str()))
             .map(|k| k.as_str())
     }
 }

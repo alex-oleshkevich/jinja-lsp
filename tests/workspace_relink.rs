@@ -73,6 +73,44 @@ fn missing_target_does_not_panic() {
 }
 
 #[test]
+fn jinja_lsp_gtgh_resolve_key_suffix_match_is_deterministic() {
+    // Two templates share the basename "base.html" under different app roots.
+    // {% extends "base.html" %} must always resolve to the SAME one (not a
+    // random pick depending on HashMap iteration order) — the shortest
+    // matching key wins, tie-broken lexicographically.
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("app2/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+    ws.templates.insert("app1/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+
+    let mut child_idx = extract(r#"{% extends "base.html" %}"#);
+    child_idx.path = "child.html".to_owned();
+    ws.templates.insert("child.html".to_owned(), child_idx);
+
+    let chain = ws.template_chain("child.html");
+    assert_eq!(
+        chain,
+        vec!["child.html", "app1/base.html"],
+        "must deterministically resolve to app1/base.html (lexicographically first among equal-length candidates): {chain:?}"
+    );
+}
+
+#[test]
+fn jinja_lsp_gtgh_resolve_key_prefers_shortest_suffix_match() {
+    // Among ambiguous (non-exact) suffix matches, the shortest key — the closer,
+    // less-nested match — must win deterministically over a longer one.
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("vendor/shared/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+    ws.templates.insert("app/base.html".to_owned(), extract("{% block content %}{% endblock %}"));
+
+    let mut child_idx = extract(r#"{% extends "base.html" %}"#);
+    child_idx.path = "child.html".to_owned();
+    ws.templates.insert("child.html".to_owned(), child_idx);
+
+    let chain = ws.template_chain("child.html");
+    assert_eq!(chain, vec!["child.html", "app/base.html"], "shortest suffix match must win: {chain:?}");
+}
+
+#[test]
 fn workspace_contains_all_discovered_templates() {
     let dir = tdir();
     let workspace = build_workspace(&[&dir], &["html"]);
