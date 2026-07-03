@@ -229,6 +229,25 @@ fn jinja_lsp_zcc7_span_containment_is_not_duplicated() {
 }
 
 #[test]
+fn jinja_lsp_gz5q_dead_path_resolver_removed() {
+    // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
+    // suite used it) and failed its own traversal-defence contract for absolute
+    // paths (resolve_path("/etc/passwd", ..) escaped the templates dir). Since
+    // template-reference resolution actually goes through
+    // WorkspaceIndex::resolve_key, the unused and buggy module was deleted rather
+    // than fixed in place.
+    assert!(
+        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parsing/path_resolver.rs")).exists(),
+        "src/parsing/path_resolver.rs must be removed, not left as dead/buggy code"
+    );
+    let parsing_mod_src = include_str!("../src/parsing/mod.rs");
+    assert!(
+        !parsing_mod_src.contains("path_resolver") && !parsing_mod_src.contains("resolve_path"),
+        "parsing/mod.rs must not declare or re-export the removed path_resolver module"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
