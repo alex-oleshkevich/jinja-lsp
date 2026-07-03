@@ -1722,11 +1722,15 @@ fn inlay_hint_data_from_json(val: &serde_json::Value) -> Option<InlayHintData> {
 /// The LSP protocol requires delta-encoded positions in the negotiated encoding (UTF-16 by
 /// default, UTF-8 when negotiated). `tokens` must already be sorted by (line, start_char).
 fn tokens_to_lsp_data(tokens: &[InternalSemanticToken], source: &str, utf8: bool) -> Vec<SemanticToken> {
+    // jinja-lsp-5qqy: split the document into lines once instead of calling
+    // source_line (which re-scans from byte 0) per token — O(lines + tokens)
+    // instead of O(lines * tokens).
+    let lines: Vec<&str> = source.split('\n').collect();
     let mut data = Vec::with_capacity(tokens.len());
     let mut prev_line = 0u32;
     let mut prev_wire_char = 0u32;
     for tok in tokens {
-        let line_str = source_line(source, tok.line);
+        let line_str = lines.get(tok.line as usize).copied().unwrap_or("");
         let (wire_char, wire_length) = if utf8 {
             (tok.start_char, tok.length)
         } else {

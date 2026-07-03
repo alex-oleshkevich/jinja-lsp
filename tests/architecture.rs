@@ -138,6 +138,27 @@ fn jinja_lsp_0ar1_code_action_handler_does_not_clone_workspace_state() {
 }
 
 #[test]
+fn jinja_lsp_5qqy_tokens_to_lsp_data_does_not_rescan_source_per_token() {
+    // jinja-lsp-5qqy: tokens_to_lsp_data used to call source_line(source, tok.line)
+    // once per token, and source_line re-scans the document with split('\n').nth(..)
+    // from byte 0 every time — O(lines * tokens) per semanticTokens/full request,
+    // which fires on every edit. It must instead split the source into lines once
+    // and index into that per token.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src.find("fn tokens_to_lsp_data(").expect("tokens_to_lsp_data must exist");
+    let end = start + src[start..].find("\n#[cfg(test)]").expect("test module must follow tokens_to_lsp_data");
+    let func = &src[start..end];
+    assert!(
+        !func.contains("source_line(source, tok.line)"),
+        "tokens_to_lsp_data must not call source_line per token: {func}"
+    );
+    assert!(
+        func.contains("split('\\n').collect()") || func.contains(".lines().collect()"),
+        "tokens_to_lsp_data must split the source into lines once, up front: {func}"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
