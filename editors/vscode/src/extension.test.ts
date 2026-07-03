@@ -35,6 +35,21 @@ test('explicit empty arrays are still not forwarded', () => {
   assert.deepEqual(opts, {});
 });
 
+test('inlinePatterns forwarded only when explicitly set', () => {
+  const config = fakeConfig({ inlinePatterns: ['render_template_string'] }, new Set());
+  const opts = buildInitOptions(config);
+  assert.deepEqual(opts, {}, 'package.json default must not be forwarded');
+});
+
+test('explicitly-set inlinePatterns is forwarded as inline_patterns', () => {
+  const config = fakeConfig(
+    { inlinePatterns: ['render_template_string', 'render_jinja'] },
+    new Set(['inlinePatterns'])
+  );
+  const opts = buildInitOptions(config);
+  assert.deepEqual(opts, { inline_patterns: ['render_template_string', 'render_jinja'] });
+});
+
 test('lint select/ignore forwarded only when explicitly set', () => {
   const config = fakeConfig(
     { 'lint.select': ['JINJA-E1'], 'lint.ignore': [] },

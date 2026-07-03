@@ -42,6 +42,7 @@ fn vscode_settings_map_required_keys() {
         "jinja-lsp.extras",
         "jinja-lsp.customBuiltins",
         "jinja-lsp.hints",
+        "jinja-lsp.inlinePatterns",
         "jinja-lsp.lint.select",
         "jinja-lsp.lint.ignore",
     ] {

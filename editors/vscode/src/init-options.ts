@@ -50,6 +50,7 @@ export function buildInitOptions(config: ConfigReader): Record<string, unknown> 
   forwardArray('extras', 'extras');
   forwardArray('customBuiltins', 'custom_builtins');
   forwardArray('hints', 'hints');
+  forwardArray('inlinePatterns', 'inline_patterns');
 
   if (isExplicitlySet(config, 'lint.select') || isExplicitlySet(config, 'lint.ignore')) {
     const select = config.get<string[]>('lint.select');

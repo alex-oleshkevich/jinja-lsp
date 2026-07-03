@@ -84,6 +84,12 @@
           "default": [],
           "description": "Directories holding user hint files."
         },
+        "jinja-lsp.inlinePatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["render_template_string"],
+          "description": "Function-call names whose string-literal argument is indexed as an embedded Jinja template (e.g. render_template_string(\"...\"))."
+        },
         "jinja-lsp.lint.select": {
           "type": "array",
           "items": { "type": "string" },
