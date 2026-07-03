@@ -168,3 +168,43 @@ fn jinja_lsp_8my3_unclosed_with_falls_back_to_end_of_source() {
         x.valid_range
     );
 }
+
+#[test]
+fn jinja_lsp_smvv_set_block_in_comment_is_not_extracted() {
+    // jinja-lsp-smvv: run_set_block scanned raw bytes for {% set NAME %} with no
+    // awareness of {# ... #} comment regions, so a commented-out block-set tag
+    // created a phantom VariableDefinition — suppressing legitimate
+    // undefined-variable diagnostics for that name.
+    let source = "{# {% set nav %} #}{{ nav }}";
+    let index = extract(source);
+    assert!(
+        index.variables.iter().all(|v| v.name != "nav"),
+        "a block-set tag written inside a comment must not be extracted: {:?}",
+        index.variables
+    );
+}
+
+#[test]
+fn jinja_lsp_smvv_set_block_in_raw_is_not_extracted() {
+    // jinja-lsp-smvv: same bug for {% raw %}...{% endraw %} bodies — a block-set
+    // tag escaped as literal text must not be extracted as a real binding.
+    let source = "{% raw %}{% set nav %}{% endraw %}{{ nav }}";
+    let index = extract(source);
+    assert!(
+        index.variables.iter().all(|v| v.name != "nav"),
+        "a block-set tag written inside {{% raw %}} must not be extracted: {:?}",
+        index.variables
+    );
+}
+
+#[test]
+fn jinja_lsp_smvv_real_set_block_still_extracted() {
+    // Sanity: a genuine block-set outside any raw/comment region must still work.
+    let source = "{% set nav %}hello{% endset %}{{ nav }}";
+    let index = extract(source);
+    assert!(
+        index.variables.iter().any(|v| v.name == "nav"),
+        "a real block-set must still be extracted: {:?}",
+        index.variables
+    );
+}

@@ -528,7 +528,19 @@ fn run_set_block(
     idx: &mut TemplateIndex, scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let mut i = 0;
+    // jinja-lsp-smvv: track {% raw %}...{% endraw %} bodies and skip {# ... #}
+    // comments so a block-set tag written as literal/commented-out text doesn't
+    // create a phantom VariableDefinition that suppresses undefined-variable checks.
+    let mut in_raw = false;
     while i + 1 < bytes.len() {
+        if !in_raw && bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'#') {
+            i = match find_subslice(bytes, i + 2, b"#}") {
+                Some(pos) => pos + 2,
+                None => bytes.len(),
+            };
+            continue;
+        }
+
         if bytes[i] != b'{' || bytes[i + 1] != b'%' {
             i += 1;
             continue;
@@ -540,6 +552,24 @@ fn run_set_block(
             j += 1;
         }
         j = skip_ascii_ws(bytes, j);
+
+        if in_raw {
+            if bytes.get(j..j + 6) == Some(b"endraw")
+                && bytes.get(j + 6).map(|b| !b.is_ascii_alphanumeric() && *b != b'_').unwrap_or(true)
+            {
+                in_raw = false;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes.get(j..j + 3) == Some(b"raw")
+            && bytes.get(j + 3).map(|b| !b.is_ascii_alphanumeric() && *b != b'_').unwrap_or(true)
+        {
+            in_raw = true;
+            i += 1;
+            continue;
+        }
+
         // Require "set" keyword followed by whitespace.
         if bytes.get(j..j + 3) != Some(b"set") {
             i += 1;
@@ -591,6 +621,11 @@ fn run_set_block(
 fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
     while i < bytes.len() && bytes[i].is_ascii_whitespace() { i += 1; }
     i
+}
+
+/// Absolute byte position of `needle`'s first occurrence at or after `from`, if any.
+fn find_subslice(bytes: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
+    bytes.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|p| from + p)
 }
 
 fn run_for_unpacking(
