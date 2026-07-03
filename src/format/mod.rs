@@ -477,22 +477,28 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
 /// that started on one line has reached its closing delimiter, possibly several
 /// physical lines later.
 ///
-/// jinja-lsp-zkrx: counts only occurrences OUTSIDE string literals — a naive
-/// substring count treated `{% set sep = "50%} off" %}` as permanently
+/// jinja-lsp-zkrx: counts only `{%`/`%}` occurrences OUTSIDE string literals — a
+/// naive substring count treated `{% set sep = "50%} off" %}` as permanently
 /// unbalanced (2 `%}` vs 1 `{%`), so the multi-line-tag accumulator in
 /// `reindent` never terminated and swallowed the rest of the file as an
 /// unindented "continuation".
+///
+/// jinja-lsp-e1ef: string tracking is only active WHILE INSIDE a `{% %}` region
+/// (between an unescaped `{%` and its matching `%}`) — a quote character in host
+/// text (e.g. an apostrophe in "don't") is not a string delimiter, and treating
+/// it as one could open a phantom string that swallows a following tag's `{%`.
 fn tag_text_is_balanced(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut open = 0u32;
     let mut close = 0u32;
+    let mut in_tag = false;
     let mut in_str = false;
     let mut str_char = b'"';
     let mut escaped = false;
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
-        if in_str {
+        if in_tag && in_str {
             if escaped {
                 escaped = false;
             } else if b == b'\\' {
@@ -503,22 +509,25 @@ fn tag_text_is_balanced(text: &str) -> bool {
             i += 1;
             continue;
         }
-        match b {
-            b'"' | b'\'' => {
-                in_str = true;
-                str_char = b;
-                i += 1;
-            }
-            b'{' if bytes.get(i + 1) == Some(&b'%') => {
-                open += 1;
-                i += 2;
-            }
-            b'%' if bytes.get(i + 1) == Some(&b'}') => {
-                close += 1;
-                i += 2;
-            }
-            _ => i += 1,
+        if in_tag && (b == b'"' || b == b'\'') {
+            in_str = true;
+            str_char = b;
+            i += 1;
+            continue;
         }
+        if !in_tag && b == b'{' && bytes.get(i + 1) == Some(&b'%') {
+            in_tag = true;
+            open += 1;
+            i += 2;
+            continue;
+        }
+        if in_tag && b == b'%' && bytes.get(i + 1) == Some(&b'}') {
+            in_tag = false;
+            close += 1;
+            i += 2;
+            continue;
+        }
+        i += 1;
     }
     open == close
 }

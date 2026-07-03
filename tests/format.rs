@@ -875,3 +875,17 @@ fn dump_filter_tree() {
         eprintln!("{src}\n→ {}\n", tree.root_node().to_sexp());
     }
 }
+
+#[test]
+fn jinja_lsp_e1ef_apostrophe_in_host_text_does_not_hide_a_following_open_tag() {
+    // jinja-lsp-e1ef: tag_text_is_balanced's string tracking was active across the
+    // WHOLE accumulated text, including host text between tags — a quote character
+    // there (e.g. the apostrophe in "don't") opened a phantom string that could
+    // swallow a following tag's '{%', making the balance check report "balanced"
+    // one line too early. That dropped the {% if %} opener from the accumulator
+    // entirely, so its depth increment never applied to a nested {% block %}.
+    use jinja_lsp::format::reindent;
+    let src = "{% set x = \"a\" %} don't {% if\ncond %}\n{% block b %}x{% endblock %}\n{% endif %}";
+    let want = "{% set x = \"a\" %} don't {% if\ncond %}\n  {% block b %}x{% endblock %}\n{% endif %}";
+    assert_eq!(reindent(src, "  "), want);
+}
