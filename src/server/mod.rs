@@ -148,8 +148,9 @@ impl Backend {
         let extra_idx = {
             let state = self.state.read().await;
             state.extra_folders.iter().enumerate()
-                .find(|(_, f)| f.config_file_path.as_deref() == Some(file_path)
-                    || f.root.to_str().map(|r| file_path.starts_with(r)).unwrap_or(false))
+                .filter(|(_, f)| f.config_file_path.as_deref() == Some(file_path)
+                    || state::key_under_root(file_path, f.root.to_str().unwrap_or("")))
+                .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
                 .map(|(i, _)| i)
         };
 
