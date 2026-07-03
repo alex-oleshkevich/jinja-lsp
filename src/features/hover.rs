@@ -671,30 +671,14 @@ fn is_keyword_arg_name(source: &str, end_byte: usize) -> bool {
     rest.starts_with('=') && !rest.starts_with("==")
 }
 
-/// True when `byte` is inside a `{% ... %}` statement tag.
 /// REQ-HOV-08: true when `byte` is inside a `{% raw %}...{% endraw %}` body.
+///
+/// Reuses `find_innermost_open_block`'s stack-based tag scanning (via
+/// `inside_raw_block`), which correctly treats literal Jinja tags written
+/// inside a raw body (e.g. `{% raw %}{% for x in y %}...{% endraw %}`) as
+/// plain text rather than real statements.
 fn is_in_raw_body(source: &str, byte: usize) -> bool {
-    let byte = super::clamp_to_char_boundary(source, byte);
-    let before = &source[..byte];
-    // Find the last {% raw %} before cursor.
-    let Some(raw_start) = before.rfind("{%") else { return false };
-    let tag = source[raw_start..].split_whitespace().take(3).collect::<Vec<_>>().join(" ");
-    // The tag must be "{% raw %}" and not yet closed.
-    if !tag.starts_with("{%") { return false; }
-    let tag_close = source[raw_start..].find("%}").map(|p| raw_start + p + 2);
-    let Some(close) = tag_close else { return false };
-    // Extract the tag keyword.
-    let inner = &source[raw_start + 2..close - 2];
-    let kw = inner.split_whitespace().next().unwrap_or("");
-    if kw != "raw" { return false; }
-    // Cursor must be after tag close and before {% endraw %}.
-    if byte < close { return false; }
-    let after = &source[close..];
-    let endraw_pos = after.find("endraw").map(|p| close + p);
-    match endraw_pos {
-        Some(ep) => byte < ep,
-        None => true, // unclosed raw — cursor is in the body
-    }
+    super::completions::inside_raw_block(source, byte)
 }
 
 /// REQ-HOV-08: true when `byte` is inside a quoted string literal in the Jinja source.

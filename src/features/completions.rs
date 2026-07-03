@@ -120,7 +120,7 @@ fn detect_context(source: &str, byte: usize) -> CursorContext {
 
 /// True if `byte` falls inside the body of a `{% raw %}...{% endraw %}` block.
 /// Reuses `find_innermost_open_block` which already does correct stack-based tag scanning.
-fn inside_raw_block(source: &str, byte: usize) -> bool {
+pub(crate) fn inside_raw_block(source: &str, byte: usize) -> bool {
     let clamped = super::clamp_to_char_boundary(source, byte);
     find_innermost_open_block(&source[..clamped]) == Some("raw")
 }
@@ -293,7 +293,9 @@ fn find_innermost_open_block(source_before: &str) -> Option<&'static str> {
                         break;
                     }
                 }
-                if !found_close {
+                // Inside an open `{% raw %}` block, tags are literal text — only `endraw`
+                // (handled by the close-check above) may pop the stack; nothing pushes.
+                if !found_close && stack.last() != Some(&"raw") {
                     for &(open, _) in PAIRS {
                         if first == open {
                             stack.push(open);

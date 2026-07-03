@@ -128,6 +128,20 @@ fn hov08_raw_body_returns_none() {
 }
 
 #[test]
+fn hov08_raw_body_containing_literal_tag_returns_none() {
+    // is_in_raw_body only inspected the last {% before the cursor. Inside
+    // {% raw %}{% for x in y %}...{% endraw %}, hovering after the literal
+    // {% for %} tag must still be silenced — {% raw %} is meant to contain
+    // literal Jinja tags verbatim.
+    let src = "{% raw %}{% for x in y %}{{ loop }}{% endfor %}{% endraw %}";
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let ws = WorkspaceIndex::default();
+    let result = hover(src, 0, col_of(src, "loop"), &idx, &reg, &ws);
+    assert!(result.is_none(), "expected None inside raw body after a literal tag; got: {:?}", result.map(|r| r.markdown));
+}
+
+#[test]
 fn hov08_string_literal_inside_expr_returns_none() {
     // REQ-HOV-08 (jinja-lsp-kz25): hover inside a string literal must be silent.
     // "loop" inside a string — not a Jinja keyword at that position.

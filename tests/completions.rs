@@ -491,6 +491,18 @@ fn fq3s_cursor_in_raw_block_body_returns_empty() {
 }
 
 #[test]
+fn fq3s_cursor_in_raw_block_body_after_literal_tag_returns_empty() {
+    // A literal `{% for %}...{% endfor %}` written inside `{% raw %}` is verbatim text,
+    // not a real block — the cursor must still be treated as inside the raw body.
+    let src = "{% raw %}{% for x in y %}{{ x| }}{% endfor %}{% endraw %}";
+    let idx = extract(src);
+    let ws = WorkspaceIndex::default();
+    let col = src.find('|').unwrap() as u32 + 1;
+    let (items, _) = complete(src, 0, col, &idx, &reg(), &ws);
+    assert!(items.is_empty(), "cursor inside raw block after a literal tag must return empty: {items:?}");
+}
+
+#[test]
 fn fq3s_import_alias_slot_returns_empty() {
     // `{% import "x" as ` — cursor in the alias identifier slot, not an expression.
     let src = r#"{% import "macros.html" as "#;
