@@ -113,10 +113,8 @@ impl TemplateIndex {
                     }
                 }
                 // Workspace-wide fallback.
-                for idx in workspace.templates.values() {
-                    if let Some(m) = idx.macros.iter().find(|m| m.name == reference.name) {
-                        return ResolvedBinding::Macro(m);
-                    }
+                if let Some(m) = workspace.find_macro_workspace_wide(&reference.name) {
+                    return ResolvedBinding::Macro(m);
                 }
                 ResolvedBinding::HostOwned
             }
@@ -238,6 +236,18 @@ impl WorkspaceIndex {
     /// Returns `None` when no template in the workspace matches `ref_path`.
     pub fn get_by_ref(&self, ref_path: &str) -> Option<&TemplateIndex> {
         self.resolve_key(ref_path).and_then(|k| self.templates.get(k))
+    }
+
+    /// Workspace-wide macro-name fallback search, used when a callee is neither a
+    /// local macro nor an explicit import. `templates` is a `HashMap`, so iterating
+    /// it directly picks an arbitrary match when the same macro name is defined in
+    /// more than one template; sort by template key first so the result is stable
+    /// across runs regardless of hash iteration order.
+    pub(crate) fn find_macro_workspace_wide(&self, name: &str) -> Option<&MacroDefinition> {
+        let mut keys: Vec<&str> = self.templates.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        keys.into_iter()
+            .find_map(|k| self.templates[k].macros.iter().find(|m| m.name == name))
     }
 
     // Maps an extends target (relative path) to the actual map key, handling

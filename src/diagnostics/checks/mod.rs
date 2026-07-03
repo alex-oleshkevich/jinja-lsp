@@ -842,12 +842,7 @@ fn resolve_macro<'a>(callee: &str, index: &'a TemplateIndex, workspace: &'a Work
         }
     }
     // Workspace-wide.
-    for idx in workspace.templates.values() {
-        if let Some(m) = idx.macros.iter().find(|m| m.name == callee) {
-            return Some(m);
-        }
-    }
-    None
+    workspace.find_macro_workspace_wide(callee)
 }
 
 // ── E601: template-does-not-exist ─────────────────────────────────────────────

@@ -442,6 +442,34 @@ fn resolve_macro_call_finds_workspace_macro() {
 }
 
 #[test]
+fn jinja_lsp_izfw_workspace_wide_macro_fallback_is_deterministic() {
+    // Two templates define the same macro name with different signatures. The
+    // workspace-wide fallback used to iterate workspace.templates.values() (HashMap
+    // order) and return whichever came first — flaky and run-to-run different.
+    // It must now always resolve to the same one regardless of insertion order:
+    // sorted by template key, "a.html" sorts before "z.html".
+    use jinja_lsp::parsing::extract;
+    let z_idx = { let mut idx = extract("{% macro dup(one) %}z{% endmacro %}"); idx.path = "z.html".into(); idx };
+    let a_idx = { let mut idx = extract("{% macro dup(two, three) %}a{% endmacro %}"); idx.path = "a.html".into(); idx };
+    let caller_idx = { let idx = extract("{{ dup(1) }}"); idx };
+
+    // Insert "z.html" first to bias against alphabetical == insertion order.
+    let mut ws = WorkspaceIndex::default();
+    ws.templates.insert("z.html".into(), z_idx);
+    ws.templates.insert("a.html".into(), a_idx);
+
+    let ref_dup = caller_idx.references.iter()
+        .find(|r| r.name == "dup" && matches!(r.kind, ReferenceKind::Function))
+        .expect("function reference to dup");
+    match caller_idx.resolve_reference(ref_dup, &ws) {
+        ResolvedBinding::Macro(m) => {
+            assert_eq!(m.parameters.len(), 2, "must resolve to a.html's 2-param 'dup', not z.html's 1-param one");
+        }
+        other => panic!("expected Macro, got {other:?}"),
+    }
+}
+
+#[test]
 fn resolve_set_variable_at_top_level_binds_correctly() {
     use jinja_lsp::parsing::extract;
     let src = "{% set title = 'Hello' %}{{ title }}";
