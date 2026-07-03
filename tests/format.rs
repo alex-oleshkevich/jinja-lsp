@@ -64,6 +64,40 @@ fn fmt01_whitespace_control_markers_preserved() {
     assert_eq!(normalize_delimiter("{#-note-#}"), "{#- note -#}");
 }
 
+// ─── jinja-lsp-q12j: multi-line delimiter content must not gain trailing space ──
+
+#[test]
+fn fmt01_multiline_comment_starting_with_newline_no_trailing_space() {
+    // Content starting right at the newline must not get a leading space inserted
+    // before it — that space would land as trailing whitespace at the end of the
+    // "{#" line, which LSP-mode formatting (trim_trailing_whitespace disabled) never
+    // cleans up, causing churn against editors' trim-on-save.
+    let normalized = normalize_delimiter("{#\nnote\n#}");
+    assert_eq!(normalized, "{#\nnote\n#}");
+    assert!(
+        !normalized.lines().next().unwrap().ends_with(' '),
+        "the {{# line must not end with a trailing space: {normalized:?}"
+    );
+}
+
+#[test]
+fn fmt01_multiline_comment_ending_with_newline_no_leading_space_before_close() {
+    let normalized = normalize_delimiter("{# note\n#}");
+    assert_eq!(normalized, "{# note\n#}");
+}
+
+#[test]
+fn fmt01_multiline_tag_via_format_with_config_lsp_mode_has_no_trailing_whitespace() {
+    // Mirrors FormatOptions::into_config: LSP mode disables trim_trailing_whitespace,
+    // so the delimiter-normalization pass itself must never introduce any.
+    let cfg = FormatterConfig { newline_at_eof: false, trim_trailing_whitespace: false, ..FormatterConfig::default() };
+    let src = "{#\nnote\n#}";
+    let result = format_with_config(src, &cfg);
+    for line in result.lines() {
+        assert!(!line.ends_with(' ') && !line.ends_with('\t'), "line must have no trailing whitespace: {line:?}");
+    }
+}
+
 // ─── REQ-FMT-01: Additional — one-sided markers ──────────────────────────────
 
 #[test]

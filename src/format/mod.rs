@@ -859,7 +859,14 @@ fn normalize_delimiter_padding(text: &str, add_space: bool) -> String {
     // Trim only horizontal whitespace at boundaries (preserves multi-line interiors).
     let trimmed = content.trim_matches([' ', '\t']);
     if add_space {
-        format!("{open} {trimmed} {close}")
+        // jinja-lsp-q12j: only pad with a space when the adjacent content isn't
+        // already a newline — otherwise the padding sits as trailing whitespace at
+        // the end of the tag-open line (or leading whitespace before the close on
+        // a multi-line comment/tag), which LSP-mode formatting never trims away
+        // (FormatOptions::into_config disables trim_trailing_whitespace for editors).
+        let lead = if trimmed.starts_with('\n') { "" } else { " " };
+        let trail = if trimmed.ends_with('\n') { "" } else { " " };
+        format!("{open}{lead}{trimmed}{trail}{close}")
     } else {
         format!("{open}{trimmed}{close}")
     }
