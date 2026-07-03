@@ -151,3 +151,20 @@ fn jinja_lsp_fx8f_unclosed_block_does_not_leak_scoped_from_later_source() {
         index.blocks[0]
     );
 }
+
+#[test]
+fn jinja_lsp_8my3_unclosed_with_falls_back_to_end_of_source() {
+    // jinja-lsp-8my3: run_with fell back to an empty valid_range
+    // (byte_span(with_ctrl_end, with_ctrl_end)) when no {% endwith %} exists (e.g.
+    // mid-edit), so a use of the with-bound name anywhere after the tag fell outside
+    // its valid_range. run_for/run_set fall back to end-of-source for the same
+    // incomplete-template case; run_with must match.
+    let source = "{% with x = 1 %}\n{{ x }}";
+    let index = extract(source);
+    let x = index.variables.iter().find(|v| v.name == "x").expect("with-bound variable must be indexed");
+    assert!(
+        x.valid_range.end_byte >= source.len(),
+        "unclosed with must fall back to end-of-source, not an empty range: {:?}",
+        x.valid_range
+    );
+}

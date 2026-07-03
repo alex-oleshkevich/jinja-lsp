@@ -431,7 +431,7 @@ fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex)
     run_set_block(bytes, idx, &scope_regions, source_len);
     run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions, source_len);
     run_for(tree, bytes, idx, &seen_for, &scope_regions, source_len);
-    run_with(tree, bytes, idx, &scope_regions);
+    run_with(tree, bytes, idx, &scope_regions, source_len);
     run_trans(tree, bytes, idx);
     run_caller_args(tree, bytes, idx);
 }
@@ -674,7 +674,7 @@ fn run_for(
 
 fn run_with(
     tree: &tree_sitter::Tree, bytes: &[u8],
-    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion],
+    idx: &mut TemplateIndex, scope_regions: &[ScopeRegion], source_len: usize,
 ) {
     let q = &*Q_WITH;
     let mut cur = QueryCursor::new();
@@ -687,10 +687,13 @@ fn run_with(
                     .and_then(|s| ancestor(s, "control"))
                     .map(|c| c.end_byte())
                     .unwrap_or(cap.node.end_byte());
+                // jinja-lsp-8my3: fall back to end-of-source for incomplete templates
+                // (no {% endwith %}), matching run_for/run_set, instead of an empty
+                // range that would leave every use inside the unclosed with unresolved.
                 let valid_range = scope_regions.iter()
                     .find(|r| r.scope == VariableScope::With && r.body_start == with_ctrl_end)
                     .map(|r| byte_span(r.body_start, r.body_end))
-                    .unwrap_or(byte_span(with_ctrl_end, with_ctrl_end));
+                    .unwrap_or(byte_span(with_ctrl_end, source_len));
                 push_var(idx, txt(cap.node, bytes).to_owned(), VariableScope::With, name_span, valid_range);
             }
         }
