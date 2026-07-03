@@ -4,7 +4,7 @@
 // between LSP TextEdit types and line/col coordinates.
 
 use crate::edit::TextEdit;
-use crate::format::format_with_options;
+use crate::format::{format_with_config, format_with_options, FormatterConfig};
 
 pub use crate::format::FormatOptions;
 
@@ -23,6 +23,18 @@ pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
     line_edits(source, &formatted, 0, u32::MAX)
 }
 
+/// Like `format_document`, but with a full `FormatterConfig` — used by the LSP
+/// server to honor jinja.toml `[format]` options (space_around_pipe,
+/// preferred_quote, …) that plain `FormatOptions` (tab_size/insert_spaces only)
+/// can't express.
+pub fn format_document_with_config(source: &str, config: &FormatterConfig) -> Vec<TextEdit> {
+    let formatted = format_with_config(source, config);
+    if formatted == source {
+        return vec![];
+    }
+    line_edits(source, &formatted, 0, u32::MAX)
+}
+
 /// Format the document, returning only edits that fall within [start_line, end_line] (inclusive).
 ///
 /// REQ-FMT-07: the range is snapped outward to whole Jinja constructs so partial-tag edits
@@ -31,6 +43,13 @@ pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
 pub fn format_range(source: &str, start_line: u32, end_line: u32, opts: FormatOptions) -> Vec<TextEdit> {
     let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_options(source, opts);
+    range_edits(source, &formatted, snapped_start, snapped_end)
+}
+
+/// Like `format_range`, but with a full `FormatterConfig` (see `format_document_with_config`).
+pub fn format_range_with_config(source: &str, start_line: u32, end_line: u32, config: &FormatterConfig) -> Vec<TextEdit> {
+    let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
+    let formatted = format_with_config(source, config);
     range_edits(source, &formatted, snapped_start, snapped_end)
 }
 

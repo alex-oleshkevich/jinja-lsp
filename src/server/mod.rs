@@ -27,7 +27,6 @@ use crate::features::inlay_hints::{inlay_hints, inlay_hint_resolve, InlayHintDat
 use crate::features::code_lens::{code_lens as code_lens_feature, code_lens_resolve as code_lens_resolve_feature, CodeLensConfig, LensData, LensKind, LensSymbolKind};
 use crate::features::call_hierarchy::{prepare_call_hierarchy, incoming_calls, outgoing_calls, CallHierarchyItem as InternalCallHierarchyItem, ItemKind, HierarchyRange};
 use crate::features::hover::hover as hover_feature;
-use crate::features::formatting::{format_document, format_range};
 use crate::features::semantic_tokens::{
     semantic_tokens_full as stok_full,
     semantic_tokens_range as stok_range,
@@ -1181,8 +1180,11 @@ impl LanguageServer for Backend {
             tab_size: params.options.tab_size,
             insert_spaces: params.options.insert_spaces,
         };
+        // REQ-FMT-07/jinja-lsp-qupa: honor jinja.toml [format] options (space_around_pipe,
+        // preferred_quote, …), overriding only tab_size/insert_spaces from the LSP request.
+        let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
-        let edits = format_document(source, opts);
+        let edits = crate::features::formatting::format_document_with_config(source, &config);
         if edits.is_empty() { return Ok(None); }
         Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
     }
@@ -1199,8 +1201,9 @@ impl LanguageServer for Backend {
             tab_size: params.options.tab_size,
             insert_spaces: params.options.insert_spaces,
         };
+        let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
-        let edits = format_range(source, range.start.line, range.end.line, opts);
+        let edits = crate::features::formatting::format_range_with_config(source, range.start.line, range.end.line, &config);
         if edits.is_empty() { return Ok(None); }
         Ok(Some(edits.into_iter().map(|e| to_lsp_edit(e, source, utf8)).collect()))
     }
