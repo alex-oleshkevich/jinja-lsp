@@ -122,9 +122,12 @@ pub fn extract(source: &str) -> TemplateIndex {
     let mut idx = TemplateIndex::empty();
 
     collect_errors(tree.root_node(), &mut idx.syntax_errors);
+    // jinja-lsp-7ug6: do_blocks and do_variables both need scope_regions — compute
+    // once here instead of each walking the root node's children a second time.
+    let scope_regions = build_scope_regions(tree.root_node(), bytes);
     do_macros(&tree, bytes, &mut idx);
-    do_blocks(&tree, bytes, &mut idx);
-    do_variables(&tree, bytes, &mut idx);
+    do_blocks(&tree, bytes, &mut idx, &scope_regions);
+    do_variables(&tree, bytes, &mut idx, &scope_regions);
     do_template_refs(&tree, bytes, &mut idx);
     do_imports(&tree, bytes, &mut idx);
     do_from_imports(&tree, bytes, &mut idx);
@@ -269,7 +272,7 @@ fn macro_body_span(root: Node, ctrl_end: usize, bytes: &[u8]) -> Span {
 
 // ── blocks ───────────────────────────────────────────────────────────────────
 
-fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
+fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, scope_regions: &[ScopeRegion]) {
     let bq = &*Q_BLOCKS;
     let mut cur = QueryCursor::new();
     let mut ms = cur.matches(bq, tree.root_node(), bytes);
@@ -341,7 +344,6 @@ fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
     // Populate BlockDefinition.body using scope regions (which track endblock positions).
     // {% endblock %} (no trailing name) → normal control node, handled by scope regions.
     // {% endblock name %} (trailing name)  → ERROR node in tree-sitter; handled below.
-    let scope_regions = build_scope_regions(tree.root_node(), bytes);
     for (i, ctrl_end) in seen.values() {
         if let Some(region) = scope_regions.iter().find(|r| {
             r.scope == VariableScope::Block && r.body_start == *ctrl_end
@@ -420,18 +422,17 @@ fn bytes_to_line_col(bytes: &[u8], offset: usize) -> (u32, u32) {
 
 // ── variables ────────────────────────────────────────────────────────────────
 
-fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
-    let scope_regions = build_scope_regions(tree.root_node(), bytes);
+fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex, scope_regions: &[ScopeRegion]) {
     let source_len = bytes.len();
     let mut seen_set: HashMap<usize, ()> = HashMap::new();
     let mut seen_for: HashMap<usize, ()> = HashMap::new();
 
-    run_set_unpacking(tree, bytes, idx, &mut seen_set, &scope_regions, source_len);
-    run_set(tree, bytes, idx, &seen_set, &scope_regions, source_len);
-    run_set_block(bytes, idx, &scope_regions, source_len);
-    run_for_unpacking(tree, bytes, idx, &mut seen_for, &scope_regions, source_len);
-    run_for(tree, bytes, idx, &seen_for, &scope_regions, source_len);
-    run_with(tree, bytes, idx, &scope_regions, source_len);
+    run_set_unpacking(tree, bytes, idx, &mut seen_set, scope_regions, source_len);
+    run_set(tree, bytes, idx, &seen_set, scope_regions, source_len);
+    run_set_block(bytes, idx, scope_regions, source_len);
+    run_for_unpacking(tree, bytes, idx, &mut seen_for, scope_regions, source_len);
+    run_for(tree, bytes, idx, &seen_for, scope_regions, source_len);
+    run_with(tree, bytes, idx, scope_regions, source_len);
     run_trans(tree, bytes, idx);
     run_caller_args(tree, bytes, idx);
 }

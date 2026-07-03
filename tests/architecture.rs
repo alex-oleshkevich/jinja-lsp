@@ -331,6 +331,24 @@ fn jinja_lsp_9cyy_resolve_signature_does_not_double_lookup_registry() {
 }
 
 #[test]
+fn jinja_lsp_7ug6_scope_regions_computed_once_per_extract() {
+    // jinja-lsp-7ug6: do_blocks and do_variables each independently called
+    // build_scope_regions, walking all root children twice per extract() for an
+    // identical result. It must be computed once in extract() and threaded through.
+    let src = include_str!("../src/parsing/extractor.rs");
+    let calls = src.matches("build_scope_regions(").count();
+    assert_eq!(calls, 2, "build_scope_regions must have exactly 2 occurrences (its own fn def + one call site in extract()), not one per consumer: found {calls}");
+    assert!(
+        !src.contains("fn do_blocks(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"),
+        "do_blocks must take scope_regions as a parameter instead of recomputing it"
+    );
+    assert!(
+        !src.contains("fn do_variables(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {"),
+        "do_variables must take scope_regions as a parameter instead of recomputing it"
+    );
+}
+
+#[test]
 fn jinja_lsp_qved_empty_root_queries_dir_removed() {
     // jinja-lsp-qved: the repo-root queries/ directory was empty; the real
     // tree-sitter query files live in src/parsing/queries/ (included via
