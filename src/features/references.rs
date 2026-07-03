@@ -43,7 +43,7 @@ pub fn find_references(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> Vec<ReferenceLocation> {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
 
     // Identify the symbol under the cursor.
     let Some(symbol) = symbol_at(source, byte, current_path, index, registry, workspace) else {
@@ -124,8 +124,8 @@ pub fn find_references(
                     if before_ok && after_ok && inside_jinja(source, pos) && !pos_in_string_literal(source, pos)
                         && (include_declaration || !is_decl)
                     {
-                        let (sl, sc) = byte_to_line_col(source, pos);
-                        let (el, ec) = byte_to_line_col(source, after);
+                        let (sl, sc) = super::byte_to_line_col(source, pos);
+                        let (el, ec) = super::byte_to_line_col(source, after);
                         results.insert(ReferenceLocation { path: current_path.to_owned(), start_line: sl, start_col: sc, end_line: el, end_col: ec });
                     }
                 }
@@ -198,8 +198,8 @@ fn symbol_at(
     let candidate = index
         .references
         .iter()
-        .filter(|r| byte_in_span(byte, &r.span))
-        .max_by_key(|r| kind_priority(r.kind));
+        .filter(|r| super::byte_in_span(byte, &r.span))
+        .max_by_key(|r| super::kind_priority(r.kind));
 
     if let Some(r) = candidate {
         return classify_reference(&r.name, byte, current_path, index, registry, workspace);
@@ -207,7 +207,7 @@ fn symbol_at(
 
     // Check macro definition spans (cursor ON the definition itself).
     for m in &index.macros {
-        if byte_in_span(byte, &m.span) {
+        if super::byte_in_span(byte, &m.span) {
             return Some(Symbol::Macro {
                 name: m.name.clone(),
                 def_path: current_path.to_owned(),
@@ -218,14 +218,14 @@ fn symbol_at(
 
     // Check block definition spans.
     for b in &index.blocks {
-        if byte_in_span(byte, &b.span) {
+        if super::byte_in_span(byte, &b.span) {
             return Some(Symbol::Block { name: b.name.clone() });
         }
     }
 
     // Check import alias spans (cursor ON the alias declaration).
     for a in &index.import_aliases {
-        if byte_in_span(byte, &a.span) {
+        if super::byte_in_span(byte, &a.span) {
             return Some(Symbol::Alias { name: a.alias.clone() });
         }
     }
@@ -372,41 +372,6 @@ fn span_to_ref(path: &str, span: &Span) -> ReferenceLocation {
         end_line: span.end_line,
         end_col: span.end_col,
     }
-}
-
-fn byte_in_span(byte: usize, span: &Span) -> bool {
-    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
-}
-
-fn kind_priority(kind: ReferenceKind) -> u8 {
-    match kind {
-        ReferenceKind::Filter => 5,
-        ReferenceKind::Function => 4,
-        ReferenceKind::Test => 3,
-        ReferenceKind::Identifier => 2,
-        ReferenceKind::Attribute => 1,
-    }
-}
-
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let byte = byte.min(source.len());
-    let (mut line, mut col) = (0u32, 0u32);
-    for (i, c) in source.char_indices() {
-        if i >= byte { break; }
-        if c == '\n' { line += 1; col = 0; } else { col += 1; }
-    }
-    (line, col)
 }
 
 fn inside_jinja(source: &str, byte: usize) -> bool {

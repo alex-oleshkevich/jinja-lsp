@@ -415,3 +415,29 @@ fn ref_from_import_resolves_relative_source_against_absolute_workspace_keys() {
         "no reference should use the unresolved relative path: {results:?}"
     );
 }
+
+#[test]
+fn jinja_lsp_mna5_alias_usage_col_is_byte_offset_not_char_count_on_multibyte_line() {
+    // The alias-usage text scan reports start_col via byte_to_line_col. Before
+    // consolidating onto the shared (byte-counting) implementation, this file's
+    // own copy counted one column per CHARACTER instead of per byte, so any
+    // multi-byte UTF-8 content earlier on the same line under-counted the
+    // reported column — inconsistent with every other feature's byte-column
+    // convention (and with line_col_to_byte's own byte-based `col` semantics).
+    let src = "{% import \"macros.html\" as macros %}<p>café</p>{{ macros.post_url() }}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline("test.html", src);
+    ws.index_inline("macros.html", "{% macro post_url() %}{% endmacro %}");
+    let idx = extract(src);
+    let reg = Registry::load_core();
+    let col = src.find("macros.post_url").unwrap() as u32;
+    let results = find_references(src, 0, col, "test.html", false, &idx, &reg, &ws);
+
+    // "é" is 2 bytes in UTF-8 — the real byte offset of the usage site is 1 byte
+    // further right than a char-count would report.
+    let expected_byte_col = src.find("macros.post_url").unwrap() as u32;
+    assert!(
+        results.iter().any(|r| r.start_col == expected_byte_col),
+        "usage site's start_col must be a byte offset (expected {expected_byte_col}): {results:?}"
+    );
+}

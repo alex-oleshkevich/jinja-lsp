@@ -531,7 +531,7 @@ pub fn complete(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> (Vec<CompletionItem>, bool) {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
     let items = match detect_context(source, byte) {
         CursorContext::Outside | CursorContext::Comment => vec![],
 
@@ -753,13 +753,3 @@ fn complete_template_path(typed: &str, workspace: &WorkspaceIndex) -> (Vec<Compl
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
-}

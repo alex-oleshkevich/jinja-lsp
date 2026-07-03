@@ -35,7 +35,7 @@ pub fn rename_at_cursor(
     _workspace: &WorkspaceIndex,
 ) -> Option<(RenameTarget, String)> {
     // Convert (line, col) to byte offset and find the identifier word there.
-    let byte = line_col_to_byte(source, line, col)?;
+    let byte = super::line_col_to_byte(source, line, col);
 
     // Name-based matches must be guarded: HTML text matching a block/macro/var
     // name must not trigger a rename outside Jinja delimiters.
@@ -215,16 +215,6 @@ fn is_in_block_family(workspace: &WorkspaceIndex, file: &str, other: &str) -> bo
         || workspace.template_chain(other).iter().any(|p| p == file)
 }
 
-/// Convert (line, col) to a byte offset in `source`.
-fn line_col_to_byte(source: &str, line: u32, col: u32) -> Option<usize> {
-    let line_start: usize = source.split('\n')
-        .take(line as usize)
-        .map(|l| l.len() + 1) // +1 for the '\n'
-        .sum();
-    let byte = line_start + col as usize;
-    if byte <= source.len() { Some(byte) } else { None }
-}
-
 /// Locate `old_name` inside the `{% macro … %}` / `{% block … %}` tag starting at
 /// `tag_start_byte` (past the keyword) and build the rename TextEdit for it.
 fn definition_name_edit(
@@ -234,7 +224,7 @@ fn definition_name_edit(
     new_name: &str,
 ) -> Option<TextEdit> {
     let name_byte = super::find_name_in_tag(source, tag_start_byte, old_name)?;
-    let (line, col) = byte_to_line_col(source, name_byte);
+    let (line, col) = super::byte_to_line_col(source, name_byte);
     Some(TextEdit {
         start_line: line,
         start_col: col,
@@ -242,25 +232,6 @@ fn definition_name_edit(
         end_col: col + old_name.len() as u32,
         new_text: new_name.to_owned(),
     })
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut pos = 0usize;
-    for ch in source.chars() {
-        if pos >= byte {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += ch.len_utf8() as u32;
-        }
-        pos += ch.len_utf8();
-    }
-    (line, col)
 }
 
 /// Scoped version: only renames identifier/function references whose start_byte falls within `scope`.

@@ -70,14 +70,14 @@ pub fn prepare_call_hierarchy(
     workspace: &WorkspaceIndex,
     _registry: &Registry,
 ) -> Vec<CallHierarchyItem> {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
 
     // 1. Check references first (more specific — identifies which symbol at cursor).
     let ref_at = index
         .references
         .iter()
         .filter(|r| matches!(r.kind, ReferenceKind::Function | ReferenceKind::Identifier))
-        .find(|r| byte_in_span(byte, &r.span));
+        .find(|r| super::byte_in_span(byte, &r.span));
 
     if let Some(r) = ref_at {
         if let Some(item) = resolve_macro_item(&r.name, path, index, workspace) {
@@ -88,7 +88,7 @@ pub fn prepare_call_hierarchy(
     }
 
     // 2. Check macro definitions (cursor on the definition header itself).
-    if let Some(m) = index.macros.iter().find(|m| byte_in_span(byte, &m.span)) {
+    if let Some(m) = index.macros.iter().find(|m| super::byte_in_span(byte, &m.span)) {
         return vec![macro_item(m, path)];
     }
 
@@ -273,10 +273,6 @@ fn span_contains(outer: &Span, inner: &Span) -> bool {
         && inner.end_byte <= outer.end_byte
 }
 
-fn byte_in_span(byte: usize, span: &Span) -> bool {
-    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
-}
-
 fn span_to_range(s: &Span) -> HierarchyRange {
     HierarchyRange {
         start_line: s.start_line,
@@ -334,15 +330,4 @@ fn resolve_macro_item(
     }
 
     None
-}
-
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
 }

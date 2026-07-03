@@ -392,29 +392,9 @@ fn name_span_in(source: &str, tag_start_byte: usize, name: &str) -> Span {
     };
     let abs_start = tag_start_byte + pos;
     let abs_end = abs_start + name.len();
-    let (sl, sc) = byte_to_line_col(source, abs_start);
-    let (el, ec) = byte_to_line_col(source, abs_end);
+    let (sl, sc) = super::byte_to_line_col(source, abs_start);
+    let (el, ec) = super::byte_to_line_col(source, abs_end);
     Span { start_byte: abs_start, end_byte: abs_end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
-}
-
-/// Convert a byte offset to (line, col) in the source.
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut pos = 0usize;
-    for ch in source.chars() {
-        if pos >= byte {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += ch.len_utf8() as u32;
-        }
-        pos += ch.len_utf8();
-    }
-    (line, col)
 }
 
 /// Find the byte span of the `{% set name … %}` statement for a top-level
@@ -469,8 +449,8 @@ fn find_set_span(
     let end_offset = find_tag_close_in_slice(rest_bytes)?;
     let end = start + end_offset + 2;
 
-    let (sl, sc) = byte_to_line_col(source, start);
-    let (el, ec) = byte_to_line_col(source, end);
+    let (sl, sc) = super::byte_to_line_col(source, start);
+    let (el, ec) = super::byte_to_line_col(source, end);
     Some(Span { start_byte: start, end_byte: end, start_line: sl, start_col: sc, end_line: el, end_col: ec })
 }
 
@@ -607,7 +587,7 @@ fn full_tag_span(
 
 /// Build a `Span` from raw byte offsets, computing line/col from `source`.
 fn make_span(source: &str, start_byte: usize, end_byte: usize) -> Span {
-    let (sl, sc) = byte_to_line_col(source, start_byte);
-    let (el, ec) = byte_to_line_col(source, end_byte);
+    let (sl, sc) = super::byte_to_line_col(source, start_byte);
+    let (el, ec) = super::byte_to_line_col(source, end_byte);
     Span { start_byte, end_byte, start_line: sl, start_col: sc, end_line: el, end_col: ec }
 }

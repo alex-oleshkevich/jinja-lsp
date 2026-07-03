@@ -261,7 +261,7 @@ fn source_mods(source: &Source) -> u32 {
 /// Find `name` as a whole word in a `{% … %}` tag starting at `start_byte`; return `(line, col)`.
 fn find_word_in_source(source: &str, start_byte: usize, name: &str) -> Option<(u32, u32)> {
     let abs = super::find_name_in_tag(source, start_byte, name)?;
-    Some(byte_to_line_col(source, abs))
+    Some(super::byte_to_line_col(source, abs))
 }
 
 /// Find parameter `param_name` within the parentheses of `{% macro mac_name(…) %}`.
@@ -372,7 +372,7 @@ fn find_param_in_macro_tag(
                     i + param_name.len() >= name_part.len() || !is_ident(np_bytes[i + param_name.len()]);
                 if before_ok && after_ok {
                     let abs = content_abs + slot_s + ws_len + i;
-                    return Some(byte_to_line_col(source, abs));
+                    return Some(super::byte_to_line_col(source, abs));
                 }
             }
             i += 1;
@@ -383,23 +383,4 @@ fn find_param_in_macro_tag(
 
 fn is_ident(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut pos = 0usize;
-    for ch in source.chars() {
-        if pos >= byte {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += ch.len_utf8() as u32;
-        }
-        pos += ch.len_utf8();
-    }
-    (line, col)
 }

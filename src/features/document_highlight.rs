@@ -42,7 +42,7 @@ pub fn document_highlight(
     index: &TemplateIndex,
     registry: &Registry,
 ) -> Vec<DocumentHighlight> {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
 
     if !inside_jinja(source, byte) {
         return vec![];
@@ -54,13 +54,13 @@ pub fn document_highlight(
     }
 
     // Macro definition opening tag → Write at name, Read at every call site.
-    if let Some(m) = index.macros.iter().find(|m| m.name == word && byte_in_span(byte, &m.span)) {
+    if let Some(m) = index.macros.iter().find(|m| m.name == word && super::byte_in_span(byte, &m.span)) {
         let write = name_span_in_source(source, m.span.start_byte, &m.name);
         return with_write_and_reads(write, word, index);
     }
 
     // Block definition opening tag → Write at name.
-    if let Some(b) = index.blocks.iter().find(|b| b.name == word && byte_in_span(byte, &b.span)) {
+    if let Some(b) = index.blocks.iter().find(|b| b.name == word && super::byte_in_span(byte, &b.span)) {
         let write = name_span_in_source(source, b.span.start_byte, &b.name);
         return with_write_and_reads(write, word, index);
     }
@@ -74,7 +74,7 @@ pub fn document_highlight(
     let at_ref = index
         .references
         .iter()
-        .any(|r| byte_in_span(byte, &r.span) && r.name == word);
+        .any(|r| super::byte_in_span(byte, &r.span) && r.name == word);
 
     if !at_ref {
         // Cursor is on a binding site — the word span IS the Write range.
@@ -205,45 +205,11 @@ fn word_span_at(source: &str, byte: usize) -> Span {
 }
 
 fn make_span(source: &str, start: usize, end: usize) -> Span {
-    let (sl, sc) = byte_to_line_col(source, start);
-    let (el, ec) = byte_to_line_col(source, end);
+    let (sl, sc) = super::byte_to_line_col(source, start);
+    let (el, ec) = super::byte_to_line_col(source, end);
     Span { start_byte: start, end_byte: end, start_line: sl, start_col: sc, end_line: el, end_col: ec }
-}
-
-fn byte_in_span(byte: usize, span: &Span) -> bool {
-    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
 }
 
 fn inside_jinja(source: &str, byte: usize) -> bool {
     super::inside_jinja(source, byte)
-}
-
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut pos = 0usize;
-    for ch in source.chars() {
-        if pos >= byte {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += ch.len_utf8() as u32;
-        }
-        pos += ch.len_utf8();
-    }
-    (line, col)
 }

@@ -216,7 +216,7 @@ fn emit_call_hints(
         if arg.is_keyword { break } // Stop at the first keyword argument (REQ-INLAY-01).
         if arg_matches_param(&arg.text, param_name) { continue } // Suppression (REQ-INLAY-06).
 
-        let (line, col) = byte_to_line_col(source, arg.start_byte);
+        let (line, col) = super::byte_to_line_col(source, arg.start_byte);
         out.push(InlayHint {
             line,
             col,
@@ -497,7 +497,7 @@ fn endblock_keyword_end_col(source: &str, tag_start_byte: usize) -> (u32, u32) {
     let slice = source.get(tag_start_byte..).unwrap_or("");
     let kw_offset = slice.find("endblock").unwrap_or(0);
     let end_byte = tag_start_byte + kw_offset + "endblock".len();
-    byte_to_line_col(source, end_byte)
+    super::byte_to_line_col(source, end_byte)
 }
 
 // ── Resolve tooltip helpers ───────────────────────────────────────────────────
@@ -553,22 +553,3 @@ fn fmt_filter_param(name: &str, ty: Option<&str>, default: Option<&str>) -> Stri
 }
 
 // ── Shared source-scanning utilities ─────────────────────────────────────────
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut pos = 0usize;
-    for ch in source.chars() {
-        if pos >= byte {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += ch.len_utf8() as u32;
-        }
-        pos += ch.len_utf8();
-    }
-    (line, col)
-}

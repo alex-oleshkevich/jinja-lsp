@@ -42,7 +42,7 @@ pub fn signature_help(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> Option<SignatureHelp> {
-    let cursor = line_col_to_byte(source, line, col);
+    let cursor = super::line_col_to_byte(source, line, col);
 
     // Narrow to the text before the cursor, within the active Jinja delimiter.
     let (inner, is_filter_ctx) = jinja_inner_before(source, cursor)?;
@@ -215,7 +215,7 @@ fn resolve_signature(
 ) -> Option<SignatureHelp> {
     if is_filter {
         // REQ-SIG-03: filter call — look in Category::Filter.
-        let name = resolve_filter_alias(callee);
+        let name = super::resolve_filter_alias(callee);
         let entry = registry.get(Category::Filter, name)?;
         let params: Vec<SignatureParam> = entry
             .params
@@ -314,24 +314,5 @@ fn registry_param_doc(p: &crate::builtins::registry::Param) -> Option<String> {
     }
 }
 
-fn resolve_filter_alias(name: &str) -> &str {
-    match name {
-        "d" => "default",
-        "e" => "escape",
-        "count" => "length",
-        other => other,
-    }
-}
-
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
-}

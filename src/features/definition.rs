@@ -38,11 +38,11 @@ pub fn go_to_definition(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> Option<DefinitionLocation> {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
 
     // ── Template reference paths (extends/include/import/from strings) ────────
     for tr in &index.template_refs {
-        if byte_in_span(byte, &tr.span) && !tr.is_dynamic {
+        if super::byte_in_span(byte, &tr.span) && !tr.is_dynamic {
             if let Some(key) = workspace.resolve_key(&tr.path) {
                 return Some(DefinitionLocation {
                     target_path: key.to_owned(),
@@ -60,9 +60,9 @@ pub fn go_to_definition(
     let mut candidates: Vec<_> = index
         .references
         .iter()
-        .filter(|r| byte_in_span(byte, &r.span))
+        .filter(|r| super::byte_in_span(byte, &r.span))
         .collect();
-    candidates.sort_by_key(|b| std::cmp::Reverse(kind_priority(b.kind)));
+    candidates.sort_by_key(|b| std::cmp::Reverse(super::kind_priority(b.kind)));
 
     for r in &candidates {
         // Filters and tests are built-ins or host-owned (REQ-DEF-06): short-circuit.
@@ -76,7 +76,7 @@ pub fn go_to_definition(
             ReferenceKind::Attribute => {
                 // Attribute access like `macros.post_url` — resolve via alias.
                 // Special case: `self.<block>` → REQ-DEF-04 block definition.
-                let parent = parent_of_attribute(source, r.span.start_byte);
+                let parent = super::parent_of_attribute(source, r.span.start_byte);
                 match parent {
                     Some("self") => resolve_self_block(&r.name, current_path, index, workspace),
                     Some(p) => resolve_alias_attr(p, &r.name, index, workspace),
@@ -129,7 +129,7 @@ pub fn go_to_definition(
     // ── Import alias spans (REQ-DEF-05) ──────────────────────────────────────
     // Cursor on the alias identifier in the import statement itself.
     for alias in &index.import_aliases {
-        if byte_in_span(byte, &alias.span) {
+        if super::byte_in_span(byte, &alias.span) {
             // Jump to source template (more useful than jumping to same-file declaration).
             if let Some(key) = workspace.resolve_key(&alias.source) {
                 return Some(DefinitionLocation {
@@ -145,7 +145,7 @@ pub fn go_to_definition(
 
     // ── Block names (REQ-DEF-04: child block → ancestor declaration) ──────────
     for b in &index.blocks {
-        if byte_in_span(byte, &b.span) {
+        if super::byte_in_span(byte, &b.span) {
             // Walk the inheritance chain to find the nearest ancestor declaring this block.
             let chain = workspace.template_chain(current_path);
             for ancestor_path in chain.iter().skip(1) {
@@ -310,48 +310,6 @@ fn span_to_def(path: &str, span: &Span) -> DefinitionLocation {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-
-fn byte_in_span(byte: usize, span: &Span) -> bool {
-    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
-}
-
-fn kind_priority(kind: ReferenceKind) -> u8 {
-    match kind {
-        ReferenceKind::Filter => 5,
-        ReferenceKind::Function => 4,
-        ReferenceKind::Test => 3,
-        ReferenceKind::Identifier => 2,
-        ReferenceKind::Attribute => 1,
-    }
-}
-
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1;
-    }
-    byte
-}
-
-/// Scan backwards from `attr_start_byte` to find the identifier before the `.`.
-fn parent_of_attribute(source: &str, attr_start_byte: usize) -> Option<&str> {
-    if attr_start_byte == 0 {
-        return None;
-    }
-    let before = source.get(..attr_start_byte)?;
-    let dot_pos = before.rfind('.')?;
-    let before_dot = &before[..dot_pos];
-    let end = before_dot.len();
-    let start = before_dot
-        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let parent = &before_dot[start..end];
-    if parent.is_empty() { None } else { Some(parent) }
-}
 
 fn word_at_byte(source: &str, byte: usize) -> &str {
     super::word_at_byte(source, byte)

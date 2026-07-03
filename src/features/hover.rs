@@ -33,7 +33,7 @@ pub fn hover(
     registry: &Registry,
     workspace: &WorkspaceIndex,
 ) -> Option<HoverResult> {
-    let byte = line_col_to_byte(source, line, col);
+    let byte = super::line_col_to_byte(source, line, col);
 
     // ── Check extracted references (filter/function/test/identifier/attribute) ──
     // When multiple references land on the same span (e.g. "truncate" is captured
@@ -41,15 +41,15 @@ pub fn hover(
     let mut candidates: Vec<_> = index
         .references
         .iter()
-        .filter(|r| byte_in_span(byte, &r.span))
+        .filter(|r| super::byte_in_span(byte, &r.span))
         .collect();
 
-    candidates.sort_by_key(|b| std::cmp::Reverse(kind_priority(b.kind)));
+    candidates.sort_by_key(|b| std::cmp::Reverse(super::kind_priority(b.kind)));
 
     for r in &candidates {
         let result = match r.kind {
             ReferenceKind::Filter => {
-                let name = resolve_filter_alias(&r.name);
+                let name = super::resolve_filter_alias(&r.name);
                 let alias_note = if name != r.name.as_str() { Some(r.name.as_str()) } else { None };
                 registry
                     .get(Category::Filter, name)
@@ -90,21 +90,21 @@ pub fn hover(
 
     // ── Check macro definitions ───────────────────────────────────────────────
     for m in &index.macros {
-        if byte_in_span(byte, &m.span) {
+        if super::byte_in_span(byte, &m.span) {
             return Some(format_macro_card(m));
         }
     }
 
     // ── Check block definitions ───────────────────────────────────────────────
     for b in &index.blocks {
-        if byte_in_span(byte, &b.span) {
+        if super::byte_in_span(byte, &b.span) {
             return Some(format_block_card(b, index, workspace));
         }
     }
 
     // ── Check template references (extends / include / import / from) ─────────
     for tr in &index.template_refs {
-        if byte_in_span(byte, &tr.span) {
+        if super::byte_in_span(byte, &tr.span) {
             let body = if tr.is_dynamic {
                 "Computed at runtime — cannot resolve statically.".to_owned()
             } else {
@@ -290,7 +290,7 @@ fn hover_attribute(
     registry: &Registry,
 ) -> Option<HoverResult> {
     // Determine parent by scanning backwards from the attribute start byte.
-    let parent = parent_of_attribute(source, span.start_byte)?;
+    let parent = super::parent_of_attribute(source, span.start_byte)?;
     let attr_doc = registry.get_attr(parent, attr)?;
     Some(format_attr_card(attr_doc, span))
 }
@@ -507,49 +507,6 @@ fn compose_card(
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-fn byte_in_span(byte: usize, span: &Span) -> bool {
-    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
-}
-
-fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
-    let mut byte = 0usize;
-    for (i, line) in source.split('\n').enumerate() {
-        if i == target_line as usize {
-            return byte + (target_col as usize).min(line.len());
-        }
-        byte += line.len() + 1; // +1 for the '\n'
-    }
-    byte
-}
-
-fn kind_priority(kind: ReferenceKind) -> u8 {
-    match kind {
-        ReferenceKind::Filter => 5,
-        ReferenceKind::Function => 4,
-        ReferenceKind::Test => 3,
-        ReferenceKind::Identifier => 2,
-        ReferenceKind::Attribute => 1,
-    }
-}
-
-/// Scan backwards from `attr_start_byte` in `source` to find the identifier
-/// that precedes the `.` before the attribute.
-fn parent_of_attribute(source: &str, attr_start_byte: usize) -> Option<&str> {
-    if attr_start_byte == 0 {
-        return None;
-    }
-    let before = source.get(..attr_start_byte)?;
-    let dot_pos = before.rfind('.')?;
-    let before_dot = &before[..dot_pos];
-    let end = before_dot.len();
-    let start = before_dot
-        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let parent = &before_dot[start..end];
-    if parent.is_empty() { None } else { Some(parent) }
-}
-
 /// REQ-HOV-12: return a scope-constraint note when `word` is used outside its valid scope.
 fn scope_note_for_special(word: &str, byte: usize, index: &TemplateIndex) -> Option<String> {
     let in_for = index.variables.iter().any(|v| {
@@ -590,15 +547,6 @@ fn scope_label(scope: VariableScope) -> &'static str {
 }
 
 /// Resolve known Jinja filter aliases to their canonical name.
-fn resolve_filter_alias(name: &str) -> &str {
-    match name {
-        "d" => "default",
-        "e" => "escape",
-        "count" => "length",
-        other => other,
-    }
-}
-
 /// Resolve known Jinja test aliases to their canonical name.
 fn resolve_test_alias(name: &str) -> &str {
     match name {
@@ -636,8 +584,8 @@ fn word_at_byte_range(source: &str, byte: usize) -> Option<(&str, usize, usize)>
 
 /// Convert a byte range to a `Span` with line/col information.
 fn byte_range_to_span(source: &str, start_byte: usize, end_byte: usize) -> Span {
-    let (sl, sc) = byte_to_line_col(source, start_byte);
-    let (el, ec) = byte_to_line_col(source, end_byte);
+    let (sl, sc) = super::byte_to_line_col(source, start_byte);
+    let (el, ec) = super::byte_to_line_col(source, end_byte);
     Span {
         start_byte,
         end_byte,
@@ -646,14 +594,6 @@ fn byte_range_to_span(source: &str, start_byte: usize, end_byte: usize) -> Span 
         end_line: el,
         end_col: ec,
     }
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let capped = super::clamp_to_char_boundary(source, byte);
-    let before = &source[..capped];
-    let line = before.bytes().filter(|&b| b == b'\n').count() as u32;
-    let col = before.rfind('\n').map(|i| capped - i - 1).unwrap_or(capped) as u32;
-    (line, col)
 }
 
 fn hover_result_for_span(markdown: String, span: &Span) -> HoverResult {

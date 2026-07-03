@@ -104,3 +104,87 @@ pub(super) fn word_at_byte(source: &str, byte: usize) -> &str {
         .unwrap_or(source.len());
     &source[start..end]
 }
+
+// jinja-lsp-mna5: shared position/span helpers, previously copy-pasted across
+// 7+ feature files (each an independent O(file) scan from byte 0).
+
+/// Convert a 0-based (line, col) position to a byte offset. `col` is a byte
+/// offset within the line, clamped to the line's own length.
+pub(super) fn line_col_to_byte(source: &str, target_line: u32, target_col: u32) -> usize {
+    let mut byte = 0usize;
+    for (i, line) in source.split('\n').enumerate() {
+        if i == target_line as usize {
+            return byte + (target_col as usize).min(line.len());
+        }
+        byte += line.len() + 1; // +1 for the '\n'
+    }
+    byte
+}
+
+/// Convert a byte offset to a 0-based (line, col) position. `col` is a byte
+/// offset within the line (matching `line_col_to_byte`'s convention).
+pub(super) fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
+    let mut line = 0u32;
+    let mut col = 0u32;
+    let mut pos = 0usize;
+    for ch in source.chars() {
+        if pos >= byte {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += ch.len_utf8() as u32;
+        }
+        pos += ch.len_utf8();
+    }
+    (line, col)
+}
+
+/// True when `byte` falls strictly inside `span` (empty spans never contain anything).
+pub(super) fn byte_in_span(byte: usize, span: &crate::workspace::symbols::Span) -> bool {
+    span.start_byte < span.end_byte && span.start_byte <= byte && byte < span.end_byte
+}
+
+/// Tie-break priority when multiple reference kinds could apply to the same
+/// name at one position — higher wins.
+pub(super) fn kind_priority(kind: crate::workspace::symbols::ReferenceKind) -> u8 {
+    use crate::workspace::symbols::ReferenceKind;
+    match kind {
+        ReferenceKind::Filter => 5,
+        ReferenceKind::Function => 4,
+        ReferenceKind::Test => 3,
+        ReferenceKind::Identifier => 2,
+        ReferenceKind::Attribute => 1,
+    }
+}
+
+/// Return the identifier immediately before the `.` preceding an attribute
+/// access starting at `attr_start_byte` (e.g. the `post` in `post.title`), or
+/// `None` if there is no preceding `.`-joined parent.
+pub(super) fn parent_of_attribute(source: &str, attr_start_byte: usize) -> Option<&str> {
+    if attr_start_byte == 0 {
+        return None;
+    }
+    let before = source.get(..attr_start_byte)?;
+    let dot_pos = before.rfind('.')?;
+    let before_dot = &before[..dot_pos];
+    let end = before_dot.len();
+    let start = before_dot
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let parent = &before_dot[start..end];
+    if parent.is_empty() { None } else { Some(parent) }
+}
+
+/// Resolve a filter's short alias to its canonical registry name.
+pub(super) fn resolve_filter_alias(name: &str) -> &str {
+    match name {
+        "d" => "default",
+        "e" => "escape",
+        "count" => "length",
+        other => other,
+    }
+}
