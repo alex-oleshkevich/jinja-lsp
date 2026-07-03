@@ -234,6 +234,17 @@ fn w202_emitted_for_macro_never_called() {
     let w202 = diags.iter().find(|d| d.code == "JINJA-W202");
     assert!(w202.is_some(), "W202 must fire for locally-unused macro: {diags:?}");
     assert!(w202.unwrap().message.contains("greet"), "message must name the macro");
+    // jinja-lsp-l6hk: the check treats a macro as used if called/imported from ANY
+    // template in the workspace, so the message must not tell users to look only
+    // in "this template" — that's wrong guidance for a cross-file check.
+    assert!(
+        !w202.unwrap().message.contains("in this template"),
+        "message must not claim the check is scoped to the current template: {:?}", w202.unwrap()
+    );
+    assert!(
+        w202.unwrap().message.contains("workspace"),
+        "message must clarify the check is workspace-wide: {:?}", w202.unwrap()
+    );
 }
 
 #[test]

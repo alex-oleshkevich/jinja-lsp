@@ -533,7 +533,7 @@ fn check_w202(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
                 code: DiagCode::W202.code_str().to_owned(),
                 slug: DiagCode::W202.slug().to_owned(),
                 severity: DiagCode::W202.severity(),
-                message: format!("macro '{}' is defined but never called in this template", m.name),
+                message: format!("macro '{}' is defined but never used anywhere in the workspace", m.name),
             });
         }
     }

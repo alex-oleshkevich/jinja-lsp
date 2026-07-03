@@ -6,6 +6,6 @@
     "code": "JINJA-W202",
     "slug": "unused-macro",
     "severity": "warning",
-    "message": "macro 'unused_macro' is defined but never called in this template"
+    "message": "macro 'unused_macro' is defined but never used anywhere in the workspace"
   }
 ]

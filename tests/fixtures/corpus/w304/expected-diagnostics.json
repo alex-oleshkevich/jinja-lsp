@@ -6,7 +6,7 @@
     "code": "JINJA-W202",
     "slug": "unused-macro",
     "severity": "warning",
-    "message": "macro 'farewell' is defined but never called in this template"
+    "message": "macro 'farewell' is defined but never used anywhere in the workspace"
   },
   {
     "file": "trigger.html",

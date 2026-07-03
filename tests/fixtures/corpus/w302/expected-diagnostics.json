@@ -6,7 +6,7 @@
     "code": "JINJA-W202",
     "slug": "unused-macro",
     "severity": "warning",
-    "message": "macro 'greet' is defined but never called in this template"
+    "message": "macro 'greet' is defined but never used anywhere in the workspace"
   },
   {
     "file": "trigger.html",
@@ -15,7 +15,7 @@
     "code": "JINJA-W202",
     "slug": "unused-macro",
     "severity": "warning",
-    "message": "macro 'greet' is defined but never called in this template"
+    "message": "macro 'greet' is defined but never used anywhere in the workspace"
   },
   {
     "file": "trigger.html",
