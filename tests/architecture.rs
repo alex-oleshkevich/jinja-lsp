@@ -249,6 +249,27 @@ fn jinja_lsp_bv6m_index_file_into_does_not_full_scan_templates() {
 }
 
 #[test]
+fn jinja_lsp_54gh_rich_formatter_does_not_reread_source_per_diagnostic() {
+    // jinja-lsp-54gh: the rich formatter loop called std::fs::read_to_string(&d.file)
+    // once PER DIAGNOSTIC — a file with 50 findings was read 50 times, on top of
+    // already being read once for checks and once for noqa. Sources must be cached
+    // per file and reused for rendering instead.
+    let src = include_str!("../src/main.rs");
+    let start = src.find("_ => {\n            // REQ-LINT-04: rich rustc-style report")
+        .expect("rich formatter branch must exist");
+    let end = start + src[start..].find("if sorted.is_empty()").expect("rich branch must end before the empty-report check");
+    let rich_branch = &src[start..end];
+    assert!(
+        !rich_branch.contains("std::fs::read_to_string"),
+        "rich formatter must not re-read source from disk per diagnostic: {rich_branch}"
+    );
+    assert!(
+        rich_branch.contains("source_cache"),
+        "rich formatter must reuse the cached source per file: {rich_branch}"
+    );
+}
+
+#[test]
 fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
     // suite used it) and failed its own traversal-defence contract for absolute

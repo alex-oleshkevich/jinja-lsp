@@ -175,6 +175,11 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         base_registry.load_hints_from_dir(&cfg_root.join(dir_str));
     }
 
+    // jinja-lsp-54gh: read each template's source once and reuse it for checks,
+    // noqa scanning, and rich-formatter rendering — previously each was re-read
+    // from disk independently, and the rich formatter re-read once PER DIAGNOSTIC.
+    let mut source_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
     let t1 = std::time::Instant::now();
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     for idx in workspace.templates.values() {
@@ -194,6 +199,7 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         };
         let raw = run_checks(&source, &idx.path, idx, effective_registry, &workspace);
         all_diags.extend(raw);
+        source_cache.insert(idx.path.clone(), source);
     }
     if verbose {
         eprintln!("info: checked {} template(s) in {:.2}s, {} raw finding(s)",
@@ -222,9 +228,10 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
         for idx in workspace.templates.values() {
             let file_path = idx.path.as_str();
             let file_diags = per_file.remove(file_path).unwrap_or_default();
-            let source = std::fs::read_to_string(file_path).unwrap_or_default();
+            let empty = String::new();
+            let source = source_cache.get(file_path).unwrap_or(&empty);
             let file_vec: Vec<Diagnostic> = file_diags.iter().map(|d| (*d).clone()).collect();
-            let (kept, w107s) = suppress_by_noqa(&file_vec, &source);
+            let (kept, w107s) = suppress_by_noqa(&file_vec, source);
             post_noqa.extend(kept);
             w107_diags.extend(w107s.into_iter().map(|mut d| { d.file = file_path.to_owned(); d }));
         }
@@ -283,9 +290,10 @@ fn run_check(paths: Vec<String>, format: &str, verbose: bool, config_path: Optio
             use std::io::IsTerminal;
             let use_color = std::io::stdout().is_terminal()
                 && std::env::var_os("NO_COLOR").is_none();
+            let empty = String::new();
             for d in &sorted {
                 let display_path = normalize_path(&d.file);
-                let source = std::fs::read_to_string(&d.file).unwrap_or_default();
+                let source = source_cache.get(&d.file).unwrap_or(&empty);
                 let src_line = source.lines().nth(d.line as usize).unwrap_or("");
                 let display_d = Diagnostic { file: display_path, ..d.clone() };
                 print!("{}", format_rich_diagnostic_colored(&display_d, src_line, use_color));
