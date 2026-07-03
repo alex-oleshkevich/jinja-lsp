@@ -1,4 +1,4 @@
-// REQ-EXTR-01 + REQ-EXTR-02: verify that all 17 .scm query files compile
+// REQ-EXTR-01 + REQ-EXTR-02: verify that all 16 .scm query files compile
 // against the upstream grammar and capture expected constructs from fixtures.
 
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
@@ -9,7 +9,6 @@ const QUERY_NAMES: &[&str] = &[
     "blocks",
     "set",
     "set_unpacking",
-    "set_block",
     "for",
     "for_unpacking",
     "with",
@@ -175,12 +174,6 @@ fn for_unpacking_captures_both_names() {
     let caps = captures("for_unpacking", "{% for key, value in items %}{% endfor %}");
     assert!(caps.iter().any(|c| c == "key"), "first loop name not captured: {caps:?}");
     assert!(caps.iter().any(|c| c == "value"), "second loop name not captured: {caps:?}");
-}
-
-#[test]
-fn set_block_captures_variable_name() {
-    let caps = captures("set_block", "{% set nav %}hello{% endset %}{{ nav }}");
-    assert!(caps.contains(&"nav".to_owned()), "block-set variable name not captured: {caps:?}");
 }
 
 #[test]

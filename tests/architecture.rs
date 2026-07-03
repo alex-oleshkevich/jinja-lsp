@@ -248,6 +248,18 @@ fn jinja_lsp_gz5q_dead_path_resolver_removed() {
 }
 
 #[test]
+fn jinja_lsp_wam7_dead_set_block_query_removed() {
+    // jinja-lsp-wam7: queries/set_block.scm was never loaded by the extractor —
+    // block-set extraction was replaced by the manual byte scanner run_set_block
+    // (tree-sitter's ERROR-node recovery can't find multiple block-set tags via a
+    // query). The file was dead and misleadingly claimed to still do the capture.
+    assert!(
+        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/parsing/queries/set_block.scm")).exists(),
+        "src/parsing/queries/set_block.scm must be removed, not left as dead/misleading code"
+    );
+}
+
+#[test]
 fn code_actions_does_not_define_textedit() {
     // Structural: TextEdit must not be defined in code_actions.rs.
     let src = include_str!("../src/features/code_actions.rs");
