@@ -656,7 +656,17 @@ fn check_w402_e401(source: &str, path: &str, index: &TemplateIndex, out: &mut Ve
         .map(|b| (b.body.start_byte, b.body.end_byte))
         .collect();
 
-    let inside_block = |byte: usize| block_ranges.iter().any(|&(s, e)| s <= byte && byte < e);
+    // A top-level {% macro %} is valid Jinja (callable from within blocks) — set/for
+    // bindings inside its body are exempt from W402 the same way block bodies are.
+    let macro_ranges: Vec<(usize, usize)> = index.macros.iter()
+        .filter(|m| m.body.start_byte < m.body.end_byte)
+        .map(|m| (m.body.start_byte, m.body.end_byte))
+        .collect();
+
+    let inside_block = |byte: usize| {
+        block_ranges.iter().any(|&(s, e)| s <= byte && byte < e)
+            || macro_ranges.iter().any(|&(s, e)| s <= byte && byte < e)
+    };
 
     // W402: variables set outside any block are unreachable in a child template.
     for v in &index.variables {

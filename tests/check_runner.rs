@@ -408,6 +408,21 @@ fn no_w402_for_non_extends_template() {
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-W402").count(), 0, "non-extends template must not trigger W402");
 }
 
+#[test]
+fn jinja_lsp_p3o7_no_w402_for_set_inside_top_level_macro_in_extends_template() {
+    // A top-level {% macro %} is valid Jinja (callable from blocks) — {% set %}/{% for %}
+    // bindings inside its body are reachable through a macro call, not directly rendered
+    // like top-level content, so they must be exempt from W402 the same way block bodies are.
+    let src = r#"{% extends "base.html" %}
+{% macro greet(name) %}{% set msg = "hi" %}{{ msg }} {{ name }}{% endmacro %}
+{% block content %}{{ greet("world") }}{% endblock %}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    let w402: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-W402").collect();
+    assert!(w402.is_empty(), "set inside a top-level macro body must not trigger W402: {w402:?}");
+}
+
 // ─── E401: invalid-super ──────────────────────────────────────────────────────
 
 #[test]
