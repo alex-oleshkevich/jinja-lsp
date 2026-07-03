@@ -347,6 +347,9 @@ fn run_format(paths: Vec<String>, config_path: Option<&str>, check: bool, diff: 
             }
             files.push(root.clone());
         } else if root.is_dir() {
+            if !paths.is_empty() && is_relative_escape(root) {
+                continue; // silently skip ../-escape paths
+            }
             collect_template_files(root, template_exts, &mut files);
         }
     }

@@ -262,3 +262,34 @@ fn fmt08_t10_output_file_multiple_inputs_is_error() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--output FILE requires a single input file"), "{stderr}");
 }
+
+// ─── jinja-lsp-w86m: ../-escape guard must also apply to directory arguments ──
+
+#[test]
+fn jinja_lsp_w86m_directory_arg_escaping_templates_root_is_skipped() {
+    // REQ-FMT-09 says relative paths escaping the templates root are silently
+    // skipped, but the check was only applied when root.is_file() — a directory
+    // argument like `jinja-lsp format ../outside` went straight to
+    // collect_template_files and reformatted files outside every template root.
+    let base = scratchpad().join("w86m");
+    fs::remove_dir_all(&base).ok();
+    let proj = base.join("proj"); // no jinja.toml/templates subdir → root falls back to cwd
+    let outside = base.join("outside");
+    fs::create_dir_all(&proj).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let outside_file = outside.join("bad.html");
+    fs::write(&outside_file, "{{x}}\n").unwrap();
+
+    let status = jinja_lsp_bin()
+        .current_dir(&proj)
+        .args(["format", "../outside"])
+        .status()
+        .expect("run format");
+
+    assert_eq!(status.code().unwrap(), 0, "no files should be found/changed once the escaping dir is skipped");
+    assert_eq!(
+        fs::read_to_string(&outside_file).unwrap(),
+        "{{x}}\n",
+        "file outside every template root must not be rewritten"
+    );
+}
