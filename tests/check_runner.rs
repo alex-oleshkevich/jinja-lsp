@@ -827,6 +827,39 @@ fn w106_subscript_single_quote_key() {
     );
 }
 
+#[test]
+fn jinja_lsp_l27o_subscript_scan_ignores_html_and_script_text() {
+    // session["user"] inside a <script> block (plain host text, not Jinja) must
+    // never trigger W106 — the scan used to cover the entire file text, not just
+    // {{ }}/{% %} regions.
+    let src = r#"<script>var x = session["user"];</script>{{ post["title"] }}"#;
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("session", &["id"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "JINJA-W106" && d.message.contains("session")).count(), 0,
+        "subscript access inside plain HTML/JS text must not trigger W106: {diags:?}"
+    );
+}
+
+#[test]
+fn jinja_lsp_l27o_subscript_position_correct_on_second_line() {
+    // The key's reported line/col must be correct regardless of where in the
+    // file the match occurs — the old rescan-from-0 approach was O(n^2) but at
+    // least always recomputed from a fixed origin; this checks the new
+    // incremental tracker computes the same correct position.
+    let src = "line one\n{{ post[\"autor\"] }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("t.html", src)]);
+    let reg = registry_with_context_var_attrs("post", &["title"]);
+    let diags = run_checks(src, "t.html", &idx, &reg, &ws);
+    let d = diags.iter().find(|d| d.code == "JINJA-W106").expect("W106 must fire");
+    assert_eq!(d.line, 1, "must report line 1 (0-indexed), not line 0");
+    let expected_col = src.lines().nth(1).unwrap().find("autor").unwrap() as u32;
+    assert_eq!(d.col, expected_col, "column must point at the key content on line 1");
+}
+
 // ─── E501: wrong-call-args ───────────────────────────────────────────────────
 
 #[test]

@@ -254,60 +254,116 @@ fn check_w106(source: &str, path: &str, index: &TemplateIndex, registry: &Regist
     }
 }
 
-/// Scan source text for `identifier["key"]` and `identifier['key']` patterns.
+/// Scan source text for `identifier["key"]` and `identifier['key']` patterns,
+/// but only inside real `{{ }}`/`{% %}` regions — HTML/JS text (e.g.
+/// `session["user"]` inside a `<script>` block) must never match (jinja-lsp-l27o).
 /// Returns (parent_name, attr_name, line, col) for each match; col points at the key.
+///
+/// Tracks line/col incrementally during a single forward scan (byte columns,
+/// matching the rest of the codebase's convention) instead of rescanning from
+/// byte 0 for every match, which was O(n^2) on subscript-heavy files.
 fn subscript_accesses(source: &str) -> Vec<(&str, &str, u32, u32)> {
+    #[derive(PartialEq, Clone, Copy)]
+    enum Delim { None, ExprOrStmt, Comment }
+
     let mut out = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
+    let mut line = 0u32;
+    let mut col = 0u32;
+    let mut delim = Delim::None;
+
+    // Advance the running (line, col) position by exactly one byte.
+    macro_rules! advance {
+        () => {
+            if bytes[i] == b'\n' { line += 1; col = 0; } else { col += 1; }
+            i += 1;
+        };
+    }
+
     while i < bytes.len() {
-        // Find `[` preceded by an identifier.
-        if bytes[i] != b'[' { i += 1; continue; }
+        match delim {
+            Delim::None => {
+                if bytes[i..].starts_with(b"{{") || bytes[i..].starts_with(b"{%") {
+                    delim = Delim::ExprOrStmt;
+                } else if bytes[i..].starts_with(b"{#") {
+                    delim = Delim::Comment;
+                }
+                advance!();
+                continue;
+            }
+            Delim::Comment => {
+                if bytes[i..].starts_with(b"#}") {
+                    delim = Delim::None;
+                    advance!();
+                }
+                advance!();
+                continue;
+            }
+            Delim::ExprOrStmt => {
+                if bytes[i..].starts_with(b"}}") || bytes[i..].starts_with(b"%}") {
+                    delim = Delim::None;
+                    advance!();
+                    continue;
+                }
+            }
+        }
+
+        // Only look for subscript patterns inside a real expression/statement.
+        if delim != Delim::ExprOrStmt || bytes[i] != b'[' {
+            advance!();
+            continue;
+        }
+
         // Find the identifier before `[`.
         let before_bracket = i;
-        if before_bracket == 0 { i += 1; continue; }
+        if before_bracket == 0 { advance!(); continue; }
         let id_end = before_bracket;
         let mut id_start = id_end;
         while id_start > 0 && (bytes[id_start - 1].is_ascii_alphanumeric() || bytes[id_start - 1] == b'_') {
             id_start -= 1;
         }
-        if id_start == id_end { i += 1; continue; } // no identifier before `[`
+        if id_start == id_end { advance!(); continue; } // no identifier before `[`
         let parent = match std::str::from_utf8(&bytes[id_start..id_end]) {
             Ok(s) if !s.is_empty() => s,
-            _ => { i += 1; continue; }
+            _ => { advance!(); continue; }
         };
         // After `[`, expect an optional space then a quote.
         let mut j = i + 1;
         while j < bytes.len() && bytes[j] == b' ' { j += 1; }
-        if j >= bytes.len() { i += 1; continue; }
+        if j >= bytes.len() { advance!(); continue; }
         let quote = bytes[j];
-        if quote != b'"' && quote != b'\'' { i += 1; continue; }
+        if quote != b'"' && quote != b'\'' { advance!(); continue; }
         let key_start = j + 1;
         let key_byte = key_start;
         // Find closing quote.
         let mut k = key_start;
         while k < bytes.len() && bytes[k] != quote { k += 1; }
-        if k >= bytes.len() { i += 1; continue; }
+        if k >= bytes.len() { advance!(); continue; }
         let attr = match std::str::from_utf8(&bytes[key_start..k]) {
             Ok(s) if !s.is_empty() => s,
-            _ => { i += 1; continue; }
+            _ => { advance!(); continue; }
         };
         // Verify closing `]` follows.
         let mut l = k + 1;
         while l < bytes.len() && bytes[l] == b' ' { l += 1; }
-        if l >= bytes.len() || bytes[l] != b']' { i += 1; continue; }
-        // Compute line/col of the key (points at the opening quote + 1, i.e. the key content).
-        let (line, col) = {
-            let mut line = 0u32;
-            let mut col = 0u32;
-            for (idx, &b) in bytes[..key_byte].iter().enumerate() {
-                let _ = idx;
-                if b == b'\n' { line += 1; col = 0; } else { col += 1; }
+        if l >= bytes.len() || bytes[l] != b']' { advance!(); continue; }
+
+        // Compute the key's (line, col) from the CURRENT running position, walking
+        // only the short span [i..key_byte] rather than rescanning from byte 0.
+        let (key_line, key_col) = {
+            let mut kl = line;
+            let mut kc = col;
+            for &b in &bytes[i..key_byte] {
+                if b == b'\n' { kl += 1; kc = 0; } else { kc += 1; }
             }
-            (line, col)
+            (kl, kc)
         };
-        out.push((parent, attr, line, col));
-        i = l + 1;
+        out.push((parent, attr, key_line, key_col));
+        // Skip past the whole match, keeping line/col in sync.
+        while i < l + 1 {
+            advance!();
+        }
     }
     out
 }
