@@ -287,6 +287,23 @@ fn jinja_lsp_isj4_did_change_configuration_skips_empty_overlay() {
 }
 
 #[test]
+fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
+    // jinja-lsp-7f0o: on FileChangeType::DELETED, only workspace.templates.remove
+    // ran — state.sources, state.sidecar_registries, and the file's inline
+    // sub-entries were never removed, so a deleted file kept contributing
+    // references/symbols via stale inline indexes, sources grew unboundedly, and
+    // republish_all_diagnostics kept publishing for files that no longer exist.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src.find("FileChangeType::DELETED =>").expect("DELETED arm must exist");
+    let end = start + src[start..].find("\n                _ => {}").expect("DELETED arm must be followed by the catch-all match arm");
+    let arm = &src[start..end];
+    assert!(arm.contains("clear_inline_entries_for"), "DELETED must evict the file's inline sub-entries: {arm}");
+    assert!(arm.contains("state.sources.remove"), "DELETED must remove the file's source: {arm}");
+    assert!(arm.contains("state.sidecar_registries.remove"), "DELETED must remove the file's sidecar registry: {arm}");
+    assert!(arm.contains("publish_diagnostics"), "DELETED must clear diagnostics for the deleted file: {arm}");
+}
+
+#[test]
 fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
     // suite used it) and failed its own traversal-defence contract for absolute

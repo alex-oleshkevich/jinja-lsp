@@ -593,17 +593,29 @@ impl LanguageServer for Backend {
                     }
                 }
                 FileChangeType::DELETED => {
-                    let mut state = self.state.write().await;
-                    // REQ-EXTR-08: remove from the correct folder's workspace.
-                    let extra_idx = state.extra_folders.iter().enumerate()
-                        .filter(|(_, f)| crate::server::state::key_under_root(&key, f.root.to_str().unwrap_or("")))
-                        .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
-                        .map(|(i, _)| i);
-                    if let Some(ei) = extra_idx {
-                        state.extra_folders[ei].workspace.templates.remove(&key);
-                    } else {
-                        state.workspace.templates.remove(&key);
+                    {
+                        let mut state = self.state.write().await;
+                        // REQ-EXTR-08: remove from the correct folder's workspace.
+                        let extra_idx = state.extra_folders.iter().enumerate()
+                            .filter(|(_, f)| crate::server::state::key_under_root(&key, f.root.to_str().unwrap_or("")))
+                            .max_by_key(|(_, f)| f.root.to_str().map(|s| s.len()).unwrap_or(0))
+                            .map(|(i, _)| i);
+                        // jinja-lsp-7f0o: a deleted file must lose ALL its per-file state, not
+                        // just the template entry — otherwise sources grows unboundedly, stale
+                        // sidecar overlays/inline sub-entries keep contributing references, and
+                        // the editor keeps showing diagnostics for a file that no longer exists.
+                        let workspace = if let Some(ei) = extra_idx {
+                            &mut state.extra_folders[ei].workspace
+                        } else {
+                            &mut state.workspace
+                        };
+                        workspace.templates.remove(&key);
+                        workspace.clear_inline_entries_for(&key);
+                        state.sources.remove(&key);
+                        state.sidecar_registries.remove(&key);
                     }
+                    let uri = path_to_uri(&key);
+                    self.client.publish_diagnostics(uri, vec![], None).await;
                 }
                 _ => {}
             }
