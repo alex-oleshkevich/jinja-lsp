@@ -7,7 +7,10 @@ use crate::{
     diagnostic::Diagnostic,
     edit::{TextEdit, WorkspaceEdit},
     features::wrap::{selection_is_well_formed, wrap_selection, WrapKind},
-    workspace::index::{TemplateIndex, WorkspaceIndex},
+    workspace::{
+        index::{TemplateIndex, WorkspaceIndex},
+        symbols::BlockDefinition,
+    },
 };
 
 /// LSP CodeActionKind taxonomy (REQ-ACT-10).
@@ -414,7 +417,9 @@ fn remove_duplicate_block(
     let block_name = extract_quoted_name(&diag.message)?;
     let block = index.blocks.iter().find(|b| b.name == block_name && b.span.start_line == diag.line)?;
     // body.end_byte is not set for blocks; scan source for the matching {% endblock %}.
-    let endblock_ln = find_endblock_line(source, block.span.start_line);
+    // Suppress the action entirely when it can't be found — deleting only the
+    // opening tag would leave the body and an orphaned {% endblock %} behind.
+    let endblock_ln = find_endblock_line(source, block)?;
     let edit = delete_region_clean(source, block.span.start_line, endblock_ln + 1);
     Some(CodeAction {
         title: format!("Remove duplicate block '{block_name}'"),
@@ -542,27 +547,37 @@ fn rename_shadowing_variable(
     })
 }
 
-/// Scan source for the `{% endblock %}` line matching the block that opens at `from_line`.
-fn find_endblock_line(source: &str, from_line: u32) -> u32 {
+/// Scan source for the `{% endblock %}` line matching `block`'s opening tag.
+///
+/// Returns `None` when no matching endblock can be located — callers must never
+/// delete a region without knowing exactly where it ends (jinja-lsp-zhss).
+fn find_endblock_line(source: &str, block: &BlockDefinition) -> Option<u32> {
     let lines: Vec<&str> = source.split('\n').collect();
-    // Single-line block: endblock on the same line as the opening tag.
+    let from_line = block.span.start_line;
+
+    // Single-line block: endblock on the same line as the opening tag. Only text
+    // AFTER this block's own opening tag counts — a preceding, unrelated endblock
+    // on the same line (e.g. `{% endblock %}{% block b %}`) belongs to the
+    // PREVIOUS block, not this one.
     if let Some(line) = lines.get(from_line as usize) {
-        if line.contains("{%") && line.contains("endblock") {
-            return from_line;
+        let after_open = &line[(block.span.start_col as usize).min(line.len())..];
+        if after_open.contains("{%") && after_open.contains("endblock") {
+            return Some(from_line);
         }
     }
+
     // Multi-line block: depth-count to find the matching endblock.
     let mut depth = 1i32;
     for (i, line) in lines.iter().enumerate().skip(from_line as usize + 1) {
         let t = line.trim();
         if t.contains("{%") && t.contains("endblock") {
             depth -= 1;
-            if depth == 0 { return i as u32; }
+            if depth == 0 { return Some(i as u32); }
         } else if t.contains("{%") && t.split_whitespace().any(|w| w == "block") {
             depth += 1;
         }
     }
-    from_line
+    None
 }
 
 /// Delete lines [start_line, end_line) without leaving a blank line.

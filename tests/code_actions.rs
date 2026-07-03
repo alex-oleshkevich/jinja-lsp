@@ -610,6 +610,63 @@ fn act06_t13_remove_duplicate_block() {
     assert_eq!(result, "{% block content %}first{% endblock %}", "later block removed");
 }
 
+// ─── jinja-lsp-zhss: endblock scan must never produce an orphan endblock ─────
+
+#[test]
+fn jinja_lsp_zhss_no_action_when_endblock_cannot_be_located() {
+    // A {% raw %}{% block x %}{% endraw %} inside the duplicate block confuses the
+    // naive depth-counting scan (it treats the raw-literal "{% block x %}" as a
+    // real nested opener), so the real {% endblock %} only brings depth to 1, not
+    // 0 — the scan runs off the end of the file without finding a match. The old
+    // code fell back to `from_line`, which then deleted only the opening tag,
+    // leaving the body and a real orphaned {% endblock %} behind. The action must
+    // now be suppressed entirely instead.
+    let src = "{% block content %}first{% endblock %}\n\
+        {% block content %}\n\
+        {% raw %}{% block x %}{% endraw %}\n\
+        second\n\
+        {% endblock %}";
+    let idx = extract(src);
+    let diags = vec![w301(1, "content")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(
+        actions.is_empty(),
+        "must suppress the quick-fix rather than risk an orphaned endblock: {actions:?}"
+    );
+}
+
+#[test]
+fn jinja_lsp_zhss_single_line_shortcut_ignores_preceding_unrelated_endblock() {
+    // The duplicate block "b" opens on the same line where an UNRELATED preceding
+    // block "a" closes ({% endblock %}{% block b %}). The naive single-line check
+    // used to match that preceding "endblock" as if it were "b"'s own close,
+    // returning that SAME line as "b"'s (wrong) end — which deleted only that one
+    // line and left "b"'s real body and real {% endblock %} (further down)
+    // permanently orphaned in the file (new syntax errors). With the fix, the
+    // scan correctly continues past the preceding endblock and finds "b"'s own
+    // real endblock further down, so the whole duplicate region is removed and
+    // nothing is left orphaned (deleting the shared line also removes "a"'s
+    // endblock text as a side effect of whole-line-granularity edits — a
+    // separate, pre-existing limitation of delete_region_clean, not a regression
+    // introduced here: the alternative, orphaning "b", is strictly worse).
+    let src = "{% block b %}first{% endblock %}\n\
+        {% block a %}\n\
+        x\n\
+        {% endblock %}{% block b %}\n\
+        second\n\
+        {% endblock %}";
+    let idx = extract(src);
+    // The duplicate "b" is reported at its own opening line (line 3).
+    let diags = vec![w301(3, "b")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert_eq!(actions.len(), 1, "must offer remove-duplicate action");
+    let result = apply(src, "t.html", &actions);
+    assert!(
+        !result.contains("second") && !result.contains("endblock %}{% block b %}"),
+        "the duplicate 'b' block's real body and real endblock must be fully removed, not orphaned: {result:?}"
+    );
+}
+
 // ─── REQ-ACT-06: T-14 — Remove duplicate macro ───────────────────────────────
 
 #[test]
