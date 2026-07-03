@@ -444,6 +444,40 @@ fn no_e401_super_inside_block() {
     assert_eq!(diags.iter().filter(|d| d.code == "JINJA-E401").count(), 0, "super() inside block must not trigger E401");
 }
 
+#[test]
+fn jinja_lsp_96oh_no_e401_for_literal_super_text_outside_jinja() {
+    // E401 scanned the raw source for the literal bytes "super()" with no word-boundary
+    // check and no check that the match sits inside a Jinja expression — HTML prose,
+    // a Jinja comment, and an identifier merely ending in "super()" all false-positived.
+    let src = "{% extends \"base.html\" %}\n\
+        <p>call super() here</p>\n\
+        {# TODO: super() #}\n\
+        <script>mysuper()</script>\n\
+        {% block content %}{% endblock %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    let e401: Vec<_> = diags.iter().filter(|d| d.code == "JINJA-E401").collect();
+    assert!(e401.is_empty(), "literal 'super()' text outside a Jinja expression must not trigger E401: {e401:?}");
+}
+
+#[test]
+fn jinja_lsp_96oh_e401_col_is_byte_col_not_char_col_on_multibyte_line() {
+    // Every other check reports byte columns from tree-sitter spans; E401's
+    // byte_to_line_col counted chars instead, so the reported column drifted on
+    // lines with multibyte text before the match.
+    let src = "{% extends \"base.html\" %}\n\
+        café {{ super() }}\n\
+        {% block content %}{% endblock %}";
+    let idx = extract(src);
+    let ws = ws_with(&[("base.html", "{% block content %}{% endblock %}")]);
+    let diags = run_checks(src, "child.html", &idx, &registry(), &ws);
+    let e401 = diags.iter().find(|d| d.code == "JINJA-E401").expect("E401 must fire for super() outside block");
+    // "café " is 5 chars / 6 bytes (é is 2 bytes) — "{{ super" starts at byte 6, char 5.
+    let expected_byte_col = src.lines().nth(1).unwrap().find("super").unwrap() as u32;
+    assert_eq!(e401.col, expected_byte_col, "E401 col must be a byte offset, not a char offset: {e401:?}");
+}
+
 // ─── E601: template-does-not-exist ───────────────────────────────────────────
 
 #[test]

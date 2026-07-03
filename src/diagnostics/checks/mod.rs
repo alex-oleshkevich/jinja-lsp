@@ -44,7 +44,7 @@ pub fn run_checks(
     check_e403(path, index, workspace, &mut out);
     check_e404(path, index, workspace, &mut out);
     check_e501(path, index, workspace, &mut out);
-    check_w402_e401(source, path, index, &mut out);
+    check_w402_e401(path, index, &mut out);
     check_e601(path, index, workspace, &mut out);
     out
 }
@@ -643,7 +643,7 @@ fn check_e403(path: &str, index: &TemplateIndex, workspace: &WorkspaceIndex, out
 
 // ── W402: unreachable-content / E401: invalid-super ──────────────────────────
 
-fn check_w402_e401(source: &str, path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
+fn check_w402_e401(path: &str, index: &TemplateIndex, out: &mut Vec<Diagnostic>) {
     // Only applies to child templates (those that extend a parent).
     let is_child = index.template_refs.iter().any(|r| matches!(r.kind, TemplateRefKind::Extends));
     if !is_child {
@@ -684,34 +684,22 @@ fn check_w402_e401(source: &str, path: &str, index: &TemplateIndex, out: &mut Ve
     }
 
     // E401: {{ super() }} outside any block has no parent block context.
-    let needle = b"super()";
-    let src_bytes = source.as_bytes();
-    let mut pos = 0;
-    while pos + needle.len() <= src_bytes.len() {
-        if &src_bytes[pos..pos + needle.len()] == needle && !inside_block(pos) {
-            let (line, col) = byte_to_line_col(source, pos);
+    // Use the grammar-driven Function references (not a raw byte scan) so HTML prose,
+    // comments, and other text outside Jinja delimiters can never match, and so the
+    // reported span is the tree-sitter byte span every other check already uses.
+    for r in &index.references {
+        if r.kind == ReferenceKind::Function && r.name == "super" && !inside_block(r.span.start_byte) {
             out.push(Diagnostic {
                 file: path.to_owned(),
-                line,
-                col,
+                line: r.span.start_line,
+                col: r.span.start_col,
                 code: "JINJA-E401".to_owned(),
                 slug: "invalid-super".to_owned(),
                 severity: DiagnosticSeverity::Error,
                 message: "super() called outside a block".to_owned(),
             });
         }
-        pos += 1;
     }
-}
-
-fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
-    let byte = byte.min(source.len());
-    let (mut line, mut col) = (0u32, 0u32);
-    for (i, c) in source.char_indices() {
-        if i >= byte { break; }
-        if c == '\n' { line += 1; col = 0; } else { col += 1; }
-    }
-    (line, col)
 }
 
 // ── E404: recursive-import ────────────────────────────────────────────────────
