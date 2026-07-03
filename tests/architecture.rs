@@ -270,6 +270,23 @@ fn jinja_lsp_54gh_rich_formatter_does_not_reread_source_per_diagnostic() {
 }
 
 #[test]
+fn jinja_lsp_isj4_did_change_configuration_skips_empty_overlay() {
+    // jinja-lsp-isj4: ConfigOverlay is all-Option with unknown fields ignored, so any
+    // JSON payload unrelated to jinja-lsp (or `{}`) deserializes to an empty overlay.
+    // Applying it via apply_init_options would permanently discard the real
+    // initializationOptions overlay — the handler must check ConfigOverlay::is_empty()
+    // and skip before calling apply_init_options.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src.find("async fn did_change_configuration(").expect("did_change_configuration must exist");
+    let end = start + src[start..].find("\n    /// REQ-ARCH-05 / REQ-EDIT-11: open triggers").expect("did_open must follow did_change_configuration");
+    let handler = &src[start..end];
+    assert!(
+        handler.contains("overlay.is_empty()"),
+        "did_change_configuration must skip empty overlays before applying them: {handler}"
+    );
+}
+
+#[test]
 fn jinja_lsp_gz5q_dead_path_resolver_removed() {
     // jinja-lsp-gz5q: resolve_path had zero production callers (only its own test
     // suite used it) and failed its own traversal-defence contract for absolute

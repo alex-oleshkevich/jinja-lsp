@@ -211,6 +211,27 @@ fn overlay_absent_key_keeps_file_value() {
 }
 
 #[test]
+fn jinja_lsp_isj4_unrelated_json_deserializes_to_empty_overlay() {
+    // jinja-lsp-isj4: ConfigOverlay is all-Option with unknown fields ignored, so a
+    // JSON payload with no jinja-lsp-relevant keys at all (e.g. a settings object
+    // for a totally different extension, or `{}`) still deserializes successfully —
+    // and must be detectable as "empty" so the caller doesn't treat it as a request
+    // to clear every setting.
+    let json = r#"{"someOtherExtension": {"unrelatedSetting": true}}"#;
+    let overlay: ConfigOverlay = serde_json::from_str(json).unwrap();
+    assert!(overlay.is_empty(), "an unrelated settings payload must deserialize to an empty overlay");
+
+    let empty: ConfigOverlay = serde_json::from_str("{}").unwrap();
+    assert!(empty.is_empty(), "{{}} must deserialize to an empty overlay");
+}
+
+#[test]
+fn jinja_lsp_isj4_overlay_with_any_field_is_not_empty() {
+    let overlay = ConfigOverlay { extensions: Some(vec!["html".to_owned()]), ..Default::default() };
+    assert!(!overlay.is_empty(), "an overlay with a real field set must not be empty");
+}
+
+#[test]
 fn malformed_overlay_does_not_panic() {
     // ConfigOverlay deserialized tolerantly from JSON — partial / unknown fields ok
     let json = r#"{"unknown_field": 42, "extensions": ["html"]}"#;

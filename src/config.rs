@@ -298,6 +298,23 @@ pub struct LintOverlay {
     pub ignore: Option<Vec<String>>,
 }
 
+impl ConfigOverlay {
+    /// jinja-lsp-isj4: true when no field carries a value. Since every field is
+    /// `Option` and unrecognized JSON keys are silently ignored by serde, ANY JSON
+    /// object unrelated to jinja-lsp (including `{}`) deserializes into an overlay
+    /// where this is true — the caller must treat that as "no jinja-lsp-relevant
+    /// settings changed" rather than "the user cleared every setting".
+    pub fn is_empty(&self) -> bool {
+        self.templates.is_none()
+            && self.extensions.is_none()
+            && self.extras.is_none()
+            && self.custom_builtins.is_none()
+            && self.hints.is_none()
+            && self.inline_patterns.is_none()
+            && self.lint.is_none()
+    }
+}
+
 // ---------- Errors & warnings -----------------------------------------------
 
 #[derive(Debug, PartialEq)]

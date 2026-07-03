@@ -483,6 +483,15 @@ impl LanguageServer for Backend {
     /// and republish diagnostics so open files immediately reflect the new lint config.
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
         if let Ok(overlay) = serde_json::from_value::<crate::config::ConfigOverlay>(params.settings) {
+            // jinja-lsp-isj4: ConfigOverlay is all-Option with unknown fields ignored,
+            // so any JSON payload unrelated to jinja-lsp (or `{}`) deserializes to an
+            // empty overlay. Applying it would permanently discard the real
+            // initializationOptions overlay that's supposed to be re-applied after
+            // every jinja.toml reload (E15 §5.7) — skip instead of treating an empty
+            // payload as "clear every setting".
+            if overlay.is_empty() {
+                return;
+            }
             match self.state.write().await.apply_init_options(overlay) {
                 Ok(warnings) => {
                     for w in &warnings {
