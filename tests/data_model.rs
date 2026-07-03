@@ -581,10 +581,7 @@ fn jinja_lsp_izfw_workspace_wide_macro_fallback_is_deterministic() {
         idx.path = "a.html".into();
         idx
     };
-    let caller_idx = {
-        let idx = extract("{{ dup(1) }}");
-        idx
-    };
+    let caller_idx = { extract("{{ dup(1) }}") };
 
     // Insert "z.html" first to bias against alphabetical == insertion order.
     let mut ws = WorkspaceIndex::default();

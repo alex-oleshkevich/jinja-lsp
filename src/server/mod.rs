@@ -2295,6 +2295,14 @@ fn tokens_to_lsp_data(
     data
 }
 
+/// REQ-ARCH-02: run the LSP server over stdio with tracing to stderr only.
+pub async fn run_lsp_server() {
+    init_tracing();
+    let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
+    let (service, socket) = LspService::new(Backend::new);
+    Server::new(stdin, stdout, socket).serve(service).await;
+}
+
 #[cfg(test)]
 mod server_tests {
     use super::*;
@@ -2473,12 +2481,4 @@ mod server_tests {
             "byte col for 'foo' after non-ASCII 'café ' must be 6, not the raw UTF-16 char 5"
         );
     }
-}
-
-/// REQ-ARCH-02: run the LSP server over stdio with tracing to stderr only.
-pub async fn run_lsp_server() {
-    init_tracing();
-    let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
-    let (service, socket) = LspService::new(Backend::new);
-    Server::new(stdin, stdout, socket).serve(service).await;
 }

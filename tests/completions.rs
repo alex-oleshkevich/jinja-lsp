@@ -371,7 +371,7 @@ fn cmp08_filter_call_params_offered() {
     );
     // Must NOT be the full filter list
     assert!(
-        !labels.iter().any(|l| *l == "upper"),
+        !labels.contains(&"upper"),
         "full filter list must NOT be offered inside filter call: {labels:?}"
     );
 }

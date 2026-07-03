@@ -919,7 +919,14 @@ fn act10_t36_quickfix_kind_and_diagnostics_set() {
         severity: DiagnosticSeverity::Warning,
         message: "unused import 'shared'".to_owned(),
     };
-    let actions = code_actions(src, "t.html", &[diag.clone()], &idx, &no_ws(), &reg());
+    let actions = code_actions(
+        src,
+        "t.html",
+        std::slice::from_ref(&diag),
+        &idx,
+        &no_ws(),
+        &reg(),
+    );
     assert_eq!(actions.len(), 1);
     assert!(
         matches!(actions[0].kind, ActionKind::QuickFix),

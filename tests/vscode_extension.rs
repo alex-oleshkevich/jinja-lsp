@@ -20,15 +20,15 @@ fn vscode_activation_events_include_jinja_languages_and_config() {
         .collect();
 
     assert!(
-        events.iter().any(|&e| e == "onLanguage:jinja"),
+        events.contains(&"onLanguage:jinja"),
         "must activate on jinja"
     );
     assert!(
-        events.iter().any(|&e| e == "onLanguage:jinja-html"),
+        events.contains(&"onLanguage:jinja-html"),
         "must activate on jinja-html"
     );
     assert!(
-        events.iter().any(|&e| e == "workspaceContains:jinja.toml"),
+        events.contains(&"workspaceContains:jinja.toml"),
         "must activate when workspace has jinja.toml"
     );
 }

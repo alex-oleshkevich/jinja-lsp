@@ -163,7 +163,7 @@ fn jinja_lsp_tjr3_snap_end_does_not_over_expand_past_a_construct_that_opens_and_
     let opts = default_opts();
     let edits = format_range(source, 0, 0, opts);
     assert!(
-        edits.iter().all(|e| e.end_line <= 0),
+        edits.iter().all(|e| e.end_line == 0),
         "must not touch the later, unrelated multi-line tag when only line 0 is selected: {edits:?}"
     );
     assert!(

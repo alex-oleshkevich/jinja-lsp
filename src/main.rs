@@ -548,6 +548,141 @@ fn run_format(
     if changed_count > 0 { 1 } else { 0 }
 }
 
+/// REQ-LINT-04: rustc-style multi-line diagnostic block, with optional ANSI color.
+/// color=true: severity-colored code/caret, blue pipe/line-number; color=false: plain text.
+fn format_rich_diagnostic_colored(
+    d: &jinja_lsp::diagnostic::Diagnostic,
+    src_line: &str,
+    color: bool,
+) -> String {
+    use jinja_lsp::diagnostic::DiagnosticSeverity;
+    use owo_colors::OwoColorize;
+
+    let display_line = d.line + 1;
+    let display_col = d.col + 1;
+
+    // Apply severity color to a string slice when color is enabled.
+    let sev_color = |s: &str| -> String {
+        if !color {
+            return s.to_owned();
+        }
+        match d.severity {
+            DiagnosticSeverity::Error => s.red().bold().to_string(),
+            DiagnosticSeverity::Warning => s.yellow().bold().to_string(),
+            DiagnosticSeverity::Info => s.cyan().bold().to_string(),
+            DiagnosticSeverity::Hint => s.dimmed().to_string(),
+        }
+    };
+    let blue = |s: &str| -> String {
+        if color {
+            s.blue().to_string()
+        } else {
+            s.to_owned()
+        }
+    };
+    let msg_styled = if color {
+        d.message.bold().to_string()
+    } else {
+        d.message.clone()
+    };
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{}: {}\n",
+        sev_color(&format!("{} {}", d.code, d.slug)),
+        msg_styled
+    ));
+    out.push_str(&format!(
+        " --> {}:{}:{}\n",
+        d.file, display_line, display_col
+    ));
+
+    if !src_line.is_empty() {
+        let line_num = display_line.to_string();
+        let pad = " ".repeat(line_num.len());
+        let pipe = blue("|");
+        out.push_str(&format!("{pad} {pipe}\n"));
+        out.push_str(&format!("{} {pipe} {src_line}\n", blue(&line_num)));
+        let col = d.col as usize;
+        let after = src_line.get(col..).unwrap_or("");
+        let word_len = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+            .count()
+            .max(1);
+        let caret = "^".repeat(word_len);
+        let spaces = " ".repeat(col);
+        out.push_str(&format!("{pad} {pipe} {spaces}{}\n", sev_color(&caret)));
+        out.push('\n');
+    }
+    out
+}
+
+/// Testable no-color version for existing structural tests.
+#[cfg(test)]
+fn format_rich_diagnostic_for_source(
+    d: &jinja_lsp::diagnostic::Diagnostic,
+    src_line: &str,
+) -> String {
+    format_rich_diagnostic_colored(d, src_line, false)
+}
+
+fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_template_files(&path, exts, out);
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if exts.contains(&ext) {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// Build a unified-diff string for path.  Both tests and the print path share this logic.
+fn build_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -> String {
+    use similar::{ChangeTag, TextDiff};
+    let diff = TextDiff::from_lines(original, formatted);
+    let display = path.display();
+    let mut out = format!("--- {display}\n+++ {display} (formatted)\n");
+    for group in diff.grouped_ops(3) {
+        let first = group.first().unwrap();
+        let last = group.last().unwrap();
+        let old_range = first.old_range().start..last.old_range().end;
+        let new_range = first.new_range().start..last.new_range().end;
+        out.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            old_range.start + 1,
+            old_range.len(),
+            new_range.start + 1,
+            new_range.len(),
+        ));
+        for op in &group {
+            for change in diff.iter_changes(op) {
+                let prefix = match change.tag() {
+                    ChangeTag::Delete => '-',
+                    ChangeTag::Insert => '+',
+                    ChangeTag::Equal => ' ',
+                };
+                out.push(prefix);
+                out.push_str(&change.to_string());
+                if change.missing_newline() {
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}
+
+fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
+    print!("{}", build_unified_diff(path, original, formatted));
+}
+
 #[cfg(test)]
 mod cli_tests {
     use super::*;
@@ -791,139 +926,4 @@ mod cli_tests {
         assert!(out.contains("my message"), "message must be present: {out}");
         assert!(!out.contains(''), "must not have ANSI escapes: {:?}", out);
     }
-}
-
-/// REQ-LINT-04: rustc-style multi-line diagnostic block, with optional ANSI color.
-/// color=true: severity-colored code/caret, blue pipe/line-number; color=false: plain text.
-fn format_rich_diagnostic_colored(
-    d: &jinja_lsp::diagnostic::Diagnostic,
-    src_line: &str,
-    color: bool,
-) -> String {
-    use jinja_lsp::diagnostic::DiagnosticSeverity;
-    use owo_colors::OwoColorize;
-
-    let display_line = d.line + 1;
-    let display_col = d.col + 1;
-
-    // Apply severity color to a string slice when color is enabled.
-    let sev_color = |s: &str| -> String {
-        if !color {
-            return s.to_owned();
-        }
-        match d.severity {
-            DiagnosticSeverity::Error => s.red().bold().to_string(),
-            DiagnosticSeverity::Warning => s.yellow().bold().to_string(),
-            DiagnosticSeverity::Info => s.cyan().bold().to_string(),
-            DiagnosticSeverity::Hint => s.dimmed().to_string(),
-        }
-    };
-    let blue = |s: &str| -> String {
-        if color {
-            s.blue().to_string()
-        } else {
-            s.to_owned()
-        }
-    };
-    let msg_styled = if color {
-        d.message.bold().to_string()
-    } else {
-        d.message.clone()
-    };
-
-    let mut out = String::new();
-    out.push_str(&format!(
-        "{}: {}\n",
-        sev_color(&format!("{} {}", d.code, d.slug)),
-        msg_styled
-    ));
-    out.push_str(&format!(
-        " --> {}:{}:{}\n",
-        d.file, display_line, display_col
-    ));
-
-    if !src_line.is_empty() {
-        let line_num = display_line.to_string();
-        let pad = " ".repeat(line_num.len());
-        let pipe = blue("|");
-        out.push_str(&format!("{pad} {pipe}\n"));
-        out.push_str(&format!("{} {pipe} {src_line}\n", blue(&line_num)));
-        let col = d.col as usize;
-        let after = src_line.get(col..).unwrap_or("");
-        let word_len = after
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
-            .count()
-            .max(1);
-        let caret = "^".repeat(word_len);
-        let spaces = " ".repeat(col);
-        out.push_str(&format!("{pad} {pipe} {spaces}{}\n", sev_color(&caret)));
-        out.push('\n');
-    }
-    out
-}
-
-/// Testable no-color version for existing structural tests.
-#[cfg(test)]
-fn format_rich_diagnostic_for_source(
-    d: &jinja_lsp::diagnostic::Diagnostic,
-    src_line: &str,
-) -> String {
-    format_rich_diagnostic_colored(d, src_line, false)
-}
-
-fn collect_template_files(dir: &std::path::Path, exts: &[&str], out: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_template_files(&path, exts, out);
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if exts.contains(&ext) {
-                out.push(path);
-            }
-        }
-    }
-}
-
-/// Build a unified-diff string for path.  Both tests and the print path share this logic.
-fn build_unified_diff(path: &std::path::Path, original: &str, formatted: &str) -> String {
-    use similar::{ChangeTag, TextDiff};
-    let diff = TextDiff::from_lines(original, formatted);
-    let display = path.display();
-    let mut out = format!("--- {display}\n+++ {display} (formatted)\n");
-    for group in diff.grouped_ops(3) {
-        let first = group.first().unwrap();
-        let last = group.last().unwrap();
-        let old_range = first.old_range().start..last.old_range().end;
-        let new_range = first.new_range().start..last.new_range().end;
-        out.push_str(&format!(
-            "@@ -{},{} +{},{} @@\n",
-            old_range.start + 1,
-            old_range.len(),
-            new_range.start + 1,
-            new_range.len(),
-        ));
-        for op in &group {
-            for change in diff.iter_changes(op) {
-                let prefix = match change.tag() {
-                    ChangeTag::Delete => '-',
-                    ChangeTag::Insert => '+',
-                    ChangeTag::Equal => ' ',
-                };
-                out.push(prefix);
-                out.push_str(&change.to_string());
-                if change.missing_newline() {
-                    out.push('\n');
-                }
-            }
-        }
-    }
-    out
-}
-
-fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
-    print!("{}", build_unified_diff(path, original, formatted));
 }

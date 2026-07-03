@@ -142,7 +142,7 @@ fn sem04_macro_call_is_macro_defined_user() {
         .filter(|t| t.token_type == TT_MACRO && t.token_modifiers == MOD_DEFINED | MOD_USER)
         .collect();
     assert!(
-        call_toks.len() >= 1,
+        !call_toks.is_empty(),
         "macro call must be tokenized as macro {{defined, user}}"
     );
 }

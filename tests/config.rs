@@ -469,8 +469,10 @@ fn ci5n_from_file_returns_error_for_missing_file() {
 #[test]
 fn config_delta_registry_changed_when_extras_differ() {
     let old = JinjaConfig::default();
-    let mut new = JinjaConfig::default();
-    new.extras = vec!["starlette".to_owned()];
+    let new = JinjaConfig {
+        extras: vec!["starlette".to_owned()],
+        ..Default::default()
+    };
     let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(registry_changed, "extras change must set registry_changed");
     assert!(
@@ -482,8 +484,10 @@ fn config_delta_registry_changed_when_extras_differ() {
 #[test]
 fn config_delta_registry_changed_when_custom_builtins_differ() {
     let old = JinjaConfig::default();
-    let mut new = JinjaConfig::default();
-    new.custom_builtins = vec!["/some/dir".to_owned()];
+    let new = JinjaConfig {
+        custom_builtins: vec!["/some/dir".to_owned()],
+        ..Default::default()
+    };
     let (registry_changed, _) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(
         registry_changed,
@@ -494,8 +498,10 @@ fn config_delta_registry_changed_when_custom_builtins_differ() {
 #[test]
 fn config_delta_registry_changed_when_hints_differ() {
     let old = JinjaConfig::default();
-    let mut new = JinjaConfig::default();
-    new.hints = vec!["/hints/dir".to_owned()];
+    let new = JinjaConfig {
+        hints: vec!["/hints/dir".to_owned()],
+        ..Default::default()
+    };
     let (registry_changed, _) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(registry_changed, "hints change must set registry_changed");
 }
@@ -503,8 +509,10 @@ fn config_delta_registry_changed_when_hints_differ() {
 #[test]
 fn config_delta_workspace_changed_when_templates_differ() {
     let old = JinjaConfig::default();
-    let mut new = JinjaConfig::default();
-    new.templates_raw = vec!["templates".to_owned()];
+    let new = JinjaConfig {
+        templates_raw: vec!["templates".to_owned()],
+        ..Default::default()
+    };
     let (registry_changed, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(
         workspace_changed,
@@ -519,8 +527,10 @@ fn config_delta_workspace_changed_when_templates_differ() {
 #[test]
 fn config_delta_workspace_changed_when_extensions_differ() {
     let old = JinjaConfig::default();
-    let mut new = JinjaConfig::default();
-    new.extensions = vec!["html".to_owned(), "jinja".to_owned()];
+    let new = JinjaConfig {
+        extensions: vec!["html".to_owned(), "jinja".to_owned()],
+        ..Default::default()
+    };
     let (_, workspace_changed) = jinja_lsp::server::state::config_delta(&old, &new);
     assert!(
         workspace_changed,
@@ -577,10 +587,12 @@ fn reload_config_selective_skips_registry_rebuild_for_lint_only_change() {
     );
 
     // Reload with a config that only changes lint (not extras/custom_builtins/hints).
-    let mut new_cfg = JinjaConfig::default();
-    new_cfg.lint = LintConfig {
-        select: vec!["JINJA-E101".to_owned()],
-        ignore: vec![],
+    let new_cfg = JinjaConfig {
+        lint: LintConfig {
+            select: vec!["JINJA-E101".to_owned()],
+            ignore: vec![],
+        },
+        ..Default::default()
     };
     let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
 
@@ -621,8 +633,10 @@ fn reload_config_selective_rebuilds_registry_when_extras_change() {
     };
     state.registry.insert(sentinel);
 
-    let mut new_cfg = JinjaConfig::default();
-    new_cfg.extras = vec!["starlette".to_owned()];
+    let new_cfg = JinjaConfig {
+        extras: vec!["starlette".to_owned()],
+        ..Default::default()
+    };
     let (registry_rebuilt, _) = state.reload_config_selective(new_cfg);
 
     assert!(

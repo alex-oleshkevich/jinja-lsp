@@ -205,10 +205,12 @@ fn server_state_populates_inline_ranges_on_update_file() {
     use jinja_lsp::config::JinjaConfig;
     use jinja_lsp::server::state::ServerState;
 
-    let mut cfg = JinjaConfig::default();
-    cfg.inline_patterns = vec!["render_tpl".to_owned()];
     // Mark .py files as host files (not in extensions)
-    cfg.extensions = vec!["html".to_owned()];
+    let cfg = JinjaConfig {
+        inline_patterns: vec!["render_tpl".to_owned()],
+        extensions: vec!["html".to_owned()],
+        ..Default::default()
+    };
 
     let mut state = ServerState::with_config(cfg);
     let source = r#"x = render_tpl("{{ user }}")"#;

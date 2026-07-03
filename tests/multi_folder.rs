@@ -56,8 +56,10 @@ fn server_state_routes_update_to_correct_folder() {
     let folder_a = fixture_dir("state_a");
     let folder_b = fixture_dir("state_b");
 
-    let mut cfg_b = jinja_lsp::config::JinjaConfig::default();
-    cfg_b.extras = vec!["starlette".to_owned()];
+    let cfg_b = jinja_lsp::config::JinjaConfig {
+        extras: vec!["starlette".to_owned()],
+        ..Default::default()
+    };
     let registry_b = ServerState::build_registry(&cfg_b);
 
     let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());

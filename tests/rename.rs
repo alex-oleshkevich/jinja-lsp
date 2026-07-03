@@ -516,7 +516,7 @@ fn act11_workspace_block_rename_excludes_unrelated_template_sharing_the_name() {
     let we = edit.expect("expected a WorkspaceEdit");
 
     assert!(
-        we.changes.get("other.html").is_none(),
+        !we.changes.contains_key("other.html"),
         "unrelated other.html must not be touched by a.html's block rename: {:?}",
         we.changes.get("other.html")
     );

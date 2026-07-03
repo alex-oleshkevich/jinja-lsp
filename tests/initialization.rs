@@ -34,8 +34,10 @@ fn state_apply_init_options_overrides_per_key() {
 
 #[test]
 fn state_overlay_absent_key_keeps_existing_value() {
-    let mut cfg = JinjaConfig::default();
-    cfg.extensions = vec!["html".to_owned()];
+    let cfg = JinjaConfig {
+        extensions: vec!["html".to_owned()],
+        ..Default::default()
+    };
     let mut state = ServerState::with_config(cfg);
     let overlay = ConfigOverlay {
         extensions: None, // not overriding
@@ -238,8 +240,10 @@ fn state_registry_loads_custom_builtins_from_config() {
     )
     .unwrap();
 
-    let mut cfg = JinjaConfig::default();
-    cfg.custom_builtins = vec![dir.path().to_string_lossy().to_string()];
+    let cfg = JinjaConfig {
+        custom_builtins: vec![dir.path().to_string_lossy().to_string()],
+        ..Default::default()
+    };
 
     let state = ServerState::with_config(cfg);
 
@@ -294,8 +298,10 @@ fn state_registry_rebuilt_on_apply_init_options() {
 #[test]
 fn with_config_extras_loads_pack_entries_into_registry() {
     // config.extras = ["starlette"] → build_registry must call load_packs.
-    let mut cfg = JinjaConfig::default();
-    cfg.extras = vec!["starlette".to_owned()];
+    let cfg = JinjaConfig {
+        extras: vec!["starlette".to_owned()],
+        ..Default::default()
+    };
     let state = ServerState::with_config(cfg);
     assert!(
         state.registry.get(Category::Function, "url_for").is_some(),
@@ -338,8 +344,10 @@ fn with_config_hints_dir_loads_hints_into_registry() {
     )
     .unwrap();
 
-    let mut cfg = JinjaConfig::default();
-    cfg.hints = vec![dir.path().to_string_lossy().to_string()];
+    let cfg = JinjaConfig {
+        hints: vec![dir.path().to_string_lossy().to_string()],
+        ..Default::default()
+    };
     let state = ServerState::with_config(cfg);
 
     assert!(
@@ -432,8 +440,10 @@ fn state_reset_config_updates_config_and_registry() {
         "filter must not exist before reset_config"
     );
 
-    let mut new_cfg = JinjaConfig::default();
-    new_cfg.custom_builtins = vec![dir.path().to_string_lossy().to_string()];
+    let new_cfg = JinjaConfig {
+        custom_builtins: vec![dir.path().to_string_lossy().to_string()],
+        ..Default::default()
+    };
     state.reset_config(new_cfg.clone());
 
     assert_eq!(
@@ -452,8 +462,10 @@ fn state_reset_config_updates_config_and_registry() {
 #[test]
 fn state_reset_config_then_overlay_applies_on_top() {
     let mut state = ServerState::with_config(JinjaConfig::default());
-    let mut base_cfg = JinjaConfig::default();
-    base_cfg.extensions = vec!["html".to_owned()];
+    let base_cfg = JinjaConfig {
+        extensions: vec!["html".to_owned()],
+        ..Default::default()
+    };
     state.reset_config(base_cfg);
 
     // Overlay should add extras on top of the reset config
