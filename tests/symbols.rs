@@ -216,6 +216,38 @@ fn sym02_sibling_macros_do_not_nest() {
 }
 
 #[test]
+fn jinja_lsp_lrcm_two_same_named_macros_are_both_top_level_siblings() {
+    // jinja-lsp-lrcm: full_tag_span matched by name alone, so it always found the
+    // FIRST tag named "dup" — both index entries mapped to the identical span,
+    // and build_tree's containment fold nested one duplicate inside the other
+    // instead of keeping them as two sibling top-level symbols.
+    let src = "{% macro dup() %}a{% endmacro %}{% macro dup() %}b{% endmacro %}";
+    let idx = extract(src);
+    assert_eq!(idx.macros.len(), 2, "extractor must index both occurrences: {:?}", idx.macros);
+    let syms = document_symbols(src, &idx);
+    let dups: Vec<_> = syms.iter().filter(|s| s.name == "dup").collect();
+    assert_eq!(dups.len(), 2, "both same-named macros must appear as top-level symbols: {syms:?}");
+    assert_ne!(
+        dups[0].range.start_byte, dups[1].range.start_byte,
+        "the two occurrences must have distinct spans: {syms:?}"
+    );
+}
+
+#[test]
+fn jinja_lsp_lrcm_two_same_named_blocks_are_both_top_level_siblings() {
+    let src = "{% block dup %}a{% endblock %}{% block dup %}b{% endblock %}";
+    let idx = extract(src);
+    assert_eq!(idx.blocks.len(), 2, "extractor must index both occurrences: {:?}", idx.blocks);
+    let syms = document_symbols(src, &idx);
+    let dups: Vec<_> = syms.iter().filter(|s| s.name == "dup").collect();
+    assert_eq!(dups.len(), 2, "both same-named blocks must appear as top-level symbols: {syms:?}");
+    assert_ne!(
+        dups[0].range.start_byte, dups[1].range.start_byte,
+        "the two occurrences must have distinct spans: {syms:?}"
+    );
+}
+
+#[test]
 fn sym02_deeply_nested_block_macro_block() {
     let src = "{% block outer %}{% macro mid() %}{% block inner %}x{% endblock %}{% endmacro %}{% endblock %}";
     let idx = extract(src);

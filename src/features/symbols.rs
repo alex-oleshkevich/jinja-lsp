@@ -114,7 +114,7 @@ fn collect_flat(source: &str, index: &TemplateIndex) -> Vec<FlatNode> {
 
     // Blocks → Class (REQ-SYM-01).
     for b in &index.blocks {
-        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Block, &b.name) {
+        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Block, &b.name, b.span.start_byte) {
             let (start, end) = full;
             flat.push(FlatNode {
                 start_byte: start,
@@ -147,7 +147,7 @@ fn collect_flat(source: &str, index: &TemplateIndex) -> Vec<FlatNode> {
 
     // Macros → Function (REQ-SYM-01).
     for m in &index.macros {
-        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Macro, &m.name) {
+        if let Some(full) = full_tag_span(&tags, &full_extents, TagKind::Macro, &m.name, m.span.start_byte) {
             let (start, end) = full;
             flat.push(FlatNode {
                 start_byte: start,
@@ -572,17 +572,25 @@ fn compute_full_extents(tags: &[TagInfo]) -> HashMap<usize, usize> {
     result
 }
 
-/// Look up the full byte range `(open_start, close_end)` for the first tag
-/// matching `(kind, name)` that has a full extent recorded.
+/// Look up the full byte range `(open_start, close_end)` for the tag matching
+/// `(kind, name)` that actually opens at `entry_start` — the index entry's own
+/// span, which covers just the opening keyword+name (e.g. "block foo") and so
+/// falls inside `[tag.start_byte, tag.end_byte)` for exactly one occurrence.
+///
+/// jinja-lsp-lrcm: matching by name alone always returned the FIRST same-named
+/// tag, so two macros/blocks sharing a name collapsed onto one identical span.
+/// Matching positionally (by containment) disambiguates each occurrence.
 fn full_tag_span(
     tags: &[TagInfo],
     full_extents: &HashMap<usize, usize>,
     kind: TagKind,
     name: &str,
+    entry_start: usize,
 ) -> Option<(usize, usize)> {
     tags.iter()
         .filter(|t| !t.is_close && t.kind == kind && t.name == name)
-        .find_map(|t| full_extents.get(&t.start_byte).map(|&end| (t.start_byte, end)))
+        .find(|t| t.start_byte <= entry_start && entry_start < t.end_byte)
+        .and_then(|t| full_extents.get(&t.start_byte).map(|&end| (t.start_byte, end)))
 }
 
 /// Build a `Span` from raw byte offsets, computing line/col from `source`.
