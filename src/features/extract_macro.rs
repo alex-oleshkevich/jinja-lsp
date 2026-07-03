@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::edit::{TextEdit, WorkspaceEdit};
+use crate::features::wrap::selection_is_well_formed;
 
 pub fn layer_name() -> &'static str {
     "extract_macro"
@@ -20,6 +21,20 @@ pub fn compute_extract_macro(
     end_line: u32,
     macro_name: &str,
 ) -> Option<WorkspaceEdit> {
+    // jinja-lsp-ifrq: the server executes this command with client-supplied line
+    // numbers and no other validation. Reject an inverted or out-of-bounds range
+    // (rather than silently producing an empty-body macro plus an edit addressing
+    // nonexistent lines), and reuse the same well-formedness check the code-action
+    // path already gates on so a selection that splits a Jinja tag is rejected too.
+    //
+    // The inverted-range check must be explicit: `Vec::get` on an inverted
+    // `RangeInclusive` (e.g. `1..=0`) returns `Some(&[])`, not `None`, so
+    // selection_is_well_formed alone would treat it as a vacuously "balanced"
+    // (empty) selection rather than rejecting it.
+    if start_line > end_line || !selection_is_well_formed(source, start_line, end_line) {
+        return None;
+    }
+
     let source_lines: Vec<&str> = source.split('\n').collect();
 
     // Extract the selected lines as the macro body.
