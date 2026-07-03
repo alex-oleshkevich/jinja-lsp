@@ -951,7 +951,13 @@ fn do_template_refs(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIn
             }
         }
 
-        idx.template_refs.extend(inc_map.into_values());
+        // jinja-lsp-mojm: sort by statement start_byte (document order) before
+        // extending — HashMap::into_values() has no stable order, so consumers that
+        // iterate template_refs (e.g. missing-template checks) would otherwise see
+        // include diagnostics in an unstable order across runs. Matches do_from_imports.
+        let mut keys: Vec<usize> = inc_map.keys().cloned().collect();
+        keys.sort_unstable();
+        idx.template_refs.extend(keys.into_iter().map(|k| inc_map.remove(&k).expect("key from inc_map")));
     }
 }
 

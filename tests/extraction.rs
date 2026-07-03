@@ -208,3 +208,29 @@ fn jinja_lsp_smvv_real_set_block_still_extracted() {
         index.variables
     );
 }
+
+#[test]
+fn jinja_lsp_mojm_include_template_refs_are_in_document_order() {
+    // jinja-lsp-mojm: include TemplateReferences were accumulated in a HashMap and
+    // appended via into_values(), so their order in idx.template_refs varied run to
+    // run — any consumer iterating template_refs (e.g. missing-template checks)
+    // could produce diagnostics in unstable order. Includes must come out sorted by
+    // where they appear in the source.
+    let source = concat!(
+        r#"{% include "a.html" %}"#,
+        r#"{% include "b.html" %}"#,
+        r#"{% include "c.html" %}"#,
+        r#"{% include "d.html" %}"#,
+        r#"{% include "e.html" %}"#,
+    );
+    let index = extract(source);
+    let include_paths: Vec<&str> = index.template_refs.iter()
+        .filter(|r| r.kind == TemplateRefKind::Include)
+        .map(|r| r.path.as_str())
+        .collect();
+    assert_eq!(
+        include_paths,
+        vec!["a.html", "b.html", "c.html", "d.html", "e.html"],
+        "include template_refs must be in document order: {include_paths:?}"
+    );
+}
