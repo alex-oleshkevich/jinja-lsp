@@ -507,10 +507,16 @@ impl LanguageServer for Backend {
         self.publish_file_diagnostics(&key).await;
     }
 
-    /// REQ-ARCH-05: change triggers Pass 1 (full-sync, newest content wins).
+    /// REQ-ARCH-05 / REQ-EDIT-11: change triggers Pass 1 (full-sync, newest content wins).
+    /// Only for documents did_open already accepted (tracked in `state.sources`) — a
+    /// document did_open rejected for languageId must not get indexed on its first edit.
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.into_iter().last() {
             let key = Self::uri_to_key(&params.text_document.uri);
+            let tracked = self.state.read().await.sources.contains_key(&key);
+            if !tracked {
+                return;
+            }
             self.pass1(&key, &change.text).await;
             self.publish_file_diagnostics(&key).await;
         }

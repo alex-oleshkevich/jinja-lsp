@@ -49,6 +49,43 @@ async def test_did_open_does_not_crash(client):
 
 
 @pytest.mark.asyncio
+async def test_did_change_ignores_document_rejected_by_did_open(client):
+    """jinja-lsp-n38o / REQ-EDIT-11: did_open rejects non-jinja/jinja-html languageIds,
+    but did_change unconditionally ran Pass 1 for any URI. A document the server
+    explicitly declined at open must not get indexed and linted on its first edit.
+    """
+    unclosed = FIXTURES / "syntax-errors" / "templates" / "unclosed_tag.html"
+    uri = unclosed.as_uri()
+    client.text_document_did_open(
+        lsp.DidOpenTextDocumentParams(
+            text_document=lsp.TextDocumentItem(
+                uri=uri,
+                language_id="html",  # not "jinja"/"jinja-html" — did_open must reject this
+                version=1,
+                text=unclosed.read_text(),
+            )
+        )
+    )
+    # Edit the still-broken content — if did_change indexed it despite the languageId
+    # rejection, this content is guaranteed to produce a JINJA-E001 diagnostic.
+    client.text_document_did_change(
+        lsp.DidChangeTextDocumentParams(
+            text_document=lsp.VersionedTextDocumentIdentifier(uri=uri, version=2),
+            content_changes=[
+                lsp.TextDocumentContentChangeWholeDocument(text=unclosed.read_text())
+            ],
+        )
+    )
+    # Give the server a moment to (incorrectly) process the change, if it were going to.
+    import asyncio
+    await asyncio.sleep(0.3)
+    assert uri not in client.diagnostics or list(client.diagnostics[uri]) == [], (
+        f"document rejected at did_open must not be indexed/linted by did_change: "
+        f"{client.diagnostics.get(uri)}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_did_close_does_not_crash(client):
     """REQ-ARCH-05: didClose is handled; file stays indexed."""
     base = FIXTURES / "starlette-blog" / "templates" / "base.html"
