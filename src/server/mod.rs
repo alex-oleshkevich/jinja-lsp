@@ -936,21 +936,7 @@ impl LanguageServer for Backend {
         // Convert LSP diagnostics to internal ones.
         let diags: Vec<crate::diagnostic::Diagnostic> = params.context.diagnostics
             .iter()
-            .filter_map(|d| {
-                let code = match &d.code {
-                    Some(NumberOrString::String(s)) => s.clone(),
-                    _ => return None,
-                };
-                Some(crate::diagnostic::Diagnostic {
-                    code,
-                    slug: String::new(),
-                    message: d.message.clone(),
-                    file: key.clone(),
-                    line: d.range.start.line,
-                    col: d.range.start.character,
-                    severity: crate::diagnostic::DiagnosticSeverity::Warning,
-                })
-            })
+            .filter_map(|d| from_lsp_diagnostic(d, &key, &source, utf8))
             .collect();
 
         let mut actions = code_actions(&source, &key, &diags, &index, &workspace, &registry);
@@ -1338,6 +1324,31 @@ fn to_lsp_action(
         disabled: None,
         data: None,
     }
+}
+
+/// Convert an LSP diagnostic (UTF-16 `character` column) back into an internal
+/// diagnostic (byte column), so code-action handlers that build TextEdits from
+/// `diag.col` land at the right byte offset on lines with non-ASCII text.
+fn from_lsp_diagnostic(
+    d: &LspDiagnostic,
+    key: &str,
+    source: &str,
+    utf8: bool,
+) -> Option<crate::diagnostic::Diagnostic> {
+    let code = match &d.code {
+        Some(NumberOrString::String(s)) => s.clone(),
+        _ => return None,
+    };
+    let byte_col = lsp_char_to_byte_col(source_line(source, d.range.start.line), d.range.start.character, utf8);
+    Some(crate::diagnostic::Diagnostic {
+        code,
+        slug: String::new(),
+        message: d.message.clone(),
+        file: key.to_owned(),
+        line: d.range.start.line,
+        col: byte_col,
+        severity: crate::diagnostic::DiagnosticSeverity::Warning,
+    })
 }
 
 fn to_lsp_diagnostic(source: &str, utf8: bool, d: &crate::diagnostic::Diagnostic) -> LspDiagnostic {
@@ -1819,6 +1830,27 @@ mod server_tests {
 
         let lsp = to_lsp_action(action, "t.html", &HashMap::new(), true);
         assert!(lsp.diagnostics.is_none(), "refactor actions must not carry diagnostics");
+    }
+
+    // jinja-lsp-c8b7: from_lsp_diagnostic must convert the UTF-16 `character` column
+    // to a byte column so code-action handlers building TextEdits from diag.col land
+    // at the right offset on lines with non-ASCII text before the symbol.
+    #[test]
+    fn c8b7_from_lsp_diagnostic_converts_utf16_col_to_byte_col() {
+        // "café " is 5 chars / 6 bytes (é is 2 bytes) — "foo" starts at UTF-16 char 5
+        // but byte 6.
+        let source = "café foo";
+        let lsp_diag = LspDiagnostic {
+            range: Range {
+                start: Position { line: 0, character: 5 },
+                end: Position { line: 0, character: 8 },
+            },
+            code: Some(NumberOrString::String("JINJA-E103".to_owned())),
+            message: "undefined function 'foo'".to_owned(),
+            ..Default::default()
+        };
+        let diag = from_lsp_diagnostic(&lsp_diag, "t.html", source, false).expect("code must be Some");
+        assert_eq!(diag.col, 6, "byte col for 'foo' after non-ASCII 'café ' must be 6, not the raw UTF-16 char 5");
     }
 }
 
