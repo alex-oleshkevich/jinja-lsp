@@ -146,7 +146,7 @@ fn check_e101(
         if let Some(entry) = registry.get(Category::ContextVariable, name) {
             let applies = match &entry.template {
                 None => true,
-                Some(t) => path == t.as_str() || path.ends_with(&format!("/{t}")),
+                Some(t) => path_matches_template_scope(path, t),
             };
             if applies {
                 continue;
@@ -230,7 +230,7 @@ fn check_w106(
         };
         // REQ-HINT-03: template scope — skip if this hint does not apply to the current file.
         if let Some(t) = &entry.template {
-            if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
+            if !path_matches_template_scope(path, t) {
                 continue;
             }
         }
@@ -260,7 +260,7 @@ fn check_w106(
             continue;
         };
         if let Some(t) = &entry.template {
-            if path != t.as_str() && !path.ends_with(&format!("/{t}")) {
+            if !path_matches_template_scope(path, t) {
                 continue;
             }
         }
@@ -462,6 +462,18 @@ fn attribute_parent(source: &str, attr_start_byte: usize) -> Option<&str> {
     } else {
         Some(parent)
     }
+}
+
+/// REQ-HINT-03/04: true when `path` (a workspace key — a real OS path on the
+/// server, or a relative Jinja key elsewhere) is the file a hinted
+/// `template:`-scoped registry entry applies to. `template_ref` is always a
+/// virtual, forward-slash Jinja template reference as written by the hint
+/// author — never a real OS path — so `path` is normalized before comparing;
+/// on Windows, `path` can contain '\\' separators that would otherwise never
+/// match a "/{template_ref}" suffix check.
+fn path_matches_template_scope(path: &str, template_ref: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized == template_ref || normalized.ends_with(&format!("/{template_ref}"))
 }
 
 // ── E102: undefined filter / E104: undefined test ─────────────────────────────

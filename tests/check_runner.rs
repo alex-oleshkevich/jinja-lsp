@@ -1078,6 +1078,28 @@ fn w106_scoped_hint_fires_only_in_scoped_template() {
     );
 }
 
+#[test]
+fn jinja_lsp_scoped_hint_matches_path_with_backslash_separators() {
+    // jinja-lsp: the hint's template-scope check compared `path` (a workspace
+    // key — a real OS path on the server) against a suffix "/{template_ref}",
+    // where template_ref is always a forward-slash Jinja path as written by the
+    // hint author. On Windows, `path` can contain '\\' separators, so
+    // "...\\blog\\detail.html".ends_with("/blog/detail.html") never matched —
+    // the hint silently stopped applying. Reproduce with a literal backslash
+    // path even on Linux, to prove the fix is platform-independent.
+    let src = "{{ post.autor }}";
+    let idx = extract(src);
+    let ws = ws_with(&[("detail.html", src)]);
+    let reg =
+        registry_with_scoped_context_var_attrs("post", "blog/detail.html", &["title", "slug"]);
+
+    let diags = run_checks(src, r"C:\workspace\blog\detail.html", &idx, &reg, &ws);
+    assert!(
+        diags.iter().any(|d| d.code == "JINJA-W106"),
+        "W106 must fire when path uses backslash separators but still names the scoped template: {diags:?}"
+    );
+}
+
 // ─── W106: subscript access (jinja-lsp-4x6i) ─────────────────────────────────
 
 #[test]
