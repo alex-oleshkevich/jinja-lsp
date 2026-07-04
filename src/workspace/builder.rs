@@ -33,7 +33,13 @@ pub fn build_workspace(templates_dirs: &[&Path], extensions: &[&str]) -> Workspa
 fn relative_key(abs_path: &Path, templates_dirs: &[&Path]) -> Option<String> {
     for dir in templates_dirs {
         if let Ok(rel) = abs_path.strip_prefix(dir) {
-            return Some(rel.to_string_lossy().into_owned());
+            // Jinja template paths are virtual, forward-slash paths (as written in
+            // {% extends %}/{% include %}) — not real OS paths. On Windows,
+            // Path::to_string_lossy() preserves the native '\' separator, which
+            // then fails every '/'-based check downstream (folder-grouping in
+            // completions, relative_path comparisons, …). Normalize here, once,
+            // at the source of every relative_path in the workspace.
+            return Some(rel.to_string_lossy().replace('\\', "/"));
         }
     }
     None
