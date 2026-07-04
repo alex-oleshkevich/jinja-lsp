@@ -3,6 +3,8 @@
 /editors/zed/target/
 node_modules/
 /editors/vscode/out/
+__pycache__/
+.pytest_cache/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
