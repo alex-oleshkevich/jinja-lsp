@@ -103,7 +103,7 @@ language-servers = ["jinja-lsp"]
 
 ### Zed
 
-Install from the Zed extensions panel (`Cmd+Shift+X`) — search for **jinja-lsp** and click Install. It activates automatically for Jinja and HTML templates.
+Install from the Zed extensions panel (`Cmd+Shift+X`) — search for **Jinja Plus** and click Install (extension id `jinja-plus` — `jinja-lsp` was already taken on Zed's marketplace). It activates automatically for Jinja and HTML templates.
 
 To control server order alongside other language servers or pass initialization options, add to `~/.config/zed/settings.json` (the language-server id is `jinja2-lsp` and the language is `Jinja2 (HTML)`):
 
