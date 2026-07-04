@@ -311,10 +311,17 @@ fn run_check(
 
     // REQ-LINT-10: normalize absolute file path to workspace-relative with forward slashes.
     // For files outside all roots the absolute path is kept (as-is).
+    //
+    // Canonicalize the incoming path before comparing against roots_canon — on
+    // macOS, $TMPDIR resolves through a /var -> /private/var symlink, so an
+    // uncanonicalized `/var/folders/...` path from the workspace index would
+    // never strip_prefix-match a canonicalized `/private/var/folders/...` root,
+    // silently falling through to "keep the absolute path" for every finding.
     let normalize_path = |abs: &str| -> String {
         let p = Path::new(abs);
+        let p_canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
         for root in &roots_canon {
-            if let Ok(rel) = p.strip_prefix(root) {
+            if let Ok(rel) = p_canon.strip_prefix(root) {
                 return rel.to_string_lossy().replace('\\', "/");
             }
         }

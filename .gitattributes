@@ -1,0 +1,5 @@
+# Force LF line endings on checkout, even on Windows. Several tests use
+# include_str!(...) combined with literal "\n" in search strings (structural
+# checks over this project's own source); CRLF checkouts silently break those
+# matches on Windows CI without this.
+* text=auto eol=lf

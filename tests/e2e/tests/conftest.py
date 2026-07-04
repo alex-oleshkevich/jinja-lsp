@@ -3,12 +3,16 @@
 REQ-ARCH-04, REQ-ARCH-05, REQ-ARCH-06, REQ-ARCH-08 are verified here.
 """
 import asyncio
+import os
 from pathlib import Path
 
 import pytest_lsp
 from lsprotocol import types as lsp
 
-BINARY = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "jinja-lsp"
+# CI builds a --release binary and points JINJA_LSP_BINARY at it (see
+# .github/workflows/ci.yml); fall back to the debug binary for local runs.
+BINARY = Path(os.environ["JINJA_LSP_BINARY"]) if "JINJA_LSP_BINARY" in os.environ \
+    else Path(__file__).parent.parent.parent.parent / "target" / "debug" / "jinja-lsp"
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 
 
