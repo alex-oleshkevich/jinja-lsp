@@ -266,7 +266,9 @@ jobs:
             aur/PKGBUILD > /tmp/PKGBUILD
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4
+        # v4 alone doesn't resolve — this action only publishes exact-version
+        # tags (v4.1.3), not a floating major-version alias like actions/checkout@v4.
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: jinja-lsp-bin
           pkgbuild: /tmp/PKGBUILD
