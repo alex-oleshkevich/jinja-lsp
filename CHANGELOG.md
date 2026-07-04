@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 ## [Unreleased]
 
+### Removed
+- VS Code extension (`editors/vscode/`) and its VS Code Marketplace release step.
+- crates.io publish step — the `jinja-lsp` name there belongs to an unrelated
+  project, and `tree-sitter-jinja`/`tree-sitter-jinja-inline` are git
+  dependencies (crates.io requires a version requirement), so it never
+  actually published anything.
+
+### Changed
+- AUR publishing (`jinja-lsp-bin`) now uses plain `git`/`ssh` against
+  `aur.archlinux.org` directly instead of a third-party GitHub Action.
+
 <!-- Add entries above this line when cutting a release -->
 
 ## [0.1.0] - 2026-07-03

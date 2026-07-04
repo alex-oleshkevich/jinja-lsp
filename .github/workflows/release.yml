@@ -174,7 +174,7 @@ jobs:
           name: wheel-${{ matrix.target }}
           path: dist/*.whl
 
-  # REQ-REL-06/14: publish to four channels in order: GitHub Release → crates.io → PyPI → VS Code.
+  # REQ-REL-06/14: publish to GitHub Release, then PyPI.
   publish:
     name: Publish
     needs: [build, wheels]
@@ -193,25 +193,10 @@ jobs:
           files: artifacts/binary-*/*
           generate_release_notes: true
 
-      # REQ-REL-14: 2) crates.io.
-      # NOTE: crates.io rejects git dependencies, and tree-sitter-jinja(-inline)
-      # here are pinned via `git = ...` to a specific grammar-repo revision, not
-      # a published crates.io version — `cargo publish` will fail on that until
-      # the grammar is published separately and Cargo.toml switches to a version
-      # dependency. continue-on-error keeps that failure from blocking PyPI/VS
-      # Code/AUR, which don't share this constraint.
-      - uses: dtolnay/rust-toolchain@stable
-      # REQ-REL-12: --locked ensures grammar dependency matches committed Cargo.lock.
-      - name: Publish to crates.io
-        continue-on-error: true
-        run: cargo publish --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      # REQ-REL-14: 3) PyPI. continue-on-error: true so a PyPI-side config issue
+      # REQ-REL-14: 2) PyPI. continue-on-error: true so a PyPI-side config issue
       # (e.g. trusted publisher not yet set up on pypi.org) can't abort the job
-      # before VS Code Marketplace runs — each of these four channels is
-      # independent and one failing must not silently skip the rest.
+      # before AUR runs — each channel is independent and one failing must not
+      # silently skip the rest.
       - name: Collect wheels
         run: |
           mkdir -p dist
@@ -222,24 +207,12 @@ jobs:
         with:
           packages-dir: dist/
 
-      # REQ-REL-14: 4) VS Code Marketplace.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Publish to VS Code Marketplace
-        continue-on-error: true
-        working-directory: editors/vscode
-        run: |
-          npm ci
-          npx vsce publish --no-dependencies
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
-  # REQ-REL-14: 5) AUR (jinja-lsp-bin) — depends on `publish` so the GitHub Release
-  # (and its checksummed binaries) exists before the AUR package references it.
-  # Requires repo secrets AUR_USERNAME, AUR_EMAIL, AUR_SSH_PRIVATE_KEY (an SSH
-  # keypair registered against an AUR account with the jinja-lsp-bin package
-  # reserved) — see aur/README.md for setup.
+  # REQ-REL-14: 3) AUR (jinja-lsp-bin) — depends on `publish` so the GitHub
+  # Release (and its checksummed binaries) exists before the AUR package
+  # references it. Plain git+ssh (no third-party action) — mirrors
+  # ../babel-lsp's release.yml. Requires repo secrets AUR_USERNAME, AUR_EMAIL,
+  # AUR_SSH_PRIVATE_KEY (an ed25519 keypair registered against an AUR account
+  # with the jinja-lsp-bin package reserved) — see aur/README.md for setup.
   aur-publish:
     name: Publish to AUR
     needs: publish
@@ -251,29 +224,46 @@ jobs:
         with:
           path: artifacts
 
-      # Fill in this release's version and the Linux binaries' checksums (already
-      # computed during the build job) so the AUR package installs the exact
-      # binary this release published, with no re-download/re-hash round trip.
-      - name: Render PKGBUILD for this release
+      - name: Publish to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           X86_SHA=$(awk '{print $1}' artifacts/binary-x86_64-unknown-linux-gnu/*.tar.gz.sha256)
           ARM_SHA=$(awk '{print $1}' artifacts/binary-aarch64-unknown-linux-gnu/*.tar.gz.sha256)
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur_ed25519
+          chmod 600 ~/.ssh/aur_ed25519
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+
+          if git clone -c core.sshCommand="ssh -i ~/.ssh/aur_ed25519" \
+              ssh://aur@aur.archlinux.org/jinja-lsp-bin.git /tmp/aur; then
+            echo "Updating existing AUR package"
+          else
+            echo "Initialising new AUR package"
+            mkdir /tmp/aur
+            git -C /tmp/aur init
+            git -C /tmp/aur remote add origin ssh://aur@aur.archlinux.org/jinja-lsp-bin.git
+          fi
+
           sed \
             -e "s/^pkgver=.*/pkgver=${VERSION}/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
             -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SHA}')/" \
             -e "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" \
-            aur/PKGBUILD > /tmp/PKGBUILD
+            aur/PKGBUILD > /tmp/aur/PKGBUILD
 
-      - name: Publish to AUR
-        # v4 alone doesn't resolve — this action only publishes exact-version
-        # tags (v4.1.3), not a floating major-version alias like actions/checkout@v4.
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: jinja-lsp-bin
-          pkgbuild: /tmp/PKGBUILD
-          test: true
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ github.ref_name }}"
+          docker run --rm -v /tmp/aur:/pkg archlinux:base-devel \
+            bash -c "useradd -m builder && chmod 777 /pkg && su builder -c 'cd /pkg && makepkg --printsrcinfo'" \
+            > /tmp/aur/.SRCINFO
+
+          cd /tmp/aur
+          git config user.email "$AUR_EMAIL"
+          git config user.name "$AUR_USERNAME"
+          git add PKGBUILD .SRCINFO
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "bump to ${VERSION}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_ed25519" git push origin HEAD:master

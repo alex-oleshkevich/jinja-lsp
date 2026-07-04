@@ -33,7 +33,11 @@ reserved, plus repo secrets so CI can push to it:
    - `AUR_SSH_PRIVATE_KEY` — the **private** half of the keypair from step 2
 
 Once these are set, every push of a `vX.Y.Z` tag updates the AUR package
-automatically as the last step of the release pipeline.
+automatically as the last step of the release pipeline (`aur-publish` job in
+`.github/workflows/release.yml`) — plain `git`/`ssh` against
+`aur.archlinux.org`, no third-party GitHub Action, mirroring `../babel-lsp`'s
+release workflow. The private key is written to `~/.ssh/aur_ed25519` for the
+duration of that job only.
 
 ## Local testing
 

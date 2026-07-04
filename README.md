@@ -33,7 +33,7 @@ Or with pip:
 pip install jinja-lsp
 ```
 
-Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases), or `cargo install jinja-lsp-plus` (published on crates.io as `jinja-lsp-plus` — the `jinja-lsp` name there belongs to an unrelated project — but it still installs a `jinja-lsp` binary).
+Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases).
 
 Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-bin)):
 
@@ -98,7 +98,7 @@ language-servers = ["jinja-lsp"]
 
 [[language]]
 name = "html"
-language-servers = ["vscode-html-language-server", "jinja-lsp"]
+language-servers = ["jinja-lsp"]
 ```
 
 ### Zed
@@ -113,10 +113,6 @@ To control server order alongside other language servers or pass initialization 
   "lsp": { "jinja2-lsp": { "initialization_options": { "templates": ["templates"], "extras": ["starlette"] } } }
 }
 ```
-
-### VS Code
-
-Install the **jinja-lsp** extension from the marketplace. It spawns `jinja-lsp lsp` over stdio; set `jinja-lsp.server.path` if the binary isn't on `PATH`.
 
 ## Configuration
 
