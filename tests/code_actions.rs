@@ -602,6 +602,25 @@ fn act05_absolute_path_no_action() {
     );
 }
 
+#[test]
+fn jinja_lsp_win_drive_letter_absolute_path_no_action() {
+    // jinja-lsp: create_template used std::path::Path::is_absolute(), which is
+    // host-OS-dependent — on Windows, a POSIX-style "/etc/passwd" is NOT
+    // is_absolute() (no drive letter), so the guard silently let a create-file
+    // action through for an absolute path. Template paths are virtual
+    // (forward-slash) paths, not real OS paths, so absoluteness must be
+    // checked explicitly and identically on every platform: this asserts a
+    // Windows-style drive-letter path is rejected even when running on Linux.
+    let src = "{% extends \"C:/Windows/System32/drivers/etc/hosts\" %}";
+    let idx = extract(src);
+    let diags = vec![e601(0, 0, "C:/Windows/System32/drivers/etc/hosts")];
+    let actions = code_actions(src, "t.html", &diags, &idx, &no_ws(), &reg());
+    assert!(
+        actions.is_empty(),
+        "a Windows-style drive-letter absolute path must not get a create action: {actions:?}"
+    );
+}
+
 // ─── vv5j: path-traversal guard must cover backslash and bare '..' ────────────
 
 #[test]

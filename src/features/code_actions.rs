@@ -664,7 +664,20 @@ fn create_template(diag: &Diagnostic) -> Option<CodeAction> {
     // Normalize backslashes so Windows-style ..\  traversal is caught on all platforms.
     let normalized = path.replace('\\', "/");
     let p = Path::new(&normalized);
-    if p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir)) {
+    // Jinja template paths are virtual, forward-slash paths written by the
+    // template author — not real OS paths. std::path::Path::is_absolute() is
+    // host-OS-dependent and would (wrongly) treat "/etc/passwd" as NOT
+    // absolute on Windows (no drive letter), letting a create-file action
+    // slip through for a path that's absolute by any reasonable definition.
+    // Check explicitly instead: a leading '/' (POSIX-style) or a drive-letter
+    // prefix (Windows-style, e.g. "C:").
+    let is_absolute_template_path = normalized.starts_with('/')
+        || normalized.as_bytes().get(1) == Some(&b':')
+            && normalized
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphabetic);
+    if is_absolute_template_path || p.components().any(|c| matches!(c, Component::ParentDir)) {
         return None;
     }
     Some(CodeAction {
