@@ -13,7 +13,7 @@ use tower_lsp::lsp_types::Url;
 
 #[cfg(windows)]
 fn dir(rest: &str) -> String {
-    format!(r"C:\{rest}")
+    format!(r"C:\{}", rest.replace('/', "\\"))
 }
 
 #[cfg(not(windows))]
