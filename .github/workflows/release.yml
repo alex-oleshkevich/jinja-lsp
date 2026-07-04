@@ -210,7 +210,8 @@ jobs:
   # REQ-REL-14: 3) AUR (jinja-lsp-bin) — depends on `publish` so the GitHub
   # Release (and its checksummed binaries) exists before the AUR package
   # references it. Plain git+ssh (no third-party action) — mirrors
-  # ../babel-lsp's release.yml. Requires repo secrets AUR_USERNAME, AUR_EMAIL,
+  # ../babel-lsp's release.yml, including using a fixed CI commit identity
+  # rather than per-maintainer secrets. Requires only the repo secret
   # AUR_SSH_PRIVATE_KEY (an ed25519 keypair registered against an AUR account
   # with the jinja-lsp-bin package reserved) — see aur/README.md for setup.
   aur-publish:
@@ -227,8 +228,6 @@ jobs:
       - name: Publish to AUR
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
-          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           X86_SHA=$(awk '{print $1}' artifacts/binary-x86_64-unknown-linux-gnu/*.tar.gz.sha256)
@@ -261,8 +260,8 @@ jobs:
             > /tmp/aur/.SRCINFO
 
           cd /tmp/aur
-          git config user.email "$AUR_EMAIL"
-          git config user.name "$AUR_USERNAME"
+          git config user.email "ci@jinja-lsp.dev"
+          git config user.name "jinja-lsp CI"
           git add PKGBUILD .SRCINFO
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "bump to ${VERSION}"
