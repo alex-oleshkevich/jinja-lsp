@@ -1,5 +1,9 @@
 [package]
-name = "jinja-lsp"
+# jinja-lsp is already registered on crates.io by an unrelated project
+# (github.com/uros-5/jinja-lsp) — publish under this name instead. The binary
+# and library keep their original names (jinja-lsp / jinja_lsp) below, so
+# nothing else — CLI usage, editor configs, imports — changes.
+name = "jinja-lsp-plus"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -9,6 +13,14 @@ repository = "https://github.com/alex-oleshkevich/jinja-lsp"
 readme = "README.md"
 keywords = ["jinja", "lsp", "language-server", "templates"]
 categories = ["development-tools", "template-engine"]
+
+[lib]
+name = "jinja_lsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jinja-lsp"
+path = "src/main.rs"
 
 [dependencies]
 tower-lsp = "0.20"

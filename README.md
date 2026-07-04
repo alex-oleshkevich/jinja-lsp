@@ -33,7 +33,7 @@ Or with pip:
 pip install jinja-lsp
 ```
 
-Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases), or `cargo install jinja-lsp`.
+Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases), or `cargo install jinja-lsp-plus` (published on crates.io as `jinja-lsp-plus` — the `jinja-lsp` name there belongs to an unrelated project — but it still installs a `jinja-lsp` binary).
 
 Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-bin)):
 
