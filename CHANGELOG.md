@@ -13,8 +13,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
   actually published anything.
 
 ### Changed
-- AUR publishing (`jinja-lsp-bin`) now uses plain `git`/`ssh` against
-  `aur.archlinux.org` directly instead of a third-party GitHub Action.
+- AUR publishing now uses plain `git`/`ssh` against `aur.archlinux.org`
+  directly instead of a third-party GitHub Action.
+- AUR package renamed `jinja-lsp-bin` → `jinja-lsp-plus-bin` — the
+  `jinja-lsp-bin` name belongs to an unrelated project, same collision as
+  crates.io.
 
 <!-- Add entries above this line when cutting a release -->
 

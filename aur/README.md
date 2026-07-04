@@ -1,7 +1,9 @@
 # AUR packaging
 
-`PKGBUILD` here is the source-of-truth template for the `jinja-lsp-bin` AUR
-package. It installs the pre-built `x86_64`/`aarch64` Linux binary from the
+`PKGBUILD` here is the source-of-truth template for the `jinja-lsp-plus-bin`
+AUR package (named `-plus-` because `jinja-lsp-bin` is already an unrelated
+project's package on AUR — same collision as crates.io, see the main
+README). It installs the pre-built `x86_64`/`aarch64` Linux binary from the
 matching GitHub Release — no Rust toolchain required on the user's machine.
 
 `pkgver` and both `sha256sums_*` fields are placeholders (`0.1.0` / `'SKIP'`).
@@ -12,7 +14,7 @@ renders real values from the just-published release for every tagged version
 
 ## One-time setup (maintainer)
 
-Publishing requires an AUR account with the `jinja-lsp-bin` package name
+Publishing requires an AUR account with the `jinja-lsp-plus-bin` package name
 reserved, plus repo secrets so CI can push to it:
 
 1. Create an account at <https://aur.archlinux.org> if you don't have one.
@@ -22,10 +24,11 @@ reserved, plus repo secrets so CI can push to it:
    ```
 3. Add the **public** key (`aur_ci_key.pub`) to your AUR account under
    *My Account → SSH Public Key*.
-4. Reserve the package: clone `ssh://aur@aur.archlinux.org/jinja-lsp-bin.git`
-   (an empty repo — AUR creates it lazily on first push) and push a copy of
-   `aur/PKGBUILD` plus a generated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`)
-   once, so the package exists before CI's first automated update.
+4. Reserve the package: clone
+   `ssh://aur@aur.archlinux.org/jinja-lsp-plus-bin.git` (an empty repo — AUR
+   creates it lazily on first push) and push a copy of `aur/PKGBUILD` plus a
+   generated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`) once, so the
+   package exists before CI's first automated update.
 5. Add one secret to the GitHub repo (*Settings → Secrets and variables →
    Actions*, environment `release`):
    - `AUR_SSH_PRIVATE_KEY` — the **private** half of the keypair from step 2

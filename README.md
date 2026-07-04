@@ -35,10 +35,10 @@ pip install jinja-lsp
 
 Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases).
 
-Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-bin)):
+Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-plus-bin)) — named `jinja-lsp-plus-bin`, not `jinja-lsp-bin`, which belongs to an unrelated project:
 
 ```bash
-yay -S jinja-lsp-bin
+yay -S jinja-lsp-plus-bin
 ```
 
 ## Editor setup

@@ -207,13 +207,15 @@ jobs:
         with:
           packages-dir: dist/
 
-  # REQ-REL-14: 3) AUR (jinja-lsp-bin) — depends on `publish` so the GitHub
-  # Release (and its checksummed binaries) exists before the AUR package
-  # references it. Plain git+ssh (no third-party action) — mirrors
-  # ../babel-lsp's release.yml, including using a fixed CI commit identity
-  # rather than per-maintainer secrets. Requires only the repo secret
-  # AUR_SSH_PRIVATE_KEY (an ed25519 keypair registered against an AUR account
-  # with the jinja-lsp-bin package reserved) — see aur/README.md for setup.
+  # REQ-REL-14: 3) AUR (jinja-lsp-plus-bin — jinja-lsp-bin is already an
+  # unrelated project's package, same naming collision as crates.io) —
+  # depends on `publish` so the GitHub Release (and its checksummed binaries)
+  # exists before the AUR package references it. Plain git+ssh (no
+  # third-party action) — mirrors ../babel-lsp's release.yml, including using
+  # a fixed CI commit identity rather than per-maintainer secrets. Requires
+  # only the repo secret AUR_SSH_PRIVATE_KEY (an ed25519 keypair registered
+  # against an AUR account with jinja-lsp-plus-bin reserved) — see
+  # aur/README.md for setup.
   aur-publish:
     name: Publish to AUR
     needs: publish
@@ -239,13 +241,13 @@ jobs:
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
 
           if git clone -c core.sshCommand="ssh -i ~/.ssh/aur_ed25519" \
-              ssh://aur@aur.archlinux.org/jinja-lsp-bin.git /tmp/aur; then
+              ssh://aur@aur.archlinux.org/jinja-lsp-plus-bin.git /tmp/aur; then
             echo "Updating existing AUR package"
           else
             echo "Initialising new AUR package"
             mkdir /tmp/aur
             git -C /tmp/aur init
-            git -C /tmp/aur remote add origin ssh://aur@aur.archlinux.org/jinja-lsp-bin.git
+            git -C /tmp/aur remote add origin ssh://aur@aur.archlinux.org/jinja-lsp-plus-bin.git
           fi
 
           sed \
