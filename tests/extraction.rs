@@ -152,6 +152,27 @@ fn extr10_filter_with_args_after_attr_captured_as_function() {
 }
 
 #[test]
+fn extr10_inline_gettext_underscore_captured_as_function() {
+    // {{ _('Upload signed PDF') }} — the grammar parses this as a dedicated
+    // inline_trans node (seq('_', '(', expression, ')')), not a generic
+    // function_call, so it needs its own query pattern or it's invisible to
+    // hover/goto-definition despite `_` being a real, documented builtin
+    // (starlette_babel/func__.md).
+    let src = "{{ _('Upload signed PDF') }}";
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
+        .filter(|r| r.name == "_" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(
+        !fn_refs.is_empty(),
+        "_ must be captured as Function in '{{ _('Upload signed PDF') }}';\n  references = {:?}",
+        idx.references
+    );
+}
+
+#[test]
 fn extr10_deep_attr_chain_filter_captured() {
     // {{ post.author.name | truncate(60) }} — two-level attribute chain before filter
     let src = "{{ post.author.name | truncate(60) }}";

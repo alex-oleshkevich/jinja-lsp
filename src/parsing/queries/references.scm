@@ -66,6 +66,12 @@
           (function_call
             (identifier) @function))))))
 
+; Inline gettext shorthand: {{ _('message') }}. The grammar parses this as its
+; own inline_trans node (seq('_', '(', expression, ')')), not a function_call,
+; so `_` is an anonymous literal token here rather than an `identifier` child —
+; match it by its literal text like a keyword capture.
+(inline_trans "_" @function)
+
 ; Builtin `is` test (`x is defined`, `x is callable`, etc.) — in any expression context:
 (binary_expression
   (binary_operator) @_is_op
