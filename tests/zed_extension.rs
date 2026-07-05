@@ -76,13 +76,13 @@ fn zed_grammar_pinned_to_sha_not_head() {
     );
 }
 
-// ─── T-13c: languages/jinja2/config.toml must exist with the correct name ────
+// ─── T-13c: languages/jinja2-html/config.toml must exist with the correct name ─
 
 #[test]
 fn zed_language_config_exists_with_correct_name() {
-    let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
+    let cfg_raw = include_str!("../editors/zed/languages/jinja2-html/config.toml");
     let cfg: toml::Value =
-        toml::from_str(cfg_raw).expect("languages/jinja2/config.toml must be valid TOML");
+        toml::from_str(cfg_raw).expect("languages/jinja2-html/config.toml must be valid TOML");
     let name = cfg["name"].as_str().unwrap_or("");
     assert_eq!(
         name, "Jinja2 (HTML)",
@@ -95,23 +95,99 @@ fn zed_language_config_exists_with_correct_name() {
     );
 }
 
-// ─── jinja-lsp-pxs5: {# #} is a block comment, not a line-comment prefix ─────
+// ─── jinja-lsp-5ydn: base Jinja2 language for bare .j2/.jinja/.jinja2 files ──
 
 #[test]
-fn zed_language_config_uses_block_comment_not_line_comments() {
+fn zed_base_language_config_exists_with_correct_name() {
     let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
+    let cfg: toml::Value =
+        toml::from_str(cfg_raw).expect("languages/jinja2/config.toml must be valid TOML");
+    let name = cfg["name"].as_str().unwrap_or("");
+    assert_eq!(name, "Jinja2", "base language config name; got: {name}");
+    let grammar = cfg["grammar"].as_str().unwrap_or("");
+    assert_eq!(
+        grammar, "jinja",
+        "base language config grammar must be 'jinja'; got: {grammar}"
+    );
+}
+
+// jinja-lsp-5ydn: bare .j2/.jinja/.jinja2 files must keep the LSP after the
+// jinja2 -> jinja2-html restructure (this was a flagged regression risk).
+#[test]
+fn zed_base_language_keeps_bare_suffixes_and_lsp() {
+    let cfg_raw = include_str!("../editors/zed/languages/jinja2/config.toml");
+    let cfg: toml::Value = toml::from_str(cfg_raw).expect("config.toml must be valid TOML");
+    let suffixes: Vec<&str> = cfg["path_suffixes"]
+        .as_array()
+        .expect("path_suffixes must be array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    for bare in ["j2", "jinja", "jinja2"] {
+        assert!(
+            suffixes.contains(&bare),
+            "base Jinja2 must claim bare suffix {bare:?}; got: {suffixes:?}"
+        );
+    }
+
+    let m = manifest();
+    let langs: Vec<&str> = m["language_servers"]["jinja2-lsp"]["languages"]
+        .as_array()
+        .expect("languages must be array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(
+        langs.contains(&"Jinja2"),
+        "jinja2-lsp must also serve the base Jinja2 language, or bare .j2 files lose the LSP; got: {langs:?}"
+    );
+}
+
+// jinja-lsp-5ydn: jinja2 (base) and jinja2-html must not both claim the same suffix.
+#[test]
+fn zed_jinja2_and_jinja2_html_path_suffixes_do_not_overlap() {
+    let base: toml::Value =
+        toml::from_str(include_str!("../editors/zed/languages/jinja2/config.toml"))
+            .expect("valid TOML");
+    let html: toml::Value = toml::from_str(include_str!(
+        "../editors/zed/languages/jinja2-html/config.toml"
+    ))
+    .expect("valid TOML");
+    let base_suffixes: Vec<&str> = base["path_suffixes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    let html_suffixes: Vec<&str> = html["path_suffixes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    for s in &base_suffixes {
+        assert!(
+            !html_suffixes.contains(s),
+            "path_suffix {s:?} claimed by both jinja2 and jinja2-html"
+        );
+    }
+}
+
+// ─── jinja-lsp-pxs5: {# #} is a block comment, not a line-comment prefix ─────
+
+fn assert_block_comment_not_line_comments(cfg_raw: &str, label: &str) {
     let cfg: toml::Value = toml::from_str(cfg_raw).expect("config.toml must be valid TOML");
 
     // line_comments treats each string as an independent line-comment prefix,
     // so toggling a comment would prepend "{# " without ever closing it.
     assert!(
         cfg.get("line_comments").is_none(),
-        "line_comments must not be set for Jinja — {{# #}} is a block comment, not a line prefix"
+        "line_comments must not be set for Jinja ({label}) — {{# #}} is a block comment, not a line prefix"
     );
 
     let block_comment = cfg["block_comment"]
         .as_array()
-        .expect("block_comment must be set as a [start, end] pair");
+        .unwrap_or_else(|| panic!("block_comment must be set as a [start, end] pair ({label})"));
     let pair: Vec<&str> = block_comment
         .iter()
         .map(|v| v.as_str().unwrap_or(""))
@@ -119,7 +195,19 @@ fn zed_language_config_uses_block_comment_not_line_comments() {
     assert_eq!(
         pair,
         vec!["{# ", " #}"],
-        "block_comment must be [\"{{# \", \" #}}\"]"
+        "block_comment must be [\"{{# \", \" #}}\"] ({label})"
+    );
+}
+
+#[test]
+fn zed_language_config_uses_block_comment_not_line_comments() {
+    assert_block_comment_not_line_comments(
+        include_str!("../editors/zed/languages/jinja2/config.toml"),
+        "jinja2",
+    );
+    assert_block_comment_not_line_comments(
+        include_str!("../editors/zed/languages/jinja2-html/config.toml"),
+        "jinja2-html",
     );
 }
 

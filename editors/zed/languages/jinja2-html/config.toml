@@ -1,0 +1,4 @@
+name = "Jinja2 (HTML)"
+grammar = "jinja"
+path_suffixes = ["html.j2", "html.jinja", "html.jinja2"]
+block_comment = ["{# ", " #}"]
