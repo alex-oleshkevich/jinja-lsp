@@ -13,7 +13,7 @@ path = "tree-sitter-jinja"
 
 [language_servers.jinja2-lsp]
 name = "jinja-lsp"
-languages = ["Jinja2 (HTML)", "Jinja2"]
+languages = ["Jinja2 (HTML)", "Jinja2", "Jinja2 (YAML)", "Jinja2 (JSON)", "Jinja2 (Markdown)"]
 
 # Without this, Zed's default languageId is name.to_lowercase() (e.g. "jinja2
 # (html)"), which the server's is_jinja_language_id() rejects (see
@@ -23,3 +23,6 @@ languages = ["Jinja2 (HTML)", "Jinja2"]
 [language_servers.jinja2-lsp.language_ids]
 "Jinja2 (HTML)" = "jinja-html"
 "Jinja2" = "jinja"
+"Jinja2 (YAML)" = "jinja-yaml"
+"Jinja2 (JSON)" = "jinja-json"
+"Jinja2 (Markdown)" = "jinja-markdown"

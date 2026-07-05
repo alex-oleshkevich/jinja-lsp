@@ -1,6 +1,8 @@
 // REQ-EDIT-07/08/12: Zed extension manifest and source verification.
 // Static doc-check tests that parse extension.toml and verify the required fields.
 
+use jinja_lsp::server::is_jinja_language_id;
+
 fn manifest() -> toml::Value {
     let raw = include_str!("../editors/zed/extension.toml");
     toml::from_str(raw).expect("extension.toml must be valid TOML")
@@ -143,32 +145,76 @@ fn zed_base_language_keeps_bare_suffixes_and_lsp() {
     );
 }
 
-// jinja-lsp-5ydn: jinja2 (base) and jinja2-html must not both claim the same suffix.
+// jinja-lsp-ioce: every language_ids value declared in extension.toml must be
+// accepted by is_jinja_language_id(), or Zed will send a languageId the server
+// silently rejects on every didOpen for that language.
 #[test]
-fn zed_jinja2_and_jinja2_html_path_suffixes_do_not_overlap() {
-    let base: toml::Value =
-        toml::from_str(include_str!("../editors/zed/languages/jinja2/config.toml"))
-            .expect("valid TOML");
-    let html: toml::Value = toml::from_str(include_str!(
-        "../editors/zed/languages/jinja2-html/config.toml"
-    ))
-    .expect("valid TOML");
-    let base_suffixes: Vec<&str> = base["path_suffixes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
-    let html_suffixes: Vec<&str> = html["path_suffixes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
-    for s in &base_suffixes {
+fn zed_every_declared_language_id_is_accepted_by_server() {
+    let m = manifest();
+    let language_ids = m["language_servers"]["jinja2-lsp"]["language_ids"]
+        .as_table()
+        .expect("language_ids must be a table");
+    assert!(!language_ids.is_empty(), "language_ids must not be empty");
+    for (name, id) in language_ids {
+        let id = id.as_str().expect("language_ids values must be strings");
         assert!(
-            !html_suffixes.contains(s),
-            "path_suffix {s:?} claimed by both jinja2 and jinja2-html"
+            is_jinja_language_id(id),
+            "language_ids[{name:?}] = {id:?} is not accepted by is_jinja_language_id()"
+        );
+    }
+
+    // Every language declared for jinja2-lsp must also have a language_ids
+    // entry -- otherwise it falls back to Zed's name.to_lowercase() default,
+    // which the server rejects (jinja-lsp-fxse).
+    let langs = m["language_servers"]["jinja2-lsp"]["languages"]
+        .as_array()
+        .expect("languages must be array");
+    for lang in langs.iter().filter_map(|v| v.as_str()) {
+        assert!(
+            language_ids.contains_key(lang),
+            "language {lang:?} is declared for jinja2-lsp but has no language_ids mapping"
+        );
+    }
+}
+
+// jinja-lsp-ioce: scan every languages/*/config.toml at test time (not
+// include_str!, so this keeps working as more language dirs are batch-added
+// in jinja-lsp-ao83 without editing this test) and assert no two directories
+// claim the same path_suffix.
+#[test]
+fn zed_no_language_path_suffix_overlap() {
+    let languages_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    let mut claims: Vec<(String, String)> = Vec::new();
+    for entry in std::fs::read_dir(&languages_dir).expect("languages dir must exist") {
+        let dir = entry.expect("readable dir entry").path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let cfg_path = dir.join("config.toml");
+        let raw = std::fs::read_to_string(&cfg_path)
+            .unwrap_or_else(|e| panic!("{}: {e}", cfg_path.display()));
+        let cfg: toml::Value = toml::from_str(&raw)
+            .unwrap_or_else(|e| panic!("{}: invalid TOML: {e}", cfg_path.display()));
+        let dir_name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        for suffix in cfg["path_suffixes"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{}: path_suffixes must be array", cfg_path.display()))
+            .iter()
+            .filter_map(|v| v.as_str())
+        {
+            claims.push((suffix.to_owned(), dir_name.clone()));
+        }
+    }
+    for (suffix, dir) in &claims {
+        let owners: Vec<&str> = claims
+            .iter()
+            .filter(|(s, _)| s == suffix)
+            .map(|(_, d)| d.as_str())
+            .collect();
+        assert!(
+            owners.len() == 1,
+            "path_suffix {suffix:?} claimed by more than one language dir: {owners:?} (via {dir})"
         );
     }
 }
@@ -298,4 +344,61 @@ fn jinja_lsp_r52g_package_script_does_not_mutate_source_tree_and_resolves_repo_r
         src.contains("--manifest-path \"$REPO_ROOT/Cargo.toml\""),
         "cargo metadata must use an explicit --manifest-path so VERSION resolves correctly regardless of cwd"
     );
+}
+
+// ─── jinja-lsp-ioce: validation batch (YAML, JSON, Markdown) ─────────────────
+
+fn assert_embed_language_config(dir: &str, expected_name: &str, expected_injection_lang: &str) {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    let cfg_raw = std::fs::read_to_string(base.join(dir).join("config.toml"))
+        .unwrap_or_else(|e| panic!("{dir}/config.toml: {e}"));
+    let cfg: toml::Value = toml::from_str(&cfg_raw).expect("valid TOML");
+    assert_eq!(cfg["name"].as_str().unwrap_or(""), expected_name);
+    assert_eq!(cfg["grammar"].as_str().unwrap_or(""), "jinja");
+
+    let inj_raw = std::fs::read_to_string(base.join(dir).join("injections.scm"))
+        .unwrap_or_else(|e| panic!("{dir}/injections.scm: {e}"));
+    // The legacy extension's grammar called this node `text`; ours calls it
+    // `content` (verified against the pinned tree-sitter-jinja commit in
+    // jinja-lsp-fnj6) -- a stray `(text)` here would silently match nothing.
+    assert!(
+        inj_raw.contains("(content)"),
+        "{dir}/injections.scm must inject via (content), not the legacy grammar's (text)"
+    );
+    assert!(
+        !inj_raw.contains("(text)"),
+        "{dir}/injections.scm must not use the legacy grammar's (text) node"
+    );
+    assert!(
+        inj_raw.contains(&format!("\"{expected_injection_lang}\"")),
+        "{dir}/injections.scm must inject language {expected_injection_lang:?}"
+    );
+
+    // scope_opt_in_language_servers is a syntax-scope gate (only takes effect
+    // inside an overrides.scm-defined scope that opts in) -- it is NOT a user
+    // opt-in switch, and this extension ships no overrides.scm, so it would be
+    // permanently-dead config if copied verbatim from the legacy extension.
+    assert!(
+        !cfg_raw.contains("scope_opt_in_language_servers"),
+        "{dir}/config.toml must not carry dead scope_opt_in_language_servers config"
+    );
+    assert!(
+        !cfg_raw.contains("vscode-jinja"),
+        "{dir}/config.toml must not reference the nonexistent vscode-jinja server"
+    );
+}
+
+#[test]
+fn zed_jinja2_yaml_config_is_correct() {
+    assert_embed_language_config("jinja2-yaml", "Jinja2 (YAML)", "yaml");
+}
+
+#[test]
+fn zed_jinja2_json_config_is_correct() {
+    assert_embed_language_config("jinja2-json", "Jinja2 (JSON)", "json");
+}
+
+#[test]
+fn zed_jinja2_markdown_config_is_correct() {
+    assert_embed_language_config("jinja2-markdown", "Jinja2 (Markdown)", "markdown");
 }

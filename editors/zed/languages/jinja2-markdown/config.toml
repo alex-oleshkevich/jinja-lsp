@@ -1,0 +1,11 @@
+name = "Jinja2 (Markdown)"
+grammar = "jinja"
+path_suffixes = ["md.jinja", "md.jinja2", "md.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]

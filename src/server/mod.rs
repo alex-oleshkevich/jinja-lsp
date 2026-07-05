@@ -277,10 +277,15 @@ impl Backend {
     }
 }
 
-/// REQ-EDIT-11: the two canonical languageIds the server accepts.
-/// Any other ID (html, jinja2, j2, …) is not a Jinja file from the server's perspective.
+/// REQ-EDIT-11: the canonical languageIds the server accepts, one per language
+/// declared in editors/zed/extension.toml's [language_servers.jinja2-lsp.language_ids]
+/// (which must stay in sync with this list). Any other ID (html, jinja2, j2, …) is
+/// not a Jinja file from the server's perspective.
 pub fn is_jinja_language_id(lang: &str) -> bool {
-    lang == "jinja" || lang == "jinja-html"
+    matches!(
+        lang,
+        "jinja" | "jinja-html" | "jinja-yaml" | "jinja-json" | "jinja-markdown"
+    )
 }
 
 #[tower_lsp::async_trait]
@@ -2341,6 +2346,9 @@ mod server_tests {
     fn is_jinja_language_id_accepts_canonical_ids() {
         assert!(is_jinja_language_id("jinja"));
         assert!(is_jinja_language_id("jinja-html"));
+        assert!(is_jinja_language_id("jinja-yaml"));
+        assert!(is_jinja_language_id("jinja-json"));
+        assert!(is_jinja_language_id("jinja-markdown"));
     }
 
     /// jinja-lsp-fxse: Zed's default languageId for a language with no explicit
