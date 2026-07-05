@@ -223,7 +223,9 @@ impl Backend {
                 .unwrap_or_default();
                 self.state.write().await.extra_folders[ei].workspace = new_workspace;
             }
-            tracing::info!("jinja-lsp: extra folder config reloaded from {file_path}");
+            let msg = format!("jinja-lsp: extra folder config reloaded from {file_path}");
+            tracing::info!("{msg}");
+            self.client.log_message(MessageType::INFO, msg).await;
             self.republish_all_diagnostics().await;
             return;
         }
@@ -268,7 +270,9 @@ impl Backend {
             .unwrap_or_default();
             self.state.write().await.workspace = new_workspace;
         }
-        tracing::info!("jinja-lsp: config reloaded from {file_path}");
+        let msg = format!("jinja-lsp: config reloaded from {file_path}");
+        tracing::info!("{msg}");
+        self.client.log_message(MessageType::INFO, msg).await;
         self.republish_all_diagnostics().await;
     }
 }
