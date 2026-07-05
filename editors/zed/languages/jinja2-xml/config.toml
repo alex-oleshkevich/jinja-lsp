@@ -1,0 +1,12 @@
+name = "Jinja2 (XML)"
+grammar = "jinja"
+path_suffixes = ["xml.jinja", "xml.jinja2", "xml.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "<", end = ">", close = true, newline = false },
+]

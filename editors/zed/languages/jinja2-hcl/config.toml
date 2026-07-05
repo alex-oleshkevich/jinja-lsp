@@ -1,0 +1,12 @@
+name = "Jinja2 (HCL)"
+grammar = "jinja"
+path_suffixes = ["tf.jinja", "tf.jinja2", "tf.j2", "hcl.jinja", "hcl.jinja2", "hcl.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+]

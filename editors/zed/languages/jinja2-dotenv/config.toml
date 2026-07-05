@@ -1,0 +1,10 @@
+name = "Jinja2 (dotenv)"
+grammar = "jinja"
+path_suffixes = ["env.jinja", "env.jinja2", "env.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+]

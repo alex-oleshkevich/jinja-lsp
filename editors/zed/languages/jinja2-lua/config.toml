@@ -1,0 +1,12 @@
+name = "Jinja2 (Lua)"
+grammar = "jinja"
+path_suffixes = ["lua.jinja", "lua.jinja2", "lua.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+]

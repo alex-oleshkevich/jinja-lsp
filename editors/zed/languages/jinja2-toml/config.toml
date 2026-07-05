@@ -1,0 +1,11 @@
+name = "Jinja2 (TOML)"
+grammar = "jinja"
+path_suffixes = ["toml.jinja", "toml.jinja2", "toml.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]

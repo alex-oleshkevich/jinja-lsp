@@ -1,0 +1,12 @@
+name = "Jinja2 (Go)"
+grammar = "jinja"
+path_suffixes = ["go.jinja", "go.jinja2", "go.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+]

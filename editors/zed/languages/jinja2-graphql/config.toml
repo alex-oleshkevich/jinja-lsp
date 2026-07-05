@@ -1,0 +1,12 @@
+name = "Jinja2 (GraphQL)"
+grammar = "jinja"
+path_suffixes = ["graphql.jinja", "graphql.jinja2", "graphql.j2", "gql.jinja", "gql.jinja2", "gql.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+]

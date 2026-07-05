@@ -1,0 +1,10 @@
+name = "Jinja2 (SQL)"
+grammar = "jinja"
+path_suffixes = ["sql.jinja", "sql.jinja2", "sql.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+]

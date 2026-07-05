@@ -13,7 +13,32 @@ path = "tree-sitter-jinja"
 
 [language_servers.jinja2-lsp]
 name = "jinja-lsp"
-languages = ["Jinja2 (HTML)", "Jinja2", "Jinja2 (YAML)", "Jinja2 (JSON)", "Jinja2 (Markdown)"]
+languages = [
+  "Jinja2 (HTML)",
+  "Jinja2",
+  "Jinja2 (YAML)",
+  "Jinja2 (JSON)",
+  "Jinja2 (Markdown)",
+  "Jinja2 (CSS)",
+  "Jinja2 (Python)",
+  "Jinja2 (JavaScript)",
+  "Jinja2 (TypeScript)",
+  "Jinja2 (Shell)",
+  "Jinja2 (SQL)",
+  "Jinja2 (TOML)",
+  "Jinja2 (XML)",
+  "Jinja2 (Go)",
+  "Jinja2 (Rust)",
+  "Jinja2 (Lua)",
+  "Jinja2 (INI)",
+  "Jinja2 (dotenv)",
+  "Jinja2 (Dockerfile)",
+  "Jinja2 (Makefile)",
+  "Jinja2 (systemd)",
+  "Jinja2 (HCL)",
+  "Jinja2 (GraphQL)",
+  "Jinja2 (Plain Text)",
+]
 
 # Without this, Zed's default languageId is name.to_lowercase() (e.g. "jinja2
 # (html)"), which the server's is_jinja_language_id() rejects (see
@@ -26,3 +51,22 @@ languages = ["Jinja2 (HTML)", "Jinja2", "Jinja2 (YAML)", "Jinja2 (JSON)", "Jinja
 "Jinja2 (YAML)" = "jinja-yaml"
 "Jinja2 (JSON)" = "jinja-json"
 "Jinja2 (Markdown)" = "jinja-markdown"
+"Jinja2 (CSS)" = "jinja-css"
+"Jinja2 (Python)" = "jinja-python"
+"Jinja2 (JavaScript)" = "jinja-javascript"
+"Jinja2 (TypeScript)" = "jinja-typescript"
+"Jinja2 (Shell)" = "jinja-shell"
+"Jinja2 (SQL)" = "jinja-sql"
+"Jinja2 (TOML)" = "jinja-toml"
+"Jinja2 (XML)" = "jinja-xml"
+"Jinja2 (Go)" = "jinja-go"
+"Jinja2 (Rust)" = "jinja-rust"
+"Jinja2 (Lua)" = "jinja-lua"
+"Jinja2 (INI)" = "jinja-ini"
+"Jinja2 (dotenv)" = "jinja-dotenv"
+"Jinja2 (Dockerfile)" = "jinja-dockerfile"
+"Jinja2 (Makefile)" = "jinja-makefile"
+"Jinja2 (systemd)" = "jinja-systemd"
+"Jinja2 (HCL)" = "jinja-hcl"
+"Jinja2 (GraphQL)" = "jinja-graphql"
+"Jinja2 (Plain Text)" = "jinja-plaintext"

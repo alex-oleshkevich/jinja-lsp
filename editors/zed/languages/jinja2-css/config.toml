@@ -1,0 +1,11 @@
+name = "Jinja2 (CSS)"
+grammar = "jinja"
+path_suffixes = ["css.jinja", "css.jinja2", "css.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]

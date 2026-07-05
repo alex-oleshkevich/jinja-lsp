@@ -284,7 +284,30 @@ impl Backend {
 pub fn is_jinja_language_id(lang: &str) -> bool {
     matches!(
         lang,
-        "jinja" | "jinja-html" | "jinja-yaml" | "jinja-json" | "jinja-markdown"
+        "jinja"
+            | "jinja-html"
+            | "jinja-yaml"
+            | "jinja-json"
+            | "jinja-markdown"
+            | "jinja-css"
+            | "jinja-python"
+            | "jinja-javascript"
+            | "jinja-typescript"
+            | "jinja-shell"
+            | "jinja-sql"
+            | "jinja-toml"
+            | "jinja-xml"
+            | "jinja-go"
+            | "jinja-rust"
+            | "jinja-lua"
+            | "jinja-ini"
+            | "jinja-dotenv"
+            | "jinja-dockerfile"
+            | "jinja-makefile"
+            | "jinja-systemd"
+            | "jinja-hcl"
+            | "jinja-graphql"
+            | "jinja-plaintext"
     )
 }
 
@@ -2344,11 +2367,34 @@ mod server_tests {
 
     #[test]
     fn is_jinja_language_id_accepts_canonical_ids() {
-        assert!(is_jinja_language_id("jinja"));
-        assert!(is_jinja_language_id("jinja-html"));
-        assert!(is_jinja_language_id("jinja-yaml"));
-        assert!(is_jinja_language_id("jinja-json"));
-        assert!(is_jinja_language_id("jinja-markdown"));
+        for id in [
+            "jinja",
+            "jinja-html",
+            "jinja-yaml",
+            "jinja-json",
+            "jinja-markdown",
+            "jinja-css",
+            "jinja-python",
+            "jinja-javascript",
+            "jinja-typescript",
+            "jinja-shell",
+            "jinja-sql",
+            "jinja-toml",
+            "jinja-xml",
+            "jinja-go",
+            "jinja-rust",
+            "jinja-lua",
+            "jinja-ini",
+            "jinja-dotenv",
+            "jinja-dockerfile",
+            "jinja-makefile",
+            "jinja-systemd",
+            "jinja-hcl",
+            "jinja-graphql",
+            "jinja-plaintext",
+        ] {
+            assert!(is_jinja_language_id(id), "expected {id:?} to be accepted");
+        }
     }
 
     /// jinja-lsp-fxse: Zed's default languageId for a language with no explicit

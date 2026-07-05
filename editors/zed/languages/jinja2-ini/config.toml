@@ -1,0 +1,11 @@
+name = "Jinja2 (INI)"
+grammar = "jinja"
+path_suffixes = ["ini.jinja", "ini.jinja2", "ini.j2", "cfg.jinja", "cfg.jinja2", "cfg.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]

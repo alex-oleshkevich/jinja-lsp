@@ -1,0 +1,13 @@
+name = "Jinja2 (Rust)"
+grammar = "jinja"
+path_suffixes = ["rs.jinja", "rs.jinja2", "rs.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "<", end = ">", close = false, newline = false },
+]

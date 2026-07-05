@@ -1,0 +1,11 @@
+name = "Jinja2 (systemd)"
+grammar = "jinja"
+path_suffixes = ["service.jinja", "service.jinja2", "service.j2", "timer.jinja", "timer.jinja2", "timer.j2", "socket.jinja", "socket.jinja2", "socket.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]

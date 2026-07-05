@@ -1,0 +1,10 @@
+name = "Jinja2 (Makefile)"
+grammar = "jinja"
+path_suffixes = ["Makefile.jinja", "Makefile.jinja2", "Makefile.j2", "makefile.jinja", "makefile.jinja2", "makefile.j2", "mk.jinja", "mk.jinja2", "mk.j2"]
+block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+]
