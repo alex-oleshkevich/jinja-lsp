@@ -13,6 +13,7 @@ repository = "https://github.com/alex-oleshkevich/jinja-lsp"
 [grammars.jinja]
 repository = "https://github.com/alex-oleshkevich/tree-sitter-jinja"
 commit = "e589222a1ad44361bc376d5abdccd08e1fecfee5"
+path = "tree-sitter-jinja"
 
 [language_servers.jinja2-lsp]
 name = "jinja-lsp"

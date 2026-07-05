@@ -35,6 +35,29 @@ cp -r "$EXT_DIR/languages" "$TARGET/"
 cp "$WASM_BIN" "$TARGET/extension.wasm"
 echo "Copied extension files to $TARGET"
 
+# Zed's normal install flow clones each [grammars.*] repo and compiles it to
+# grammars/<name>.wasm. This script bypasses that flow, so it has to do the
+# same step manually or the language never loads (silent "No such file or
+# directory" from language_registry, since work/<id>/ stays empty).
+if grep -q '^\[grammars\.' "$EXT_DIR/extension.toml"; then
+  mkdir -p "$TARGET/grammars"
+  GRAMMAR_NAME=$(grep -m1 '^\[grammars\.' "$EXT_DIR/extension.toml" | sed -E 's/^\[grammars\.([^]]+)\]$/\1/')
+  GRAMMAR_REPO=$(awk -F'"' '/^\[grammars\./{f=1} f && /^repository/{print $2; exit}' "$EXT_DIR/extension.toml")
+  GRAMMAR_COMMIT=$(awk -F'"' '/^\[grammars\./{f=1} f && /^commit/{print $2; exit}' "$EXT_DIR/extension.toml")
+  GRAMMAR_PATH=$(awk -F'"' '/^\[grammars\./{f=1} f && /^path/{print $2; exit}' "$EXT_DIR/extension.toml")
+
+  GRAMMAR_SRC=$(mktemp -d)
+  trap 'rm -rf "$GRAMMAR_SRC"' EXIT
+  git clone --quiet "$GRAMMAR_REPO" "$GRAMMAR_SRC"
+  git -C "$GRAMMAR_SRC" checkout --quiet "$GRAMMAR_COMMIT"
+  GRAMMAR_BUILD_DIR="$GRAMMAR_SRC"
+  if [[ -n "$GRAMMAR_PATH" ]]; then
+    GRAMMAR_BUILD_DIR="$GRAMMAR_SRC/$GRAMMAR_PATH"
+  fi
+  tree-sitter build --wasm -o "$TARGET/grammars/$GRAMMAR_NAME.wasm" "$GRAMMAR_BUILD_DIR"
+  echo "Built grammar $GRAMMAR_NAME.wasm from $GRAMMAR_REPO@$GRAMMAR_COMMIT"
+fi
+
 if [[ -f "$INDEX" ]]; then
   python3 - "$INDEX" "$EXT_DIR/extension.toml" <<'PYEOF'
 import json, sys, tomllib
