@@ -413,7 +413,8 @@ fn find_parent_block(
     for ancestor_path in &chain {
         if let Some(anc_idx) = workspace.templates.get(ancestor_path) {
             if let Some(block) = anc_idx.blocks.iter().find(|block| block.name == block_name) {
-                return Some((ancestor_path.clone(), block.span.start_line));
+                let display_path = anc_idx.relative_path.as_deref().unwrap_or(ancestor_path);
+                return Some((display_path.to_owned(), block.span.start_line));
             }
         }
     }
@@ -432,7 +433,8 @@ fn find_block_overriders(
         }
         if is_descendant_of(path, current_path, workspace) {
             if let Some(b) = tmpl_idx.blocks.iter().find(|b| b.name == block_name) {
-                result.push((path.clone(), b.span.start_line));
+                let display_path = tmpl_idx.relative_path.as_deref().unwrap_or(path);
+                result.push((display_path.to_owned(), b.span.start_line));
             }
         }
     }

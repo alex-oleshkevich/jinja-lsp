@@ -493,6 +493,95 @@ fn hov09_block_shows_overriding_children() {
     );
 }
 
+#[test]
+fn hov09_block_override_uses_workspace_relative_path_not_absolute_key() {
+    // Real templates are indexed by absolute filesystem path, but hover text
+    // must show the workspace-relative path users actually navigate by
+    // (matching completions.rs's relative_path convention), not the raw key.
+    let base_src = "{% block content %}base{% endblock %}";
+    let mut ws = WorkspaceIndex::default();
+    ws.index_inline(
+        "/home/alex/projects/investerra/api-server/app/templates/base.html",
+        base_src,
+    );
+    ws.templates
+        .get_mut("/home/alex/projects/investerra/api-server/app/templates/base.html")
+        .unwrap()
+        .relative_path = Some("base.html".to_owned());
+
+    let child_src = r#"{% extends "base.html" %}{% block content %}child{% endblock %}"#;
+    let mut idx = extract(child_src);
+    idx.path = "/home/alex/projects/investerra/api-server/app/templates/child.html".to_owned();
+    let reg = Registry::load_core();
+    let col = last_col_of(child_src, "content");
+    let result = hover(child_src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("block hover must return a result");
+    assert!(
+        r.markdown.contains("base.html") && !r.markdown.contains("/home/alex"),
+        "must show the workspace-relative path, not the absolute key: {}",
+        r.markdown
+    );
+}
+
+#[test]
+fn hov09_block_overriders_use_workspace_relative_path_not_absolute_key() {
+    let base_src = "{% block content %}base{% endblock %}";
+    let child_src = r#"{% extends "base.html" %}{% block content %}child{% endblock %}"#;
+    let mut ws = WorkspaceIndex::default();
+    // is_descendant_of resolves the child's relative "base.html" extends target
+    // to a workspace key by suffix match, so the base template must also be
+    // registered here (at the exact path idx.path uses below) for that to work.
+    ws.index_inline(
+        "/home/alex/projects/investerra/api-server/app/templates/base.html",
+        base_src,
+    );
+    ws.index_inline(
+        "/home/alex/projects/investerra/api-server/app/templates/child.html",
+        child_src,
+    );
+    ws.templates
+        .get_mut("/home/alex/projects/investerra/api-server/app/templates/child.html")
+        .unwrap()
+        .relative_path = Some("child.html".to_owned());
+
+    let mut idx = extract(base_src);
+    idx.path = "/home/alex/projects/investerra/api-server/app/templates/base.html".to_owned();
+    let reg = Registry::load_core();
+    let col = col_of(base_src, "content");
+    let result = hover(base_src, 0, col, &idx, &reg, &ws);
+    let r = result.expect("block hover must return a result");
+    assert!(
+        r.markdown.contains("child.html") && !r.markdown.contains("/home/alex"),
+        "must show the workspace-relative path, not the absolute key: {}",
+        r.markdown
+    );
+}
+
+#[test]
+fn hov09_inline_gettext_underscore_shows_starlette_babel_doc() {
+    // {{ _('Upload signed PDF') }} — the inline gettext shorthand must resolve
+    // through the same Function-reference hover fallback as any other builtin,
+    // once starlette-babel's `_` doc is loaded.
+    let src = "{{ _('Upload signed PDF') }}";
+    let idx = extract(src);
+    let mut reg = Registry::load_core();
+    reg.load_packs(&["starlette-babel"]);
+    let ws = WorkspaceIndex::default();
+    let col = col_of(src, "_(");
+    let result = hover(src, 0, col, &idx, &reg, &ws);
+    assert!(
+        result.is_some(),
+        "hover on '_' in inline gettext shorthand must return a doc"
+    );
+    let r = result.unwrap();
+    assert!(
+        r.markdown.to_lowercase().contains("gettext")
+            || r.markdown.to_lowercase().contains("translat"),
+        "expected the starlette-babel `_` doc, got: {}",
+        r.markdown
+    );
+}
+
 // ─── REQ-HOV-10: imported names resolve through the import ───────────────────
 
 #[test]
