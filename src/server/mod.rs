@@ -50,7 +50,10 @@ pub fn init_tracing() {
     use tracing_subscriber::{EnvFilter, fmt};
     let _ = fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_ansi(false)
         .try_init();
 }
 
@@ -2298,6 +2301,12 @@ fn tokens_to_lsp_data(
 /// REQ-ARCH-02: run the LSP server over stdio with tracing to stderr only.
 pub async fn run_lsp_server() {
     init_tracing();
+    tracing::info!(
+        "{} v{} (built {}) starting",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("BUILD_TIMESTAMP"),
+    );
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
     let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
