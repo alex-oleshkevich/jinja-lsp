@@ -1,7 +1,3 @@
-# REQ-EDIT-07: Zed extension manifest.
-# Language-server id is jinja2-lsp and language is Jinja2 (HTML),
-# ported verbatim from the legacy .zed/settings.json so existing configs keep working.
-
 id = "jinja-plus"
 name = "Jinja Plus"
 version = "0.1.0"
