@@ -215,34 +215,14 @@ fn count_references(
     name: &str,
 ) -> usize {
     match kind {
-        LensSymbolKind::Macro => workspace
-            .templates
-            .iter()
-            .filter(|(path, tmpl_idx)| {
-                path.as_str() == file_path || super::template_does_not_shadow_macro(tmpl_idx, name)
-            })
-            .flat_map(|(_, idx)| idx.references.iter())
-            .filter(|r| {
-                r.name == name
-                    && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
-            })
-            .count(),
+        LensSymbolKind::Macro => macro_reference_locations(workspace, file_path, name).len(),
         LensSymbolKind::Block => count_descendant_overrides(workspace, file_path, name),
     }
 }
 
 /// True if any ancestor template (above `file_path` in the extends chain) defines `block_name`.
 fn has_ancestor_block(workspace: &WorkspaceIndex, file_path: &str, block_name: &str) -> bool {
-    let chain = workspace.template_chain(file_path);
-    // chain[0] == file_path itself; skip it and check ancestors.
-    for ancestor in chain.iter().skip(1) {
-        if let Some(idx) = workspace.templates.get(ancestor) {
-            if idx.blocks.iter().any(|b| b.name == block_name) {
-                return true;
-            }
-        }
-    }
-    false
+    ancestor_block_location(workspace, file_path, block_name).is_some()
 }
 
 /// Count all templates that (a) define `block_name` AND (b) are descendants of `file_path`.
@@ -253,16 +233,119 @@ fn count_descendant_overrides(
     file_path: &str,
     block_name: &str,
 ) -> usize {
+    descendant_override_locations(workspace, file_path, block_name).len()
+}
+
+// ── Navigation targets (jinja-lsp-qpc6) ─────────────────────────────────────
+// The functions above only need counts/booleans for lens titles; clicking a
+// resolved lens needs the actual location(s) to jump to. These share the exact
+// same filtering as the count/bool functions above (which now delegate to
+// them) so a lens's displayed count can never drift from where it navigates.
+
+/// A single jump target for a resolved code lens.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LensTarget {
+    pub path: String,
+    pub line: u32,
+    pub col: u32,
+}
+
+/// Every place in the workspace that calls/references the macro `name`,
+/// matching count_references' Macro filter exactly (REQ-LENS-01).
+fn macro_reference_locations(
+    workspace: &WorkspaceIndex,
+    file_path: &str,
+    name: &str,
+) -> Vec<LensTarget> {
+    workspace
+        .templates
+        .iter()
+        .filter(|(path, tmpl_idx)| {
+            path.as_str() == file_path || super::template_does_not_shadow_macro(tmpl_idx, name)
+        })
+        .flat_map(|(path, idx)| idx.references.iter().map(move |r| (path, r)))
+        .filter(|(_, r)| {
+            r.name == name && matches!(r.kind, ReferenceKind::Identifier | ReferenceKind::Function)
+        })
+        .map(|(path, r)| LensTarget {
+            path: path.clone(),
+            line: r.span.start_line,
+            col: r.span.start_col,
+        })
+        .collect()
+}
+
+/// The nearest ancestor template's declaration of `block_name`, if any (REQ-LENS-04).
+fn ancestor_block_location(
+    workspace: &WorkspaceIndex,
+    file_path: &str,
+    block_name: &str,
+) -> Option<LensTarget> {
+    let chain = workspace.template_chain(file_path);
+    // chain[0] == file_path itself; skip it and check ancestors, nearest first.
+    for ancestor in chain.iter().skip(1) {
+        if let Some(idx) = workspace.templates.get(ancestor) {
+            if let Some(b) = idx.blocks.iter().find(|b| b.name == block_name) {
+                return Some(LensTarget {
+                    path: ancestor.clone(),
+                    line: b.span.start_line,
+                    col: b.span.start_col,
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Every descendant template's override declaration of `block_name`, matching
+/// count_descendant_overrides' filter exactly (REQ-LENS-02).
+fn descendant_override_locations(
+    workspace: &WorkspaceIndex,
+    file_path: &str,
+    block_name: &str,
+) -> Vec<LensTarget> {
     workspace
         .templates
         .iter()
         .filter(|(path, _)| path.as_str() != file_path)
-        .filter(|(_, idx)| idx.blocks.iter().any(|b| b.name == block_name))
         .filter(|(path, _)| {
             workspace
                 .template_chain(path)
                 .iter()
                 .any(|p| p == file_path)
         })
-        .count()
+        .filter_map(|(path, idx)| {
+            idx.blocks
+                .iter()
+                .find(|b| b.name == block_name)
+                .map(|b| LensTarget {
+                    path: path.clone(),
+                    line: b.span.start_line,
+                    col: b.span.start_col,
+                })
+        })
+        .collect()
+}
+
+/// Navigation targets for a resolved lens (REQ-LENS-04) -- what clicking it should
+/// jump to. Empty when the lens kind/symbol combination has no navigable target
+/// (macros never get inheritance lenses, so those combinations can't occur in
+/// practice, but the match stays exhaustive and safe regardless).
+pub fn code_lens_targets(data: &LensData, workspace: &WorkspaceIndex) -> Vec<LensTarget> {
+    match (&data.symbol_kind, &data.lens_kind) {
+        (LensSymbolKind::Macro, LensKind::ReferenceCount) => {
+            macro_reference_locations(workspace, &data.file_path, &data.symbol_name)
+        }
+        (LensSymbolKind::Block, LensKind::ReferenceCount)
+        | (LensSymbolKind::Block, LensKind::InheritanceExtended) => {
+            descendant_override_locations(workspace, &data.file_path, &data.symbol_name)
+        }
+        (LensSymbolKind::Block, LensKind::InheritanceOverrides) => {
+            ancestor_block_location(workspace, &data.file_path, &data.symbol_name)
+                .into_iter()
+                .collect()
+        }
+        (LensSymbolKind::Macro, LensKind::InheritanceOverrides)
+        | (LensSymbolKind::Macro, LensKind::InheritanceExtended) => vec![],
+    }
 }

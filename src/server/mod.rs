@@ -1209,11 +1209,10 @@ impl LanguageServer for Backend {
                             character,
                         },
                     },
-                    command: l.title.map(|title| Command {
-                        title,
-                        command: String::new(),
-                        arguments: None,
-                    }),
+                    // l.title is always None here -- code_lens_feature() only anchors
+                    // lenses (REQ-LENS-04); code_lens_resolve() fills in the title and
+                    // the real navigation command.
+                    command: None,
                     data: Some(data),
                 }
             })
@@ -1230,19 +1229,47 @@ impl LanguageServer for Backend {
         };
         let path = lens_data.file_path.clone();
         let state = self.state.read().await;
+        let workspace = state.workspace_for(&path);
         let internal = crate::features::code_lens::CodeLens {
             line: params.range.start.line,
             col: params.range.start.character,
             title: None,
             data: lens_data,
         };
-        let resolved = code_lens_resolve_feature(internal, state.workspace_for(&path));
+        let resolved = code_lens_resolve_feature(internal, workspace);
         if let Some(title) = resolved.title {
             if !title.is_empty() {
+                // jinja-lsp-qpc6: "editor.action.showReferences" is the de facto LSP
+                // convention (rust-analyzer, gopls, ...) for a code lens that jumps to
+                // one-or-many locations. Zed handles it entirely client-side (see
+                // crates/editor/src/code_lens.rs's try_show_references), opening its
+                // native multi-location peek UI -- no execute_command round-trip.
+                // arguments = [uri, position, locations[]]; Zed only reads index 2,
+                // but the first two are included for parity with other clients.
+                let targets =
+                    crate::features::code_lens::code_lens_targets(&resolved.data, workspace);
+                let (command, arguments) = if targets.is_empty() {
+                    (String::new(), None)
+                } else {
+                    let locations: Vec<Location> = targets
+                        .iter()
+                        .map(|t| {
+                            lens_target_to_location(t, &state.sources, state.position_encoding_utf8)
+                        })
+                        .collect();
+                    (
+                        "editor.action.showReferences".to_owned(),
+                        Some(vec![
+                            serde_json::to_value(path_to_uri(&path)).unwrap_or_default(),
+                            serde_json::to_value(params.range.start).unwrap_or_default(),
+                            serde_json::to_value(locations).unwrap_or_default(),
+                        ]),
+                    )
+                };
                 params.command = Some(Command {
                     title,
-                    command: String::new(),
-                    arguments: None,
+                    command,
+                    arguments,
                 });
             }
         }
@@ -2006,6 +2033,32 @@ fn ref_to_location(
             end: Position {
                 line: r.end_line,
                 character: byte_col_to_lsp_char(source_line(src, r.end_line), r.end_col, utf8),
+            },
+        },
+    }
+}
+
+/// jinja-lsp-qpc6: a lens target is a single declaration point, not a span, so
+/// its LSP Location is zero-width -- matching how code_lens()'s own `range` is
+/// built for the lens's anchor position.
+fn lens_target_to_location(
+    t: &crate::features::code_lens::LensTarget,
+    sources: &std::collections::HashMap<String, String>,
+    utf8: bool,
+) -> Location {
+    let empty = String::new();
+    let src = sources.get(&t.path).unwrap_or(&empty);
+    let character = byte_col_to_lsp_char(source_line(src, t.line), t.col, utf8);
+    Location {
+        uri: path_to_uri(&t.path),
+        range: Range {
+            start: Position {
+                line: t.line,
+                character,
+            },
+            end: Position {
+                line: t.line,
+                character,
             },
         },
     }

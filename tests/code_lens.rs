@@ -1,7 +1,7 @@
 // F15 — Code Lens tests: REQ-LENS-01 through REQ-LENS-05.
 
 use jinja_lsp::features::code_lens::{
-    CodeLensConfig, LensKind, LensSymbolKind, code_lens, code_lens_resolve,
+    CodeLensConfig, LensKind, LensSymbolKind, code_lens, code_lens_resolve, code_lens_targets,
 };
 use jinja_lsp::parsing::extract;
 use jinja_lsp::workspace::index::WorkspaceIndex;
@@ -591,4 +591,106 @@ fn lens01_same_name_macro_in_another_file_not_counted() {
     // other.html defines its own btn — those 2 calls must not be attributed to macros.html.
     // Count=0 is suppressed to empty string (REQ-LENS-05).
     assert_eq!(resolved.title.as_deref(), Some(""));
+}
+
+// ─── jinja-lsp-qpc6: navigation targets for resolved lenses ───────────────────
+
+#[test]
+fn lens_target_macro_ref_count_points_at_call_sites() {
+    let macro_src = "{% macro ping() %}{% endmacro %}";
+    let caller_src = "{{ ping() }}";
+    let workspace = ws(&[("macros.html", macro_src), ("caller.html", caller_src)]);
+    let idx = extract(macro_src);
+    let lenses = code_lens("macros.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::ReferenceCount)
+        .expect("ping lens");
+    let targets = code_lens_targets(&lens.data, &workspace);
+    assert_eq!(targets.len(), 1, "one call site: {targets:?}");
+    assert_eq!(targets[0].path, "caller.html");
+}
+
+#[test]
+fn lens_target_macro_ref_count_excludes_shadowing_macro_in_other_file() {
+    // Mirrors lens01_same_name_macro_in_another_file_not_counted: the count and
+    // the navigation targets must never drift apart.
+    let macro_src = "{% macro btn() %}{% endmacro %}";
+    let other_src = "{% macro btn() %}{% endmacro %}{{ btn() }}{{ btn() }}";
+    let workspace = ws(&[("macros.html", macro_src), ("other.html", other_src)]);
+    let idx = extract(macro_src);
+    let lenses = code_lens("macros.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::ReferenceCount)
+        .expect("btn lens");
+    let targets = code_lens_targets(&lens.data, &workspace);
+    assert!(
+        targets.is_empty(),
+        "other.html's calls to its own btn must not appear as targets: {targets:?}"
+    );
+}
+
+#[test]
+fn lens_target_block_overrides_points_at_nearest_ancestor() {
+    let base_src = "{% block content %}base{% endblock %}";
+    let mid_src = "{% extends 'base.html' %}{% block content %}mid{% endblock %}";
+    let child_src = "{% extends 'mid.html' %}{% block content %}child{% endblock %}";
+    let workspace = ws(&[
+        ("base.html", base_src),
+        ("mid.html", mid_src),
+        ("child.html", child_src),
+    ]);
+    let idx = extract(child_src);
+    let lenses = code_lens("child.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::InheritanceOverrides)
+        .expect("overrides lens");
+    let targets = code_lens_targets(&lens.data, &workspace);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(
+        targets[0].path, "mid.html",
+        "must point at the nearest ancestor override, not the root base.html"
+    );
+}
+
+#[test]
+fn lens_target_block_extended_points_at_every_descendant_override() {
+    let base_src = "{% block content %}base{% endblock %}";
+    let mid_src = "{% extends 'base.html' %}{% block content %}mid{% endblock %}";
+    let leaf_src = "{% extends 'mid.html' %}{% block content %}leaf{% endblock %}";
+    let workspace = ws(&[
+        ("base.html", base_src),
+        ("mid.html", mid_src),
+        ("leaf.html", leaf_src),
+    ]);
+    let idx = extract(base_src);
+    let lenses = code_lens("base.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::InheritanceExtended)
+        .expect("extended lens");
+    let targets = code_lens_targets(&lens.data, &workspace);
+    let mut paths: Vec<&str> = targets.iter().map(|t| t.path.as_str()).collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        vec!["leaf.html", "mid.html"],
+        "must include every descendant override, not just immediate children (REQ-LENS-02)"
+    );
+}
+
+#[test]
+fn lens_target_block_overrides_none_when_no_ancestor_defines_it() {
+    let src = "{% block content %}only{% endblock %}";
+    let workspace = ws(&[("solo.html", src)]);
+    let idx = extract(src);
+    let lenses = code_lens("solo.html", &idx, &CodeLensConfig::default());
+    let lens = lenses
+        .iter()
+        .find(|l| l.data.lens_kind == LensKind::InheritanceOverrides)
+        .expect("overrides lens");
+    let targets = code_lens_targets(&lens.data, &workspace);
+    assert!(targets.is_empty());
 }
