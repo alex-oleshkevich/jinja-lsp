@@ -1,0 +1,15 @@
+-- Configuration for {{ config_name }}
+
+{% if enable_logging %}
+local log_enabled = true
+{% endif %}
+
+local items = {
+  {% for item in items %}
+  "{{ item | lower }}",
+  {% endfor %}
+}
+
+function getName()
+  return "{{ name }}"
+end

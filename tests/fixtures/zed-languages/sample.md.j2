@@ -1,0 +1,14 @@
+# {{ title | upper }}
+
+{% if intro %}
+This is the introduction section for the documentation.
+{% endif %}
+
+## Items
+
+{% for item in items %}
+- **{{ item }}**: A description of this item
+{% endfor %}
+
+---
+Generated on {{ date }}

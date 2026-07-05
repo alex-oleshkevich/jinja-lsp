@@ -1,0 +1,13 @@
+#!/bin/bash
+# Script for {{ script_name }}
+
+{% if check_deps %}
+command -v git >/dev/null || { echo "Git required"; exit 1; }
+{% endif %}
+
+{% for cmd in commands %}
+echo "Running: {{ cmd }}"
+{{ cmd }}
+{% endfor %}
+
+echo "Done: {{ task_name | upper }}"

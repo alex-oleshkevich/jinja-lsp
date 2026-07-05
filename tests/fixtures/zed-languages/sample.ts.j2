@@ -1,0 +1,16 @@
+// Types for {{ module_name }}
+
+interface Config {
+  {% if has_database %}
+  databaseUrl: string;
+  {% endif %}
+  apiKey: string;
+}
+
+{% for item in items %}
+const {{ item | lower }} = "{{ item }}";
+{% endfor %}
+
+function process(name: string): string {
+  return "{{ prefix }}" + name;
+}

@@ -1,0 +1,18 @@
+{% if light_theme %}
+:root {
+  --primary: #ffffff;
+  --text: #000000;
+}
+{% endif %}
+
+{% for color in colors %}
+.color-{{ color | lower }} {
+  background: var(--{{ color }});
+}
+{% endfor %}
+
+body {
+  font-family: {{ font_family }};
+  margin: 0;
+  padding: 0;
+}

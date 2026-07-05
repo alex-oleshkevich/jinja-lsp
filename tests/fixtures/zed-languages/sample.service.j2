@@ -1,0 +1,19 @@
+[Unit]
+Description={{ service_description }}
+After=network.target
+
+{% if requires %}
+Requires=docker.service
+{% endif %}
+
+[Service]
+Type=simple
+ExecStart={{ exec_command }}
+Restart=on-failure
+
+{% for var in env_vars %}
+Environment="{{ var | upper }}={{ var }}"
+{% endfor %}
+
+[Install]
+WantedBy=multi-user.target

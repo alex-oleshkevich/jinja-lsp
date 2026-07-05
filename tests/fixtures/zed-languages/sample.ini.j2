@@ -1,0 +1,14 @@
+[general]
+name = {{ app_name }}
+version = 1.0.0
+
+{% if debug %}
+[debug]
+enabled = true
+verbose = {{ verbose | lower }}
+{% endif %}
+
+[items]
+{% for item in items %}
+{{ item | lower }} = {{ item }}
+{% endfor %}

@@ -1,0 +1,15 @@
+[package]
+name = "{{ package_name }}"
+version = "1.0.0"
+
+{% if include_dev_deps %}
+[dev-dependencies]
+pytest = "7.0"
+{% endif %}
+
+{% for feature in features %}
+[features.{{ feature | lower }}]
+enabled = true
+{% endfor %}
+
+author = "{{ author }}"

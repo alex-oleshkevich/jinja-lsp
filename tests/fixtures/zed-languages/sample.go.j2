@@ -1,0 +1,17 @@
+package main
+
+import "fmt"
+
+{% if use_context %}
+import "context"
+{% endif %}
+
+func ProcessItems() {
+    {% for item in items %}
+    fmt.Println("{{ item | upper }}")
+    {% endfor %}
+}
+
+func GetName() string {
+    return "{{ name }}"
+}

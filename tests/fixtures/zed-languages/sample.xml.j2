@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  {% if debug %}
+  <debug enabled="true" />
+  {% endif %}
+
+  <items>
+    {% for item in items %}
+    <item name="{{ item | lower }}">
+      <value>{{ item }}</value>
+    </item>
+    {% endfor %}
+  </items>
+
+  <metadata>
+    <created>{{ created }}</created>
+  </metadata>
+</config>

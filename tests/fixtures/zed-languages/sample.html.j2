@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>{{ page_title }}</title>
+</head>
+<body>
+  {% if show_header %}
+  <header>
+    <h1>{{ title | upper }}</h1>
+  </header>
+  {% endif %}
+
+  <main>
+    {% for post in posts %}
+    <article>
+      <h2>{{ post.title }}</h2>
+      <p>{{ post.content }}</p>
+    </article>
+    {% endfor %}
+  </main>
+</body>
+</html>

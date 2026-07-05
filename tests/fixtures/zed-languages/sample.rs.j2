@@ -1,0 +1,15 @@
+// Module for {{ module_name }}
+
+{% if debug_mode %}
+const DEBUG: bool = true;
+{% endif %}
+
+fn process_items() {
+    {% for item in items %}
+    println!("{{ item | upper }}");
+    {% endfor %}
+}
+
+fn get_name() -> &'static str {
+    "{{ name }}"
+}

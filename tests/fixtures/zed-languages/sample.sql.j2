@@ -1,0 +1,14 @@
+-- Query for {{ query_name }}
+
+{% if filter_active %}
+SELECT * FROM users WHERE active = true
+{% endif %}
+
+{% for table in tables %}
+CREATE TABLE {{ table | lower }} (
+  id INT PRIMARY KEY,
+  name VARCHAR(100)
+);
+{% endfor %}
+
+INSERT INTO logs (message) VALUES ('{{ message }}');

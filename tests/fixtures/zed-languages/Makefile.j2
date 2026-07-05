@@ -1,0 +1,16 @@
+.PHONY: help build test
+
+{% if has_docker %}
+.PHONY: docker-build
+docker-build:
+	docker build -t {{ image_name }} .
+{% endif %}
+
+{% for target in targets %}
+.PHONY: {{ target | lower }}
+{{ target | lower }}:
+	@echo "Running {{ target }}"
+{% endfor %}
+
+build:
+	@echo "Building {{ project_name }}"

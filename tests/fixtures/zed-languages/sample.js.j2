@@ -1,0 +1,15 @@
+// Configuration for {{ project_name }}
+
+{% if debug_mode %}
+console.log("Debug mode enabled");
+{% endif %}
+
+const items = [
+  {% for item in items %}
+  "{{ item | lower }}",
+  {% endfor %}
+];
+
+function getName() {
+  return "{{ name }}";
+}

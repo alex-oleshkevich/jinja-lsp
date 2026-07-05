@@ -1,0 +1,14 @@
+Welcome to the {{ app_name | upper }} documentation.
+
+{% if show_intro %}
+This is an introductory section explaining the basics.
+{% endif %}
+
+Here are the main topics:
+
+{% for topic in topics %}
+- {{ topic }}
+{% endfor %}
+
+Thank you for reading!
+For more info, visit {{ website }}

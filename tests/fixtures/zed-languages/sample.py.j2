@@ -1,0 +1,14 @@
+"""Module for {{ module_name }}"""
+
+{% if import_requests %}
+import requests
+{% endif %}
+
+def process_items():
+    """Process a list of items."""
+    {% for item in items %}
+    print("{{ item | upper }}")
+    {% endfor %}
+
+def get_name():
+    return "{{ name }}"

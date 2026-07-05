@@ -1,0 +1,23 @@
+terraform {
+  required_version = ">= 1.0"
+}
+
+{% if use_aws %}
+provider "aws" {
+  region = var.region
+}
+{% endif %}
+
+{% for resource in resources %}
+resource "aws_instance" "{{ resource | lower }}" {
+  ami           = var.ami
+  instance_type = "t2.micro"
+  tags = {
+    Name = "{{ resource }}"
+  }
+}
+{% endfor %}
+
+variable "region" {
+  default = "{{ default_region }}"
+}

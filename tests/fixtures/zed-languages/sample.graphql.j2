@@ -1,0 +1,22 @@
+# Query for {{ query_name }}
+
+{% if include_user %}
+type User {
+  id: ID!
+  name: String!
+  email: {{ email_type }}
+}
+{% endif %}
+
+{% for field in fields %}
+type {{ field | upper }} {
+  id: ID!
+  value: String!
+}
+{% endfor %}
+
+query GetData {
+  data {
+    value: "{{ value }}"
+  }
+}

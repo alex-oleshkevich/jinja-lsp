@@ -1,0 +1,17 @@
+FROM {{ base_image }}
+
+WORKDIR /app
+
+{% if use_apt %}
+RUN apt-get update && apt-get install -y \
+  build-essential \
+  python3
+{% endif %}
+
+{% for pkg in packages %}
+RUN pip install {{ pkg | lower }}
+{% endfor %}
+
+ENV APP_NAME={{ app_name }}
+COPY . .
+CMD ["python3", "main.py"]
