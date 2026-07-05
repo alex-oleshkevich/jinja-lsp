@@ -331,17 +331,31 @@ impl LanguageServer for Backend {
             .and_then(|root| crate::config::JinjaConfig::discover_with_path(root).ok())
             .unwrap_or_default();
 
+        tracing::info!(
+            "jinja-lsp: initializing, root={:?}, config={:?}",
+            root_path,
+            config_file_path,
+        );
+
         // Build primary workspace index in a blocking thread — may read many files from disk.
         let initial_workspace = if let Some(root) = root_path {
             let dirs = discovered_config.resolved_template_dirs(root);
             let exts: Vec<String> = discovered_config.extensions.clone();
-            tokio::task::spawn_blocking(move || {
+            tracing::info!("jinja-lsp: indexing template dirs {:?}", dirs);
+            let started = std::time::Instant::now();
+            let workspace = tokio::task::spawn_blocking(move || {
                 let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
                 let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
                 crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
             })
             .await
-            .unwrap_or_default()
+            .unwrap_or_default();
+            tracing::info!(
+                "jinja-lsp: indexed {} template(s) in {:?}",
+                workspace.templates.len(),
+                started.elapsed(),
+            );
+            workspace
         } else {
             crate::workspace::index::WorkspaceIndex::default()
         };
@@ -567,6 +581,7 @@ impl LanguageServer for Backend {
             return;
         }
         let key = Self::uri_to_key(&params.text_document.uri);
+        tracing::debug!("jinja-lsp: did_open {key}");
         // jinja-lsp-wgi7: a reopened document's version counter is not guaranteed to
         // continue from where it left off before the previous close — most clients
         // restart it (often back to 1). Clear any stale high-water mark left by
@@ -627,6 +642,7 @@ impl LanguageServer for Backend {
         // reopen) also prevents doc_versions growing unboundedly across many
         // open/close cycles over a long-running server session.
         let key = Self::uri_to_key(&params.text_document.uri);
+        tracing::debug!("jinja-lsp: did_close {key}");
         self.state.write().await.doc_versions.remove(&key);
     }
 
