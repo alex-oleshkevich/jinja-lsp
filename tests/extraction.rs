@@ -152,6 +152,63 @@ fn extr10_filter_with_args_after_attr_captured_as_function() {
 }
 
 #[test]
+fn extr10_function_call_chained_with_method_call_captured() {
+    // {{ url_for(...).include_query_params(...) }} -- a function call followed by
+    // a method call (no pipe, no plain attribute) produces a two-child nested
+    // expression shape none of the attribute/pipe-specific patterns cover, so
+    // url_for's own identifier was never captured at all (confirmed live).
+    let src = r#"{{ url_for("x", contract_id=contract.id).include_query_params(lang=request.state.locale) }}"#;
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
+        .filter(|r| r.name == "url_for" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(
+        !fn_refs.is_empty(),
+        "url_for must be captured as Function even when chained with .include_query_params(...);\n  references = {:?}",
+        idx.references
+    );
+}
+
+#[test]
+fn extr10_chained_method_call_itself_also_captured() {
+    // The method on the right side of the chain (include_query_params) should
+    // also be captured -- hovering it should work too.
+    let src = r#"{{ url_for("x").include_query_params(lang="en") }}"#;
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
+        .filter(|r| r.name == "include_query_params" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(
+        !fn_refs.is_empty(),
+        "include_query_params must be captured as Function;\n  references = {:?}",
+        idx.references
+    );
+}
+
+#[test]
+fn extr10_function_call_inside_if_condition_captured() {
+    // Function calls outside render_expression (e.g. control-statement
+    // conditions) were entirely unhandled by the old render_expression-scoped
+    // patterns -- a related instance of the same gap shape.
+    let src = "{% if is_valid(user) %}ok{% endif %}";
+    let idx = extract(src);
+    let fn_refs: Vec<_> = idx
+        .references
+        .iter()
+        .filter(|r| r.name == "is_valid" && r.kind == ReferenceKind::Function)
+        .collect();
+    assert!(
+        !fn_refs.is_empty(),
+        "is_valid must be captured as Function inside {{% if %}};\n  references = {:?}",
+        idx.references
+    );
+}
+
+#[test]
 fn extr10_inline_gettext_underscore_captured_as_function() {
     // {{ _('Upload signed PDF') }} — the grammar parses this as a dedicated
     // inline_trans node (seq('_', '(', expression, ')')), not a generic
@@ -329,5 +386,57 @@ fn jinja_lsp_mojm_include_template_refs_are_in_document_order() {
         include_paths,
         vec!["a.html", "b.html", "c.html", "d.html", "e.html"],
         "include template_refs must be in document order: {include_paths:?}"
+    );
+}
+
+#[test]
+fn extr10_general_function_call_pattern_does_not_double_count() {
+    // Replacing two chain-shape-specific patterns with one general
+    // (function_call (identifier)@function) must not produce duplicate
+    // references for cases the old narrow patterns already handled, or
+    // "N references" code lenses would silently double-count.
+    let src = "{{ post.title | truncate(60) }}";
+    let idx = extract(src);
+    let truncate_refs: Vec<_> = idx
+        .references
+        .iter()
+        .filter(|r| r.name == "truncate")
+        .collect();
+    assert_eq!(
+        truncate_refs.len(),
+        1,
+        "must not double-count: {truncate_refs:?}"
+    );
+
+    let src2 = r#"{{ url_for("x").include_query_params(lang="en") }}"#;
+    let idx2 = extract(src2);
+    let url_for_refs: Vec<_> = idx2
+        .references
+        .iter()
+        .filter(|r| r.name == "url_for")
+        .collect();
+    let iqp_refs: Vec<_> = idx2
+        .references
+        .iter()
+        .filter(|r| r.name == "include_query_params")
+        .collect();
+    assert_eq!(url_for_refs.len(), 1, "{url_for_refs:?}");
+    assert_eq!(iqp_refs.len(), 1, "{iqp_refs:?}");
+}
+
+#[test]
+fn extr10_macro_declaration_header_not_captured_as_function_reference() {
+    // macro_statement's grammar reuses the function_call node shape for its
+    // own name+params header (seq('macro', function_call)), so the general
+    // (function_call (identifier)@function) pattern also matches it -- but a
+    // declaration is not a call, and must not become a phantom self-reference
+    // (this broke the W202 unused-macro check: a macro would always appear
+    // "used" by its own declaration).
+    let src = "{% macro unused() %}{% endmacro %}";
+    let idx = extract(src);
+    assert!(
+        idx.references.is_empty(),
+        "macro header must not produce a Function self-reference: {:?}",
+        idx.references
     );
 }

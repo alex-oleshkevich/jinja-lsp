@@ -1272,7 +1272,22 @@ fn do_references(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex
                 "identifier" | "object" => ReferenceKind::Identifier,
                 "attribute" => ReferenceKind::Attribute,
                 "filter" => ReferenceKind::Filter,
-                "function" => ReferenceKind::Function,
+                "function" => {
+                    // jinja-lsp: macro_statement's header reuses the function_call
+                    // node shape (grammar: macro_statement = seq('macro', function_call)),
+                    // so a general (function_call (identifier)@function) pattern also
+                    // matches a macro's own declaration -- that's a definition, not a
+                    // call, and must not become a phantom self-reference.
+                    let is_macro_header = cap
+                        .node
+                        .parent()
+                        .and_then(|fc| fc.parent())
+                        .is_some_and(|gp| gp.kind() == "macro_statement");
+                    if is_macro_header {
+                        continue;
+                    }
+                    ReferenceKind::Function
+                }
                 "builtin_test" | "custom_test" => ReferenceKind::Test,
                 _ => continue, // helper captures (e.g. @_is_op) are silently skipped
             };

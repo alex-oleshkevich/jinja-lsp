@@ -1,11 +1,1 @@
-[
-  {
-    "file": "b.html",
-    "line": 1,
-    "col": 3,
-    "code": "JINJA-W202",
-    "slug": "unused-macro",
-    "severity": "warning",
-    "message": "macro 'greet' is defined but never used anywhere in the workspace"
-  }
-]
+[]

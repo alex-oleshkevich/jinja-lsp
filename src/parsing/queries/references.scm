@@ -43,28 +43,16 @@
             (identifier) @filter)))
       (#eq? @_attr_pipe "|"))))
 
-; Function call (filter with args) after attribute access: {{ obj.attr | filter(args) }}
-(render_expression
-  (expression
-    (expression)
-    (expression
-      (binary_expression
-        (binary_expression)
-        (binary_operator) @_attr_fn_pipe
-        (unary_expression
-          (primary_expression
-            (function_call
-              (identifier) @function))))
-      (#eq? @_attr_fn_pipe "|"))))
-
-; Function calls:
-(render_expression
-  (expression
-    (binary_expression
-      (unary_expression
-        (primary_expression
-          (function_call
-            (identifier) @function))))))
+; Function calls, anywhere an expression can appear -- render expressions,
+; control-statement conditions/iterables ({% if %}/{% for %}), filter args,
+; nested call arguments, and method-chain links ({{ f(x).g(y) }}, where the
+; attribute-access-specific patterns above/below don't apply since neither
+; side is a bare identifier or a pipe-filter). A single unscoped pattern
+; matches a function_call at any depth, subsuming what used to be two
+; narrower, chain-shape-specific patterns (top-level call, and call-after-
+; attribute-access-via-pipe) that both missed direct method chains.
+(function_call
+  (identifier) @function)
 
 ; Inline gettext shorthand: {{ _('message') }}. The grammar parses this as its
 ; own inline_trans node (seq('_', '(', expression, ')')), not a function_call,
