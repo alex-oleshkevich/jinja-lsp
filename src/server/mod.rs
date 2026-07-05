@@ -2338,6 +2338,23 @@ mod server_tests {
     use crate::features::semantic_tokens::SemanticToken as IST;
 
     #[test]
+    fn is_jinja_language_id_accepts_canonical_ids() {
+        assert!(is_jinja_language_id("jinja"));
+        assert!(is_jinja_language_id("jinja-html"));
+    }
+
+    /// jinja-lsp-fxse: Zed's default languageId for a language with no explicit
+    /// `[language_servers.<id>.language_ids]` override in extension.toml is just
+    /// `name.to_lowercase()` (confirmed against Zed's language_name.rs). For "Jinja2
+    /// (HTML)" that default is "jinja2 (html)", not "jinja-html" — so extension.toml
+    /// MUST declare an explicit language_ids mapping to "jinja-html", or every real
+    /// didOpen is silently rejected here and live editing never gets diagnostics.
+    #[test]
+    fn is_jinja_language_id_rejects_zed_unmapped_default() {
+        assert!(!is_jinja_language_id("jinja2 (html)"));
+    }
+
+    #[test]
     fn delta_encoding_two_tokens_same_line() {
         // Two tokens on line 0: x at col 3 (len 1), y at col 7 (len 1).
         let tokens = vec![

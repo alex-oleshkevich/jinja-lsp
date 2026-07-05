@@ -14,3 +14,10 @@ path = "tree-sitter-jinja"
 [language_servers.jinja2-lsp]
 name = "jinja-lsp"
 languages = ["Jinja2 (HTML)"]
+
+# Without this, Zed's default languageId is name.to_lowercase() = "jinja2 (html)",
+# which the server's is_jinja_language_id() rejects (see src/server/mod.rs) --
+# every didOpen would be silently ignored and live editing would never get
+# diagnostics. Keep this in sync with is_jinja_language_id().
+[language_servers.jinja2-lsp.language_ids]
+"Jinja2 (HTML)" = "jinja-html"
