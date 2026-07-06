@@ -382,9 +382,234 @@ fn is_opener(kw: &str, inner: &str) -> bool {
     OPENERS.contains(&kw)
 }
 
-/// Re-indent Jinja-tag lines so their leading whitespace equals `depth × indent_unit`,
-/// where depth is the count of open paired tags enclosing the line.
-/// Host-language lines are never modified.
+/// HTML void elements: never paired with a closing tag, so they never open a
+/// nesting level even without a trailing `/`.
+const VOID_HTML_ELEMENTS: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
+];
+
+/// HTML tags whose interior content is opaque (JS/CSS/preformatted text) and must
+/// never be re-indented, mirroring `{% raw %}`'s Jinja-level equivalent.
+const LITERAL_HTML_TAGS: &[&str] = &["script", "style", "pre"];
+
+/// One depth-affecting token found while scanning a line (or multi-line chunk)
+/// for combined HTML+Jinja nesting, per djhtml's model of treating both tag
+/// systems as one unified stream of indent/dedent events.
+struct DepthToken {
+    is_opener: bool,
+    is_closer: bool,
+    /// Set when this token is an HTML opening tag for `<script>`/`<style>`/`<pre>` —
+    /// signals the caller to skip re-indenting lines until the matching close tag.
+    enters_html_literal: Option<&'static str>,
+}
+
+/// Find the first occurrence of ASCII `marker` in `bytes` at or after `start`,
+/// skipping over `'...'`/`"..."` quoted regions (which may contain the marker
+/// harmlessly, e.g. a `%}` inside a Jinja string literal or a `>` inside an
+/// HTML attribute value). Returns `None` if `marker` never appears unquoted.
+fn find_unquoted_marker(bytes: &[u8], start: usize, marker: &[u8]) -> Option<usize> {
+    let mut i = start;
+    let mut in_str: Option<u8> = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == q {
+                in_str = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_str = Some(b);
+            i += 1;
+            continue;
+        }
+        if bytes[i..].starts_with(marker) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Find the unquoted `>` terminating an HTML tag starting at `start` (the byte
+/// right after the tag name). Returns `(index_of_gt, is_self_closing)`.
+fn find_html_tag_end(bytes: &[u8], start: usize) -> Option<(usize, bool)> {
+    let mut i = start;
+    let mut in_str: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_str {
+            if b == q {
+                in_str = None;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => {
+                in_str = Some(b);
+                i += 1;
+            }
+            b'>' => {
+                let self_close = i > start && bytes[i - 1] == b'/';
+                return Some((i, self_close));
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Scan `text` (which may span multiple physical lines) for every Jinja `{% %}`
+/// tag and HTML tag it contains, in left-to-right order, classifying each as an
+/// opener/closer/neutral `DepthToken` for combined indentation-depth tracking.
+/// Skips the interior of `{{ }}` expressions, `{# #}`/`<!-- -->` comments, and
+/// quoted HTML attribute values — none of these affect nesting depth.
+///
+/// Returns `(tokens, complete)`: `complete` is `false` when `text` ends mid-construct
+/// (an unclosed `{%`, `{{`, `{#`, `<!--`, or HTML tag needing more lines to close).
+fn scan_depth_tokens(text: &str) -> (Vec<DepthToken>, bool) {
+    let bytes = text.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    let mut tokens = Vec::new();
+
+    while i < n {
+        let rest = &bytes[i..];
+        if rest.starts_with(b"<!--") {
+            match find_unquoted_marker(bytes, i + 4, b"-->") {
+                Some(pos) => i = pos + 3,
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.starts_with(b"{#") {
+            match find_unquoted_marker(bytes, i + 2, b"#}") {
+                Some(pos) => i = pos + 2,
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.starts_with(b"{{") {
+            match find_unquoted_marker(bytes, i + 2, b"}}") {
+                Some(pos) => i = pos + 2,
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.starts_with(b"{%") {
+            match find_unquoted_marker(bytes, i + 2, b"%}") {
+                Some(pos) => {
+                    let inner = &text[i + 2..pos];
+                    let kw_str = inner.trim_matches('-').trim();
+                    if let Some(first) = kw_str.split_whitespace().next() {
+                        let is_open = is_opener(first, kw_str);
+                        let is_close = CLOSERS.contains(&first);
+                        if is_open || is_close {
+                            tokens.push(DepthToken {
+                                is_opener: is_open,
+                                is_closer: is_close,
+                                enters_html_literal: None,
+                            });
+                        }
+                    }
+                    i = pos + 2;
+                }
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.starts_with(b"</") {
+            let name_end = text[i + 2..]
+                .find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_' || c == ':'))
+                .map(|p| i + 2 + p)
+                .unwrap_or(n);
+            match find_html_tag_end(bytes, name_end) {
+                Some((pos, _)) => {
+                    tokens.push(DepthToken {
+                        is_opener: false,
+                        is_closer: true,
+                        enters_html_literal: None,
+                    });
+                    i = pos + 1;
+                }
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.starts_with(b"<!") {
+            match find_html_tag_end(bytes, i + 2) {
+                Some((pos, _)) => i = pos + 1,
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        if rest.first() == Some(&b'<') && rest.get(1).is_some_and(|c| c.is_ascii_alphabetic()) {
+            let name_end = text[i + 1..]
+                .find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_' || c == ':'))
+                .map(|p| i + 1 + p)
+                .unwrap_or(n);
+            let name = text[i + 1..name_end].to_ascii_lowercase();
+            match find_html_tag_end(bytes, name_end) {
+                Some((pos, self_close)) => {
+                    let is_void = VOID_HTML_ELEMENTS.contains(&name.as_str());
+                    if !self_close && !is_void {
+                        let literal = LITERAL_HTML_TAGS.iter().copied().find(|&t| t == name);
+                        tokens.push(DepthToken {
+                            is_opener: true,
+                            is_closer: false,
+                            enters_html_literal: literal,
+                        });
+                    }
+                    i = pos + 1;
+                }
+                None => return (tokens, false),
+            }
+            continue;
+        }
+        i += text[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+    }
+
+    (tokens, true)
+}
+
+/// Return true when `line` (case-insensitively) contains the closing tag for
+/// `tag` — used to detect the end of a `<script>`/`<style>`/`<pre>` literal
+/// region so its interior can be skipped without being parsed as HTML (its
+/// content may contain `<`/`>` that isn't a real tag).
+///
+/// Requires a word boundary right after the tag name so literal content like
+/// `</pretend>` (inside a `<pre>` block) isn't mistaken for `</pre>`.
+fn contains_html_closing_tag(line: &str, tag: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let needle = format!("</{tag}");
+    let mut start = 0;
+    while let Some(rel) = lower[start..].find(&needle) {
+        let end = start + rel + needle.len();
+        let boundary = lower
+            .as_bytes()
+            .get(end)
+            .is_none_or(|b| !(b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_' || *b == b':'));
+        if boundary {
+            return true;
+        }
+        start += rel + 1;
+    }
+    false
+}
+
+/// Re-indent every line (HTML, `{{ }}` expressions, and `{% %}` tags alike) so its
+/// leading whitespace equals `depth × indent_unit`, where depth is the count of
+/// open paired constructs — Jinja block tags AND HTML tags — enclosing the line
+/// (djhtml's combined-tokenizer model). Content itself (everything after leading
+/// whitespace) is never rewritten, only reindented.
 pub fn reindent(source: &str, indent_unit: &str) -> String {
     let mut depth: usize = 0;
     let mut out = String::with_capacity(source.len());
@@ -392,6 +617,13 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
     // must never be re-indented or counted toward depth, even if it looks like
     // a Jinja tag. Only the matching `endraw` line is still processed normally.
     let mut in_raw = false;
+    // Inside <script>/<style>/<pre>…</…>, content is opaque host content — never
+    // re-indented or scanned for tags. Only the matching close tag line is
+    // still processed normally.
+    let mut html_literal: Option<&'static str> = None;
+    // Inside <!-- … -->, content (which may span lines) is never re-indented or
+    // scanned — HTML comments can't be nested and their content is inert.
+    let mut in_html_comment = false;
 
     let lines: Vec<&str> = source.split('\n').collect();
     let mut i = 0;
@@ -415,36 +647,63 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
             in_raw = false;
         }
 
-        if !is_jinja_tag_line(line) {
-            // Host-language line: emit verbatim.
+        if let Some(tag) = html_literal {
+            if !contains_html_closing_tag(line, tag) {
+                out.push_str(line);
+                i += 1;
+                continue;
+            }
+            html_literal = None;
+        }
+
+        if in_html_comment {
+            if line.contains("-->") {
+                in_html_comment = false;
+            }
             out.push_str(line);
             i += 1;
             continue;
         }
 
-        // jinja-lsp-cjlb: a tag can split its `{% ... %}` across multiple physical
-        // lines. Accumulate lines until `{%`/`%}` counts balance (or EOF) so the
-        // opener is still correctly counted for depth — a tag whose keyword is
-        // never seen would otherwise leave its matching end-tag's decrement
-        // silently absorbed by the `depth > 0` guard. Continuation lines are
-        // emitted verbatim (unchanged) — only the tag's first line is re-indented.
-        let mut end = i;
-        let mut full_tag = line.to_owned();
-        while !tag_text_is_balanced(&full_tag) && end + 1 < lines.len() {
-            end += 1;
-            full_tag.push('\n');
-            full_tag.push_str(lines[end]);
+        if line.trim().is_empty() {
+            out.push_str(line);
+            i += 1;
+            continue;
         }
 
-        let keywords = jinja_tag_keywords_on_line(&full_tag);
-        let first_kw = keywords.first().map(|(kw, _)| kw.as_str()).unwrap_or("");
+        let trimmed_start = line.trim_start_matches([' ', '\t']);
+        if trimmed_start.starts_with("<!--") && !trimmed_start.contains("-->") {
+            out.push_str(line);
+            in_html_comment = true;
+            i += 1;
+            continue;
+        }
 
-        // Closers (endblock, endif, …) and re-aligners (elif, else) print at depth-1.
-        if CLOSERS.contains(&first_kw) && depth > 0 {
+        // A tag/construct can split across multiple physical lines (wrapped Jinja
+        // tags, wrapped HTML attributes). Accumulate lines until the chunk is
+        // "complete" (or EOF). Continuation lines are emitted verbatim — only the
+        // chunk's first line is re-indented.
+        let mut end = i;
+        let mut full_text = line.to_owned();
+        loop {
+            let (_, complete) = scan_depth_tokens(&full_text);
+            if complete || end + 1 >= lines.len() {
+                break;
+            }
+            end += 1;
+            full_text.push('\n');
+            full_text.push_str(lines[end]);
+        }
+
+        let (tokens, _complete) = scan_depth_tokens(&full_text);
+
+        // Closers (endblock, endif, </div>, …) and re-aligners (elif, else) print
+        // at depth-1 when they are the first depth-affecting construct on the line.
+        if tokens.first().is_some_and(|t| t.is_closer) && depth > 0 {
             depth -= 1;
         }
 
-        // Write the tag's first line with current depth indentation.
+        // Write the chunk's first line with current depth indentation.
         let stripped = line.trim_start_matches([' ', '\t']);
         for _ in 0..depth {
             out.push_str(indent_unit);
@@ -458,28 +717,23 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         }
         i = end;
 
-        // Compute net depth delta from ALL tags in the (possibly multi-line) text.
+        // Compute net depth delta from ALL tokens in the (possibly multi-line) text.
         //
-        // First keyword: if it is a closer, the decrement was already applied in the
-        // pre-step above; count it only as an opener (+1) if applicable.
-        // Subsequent keywords: pure openers +1, pure closers -1, realigners net 0.
+        // First token: if it is a closer, the decrement was already applied above;
+        // count it only as an opener (+1) if applicable.
+        // Subsequent tokens: pure openers +1, pure closers -1, realigners net 0.
         let mut delta: isize = 0;
-        for (idx, (kw, inner)) in keywords.iter().enumerate() {
-            let in_openers = is_opener(kw, inner);
-            let in_closers = CLOSERS.contains(&kw.as_str());
+        for (idx, tok) in tokens.iter().enumerate() {
             if idx == 0 {
-                // Closer role was already handled as pre-decrement; count opener role only.
-                if in_openers {
+                if tok.is_opener {
                     delta += 1;
                 }
-            } else {
-                if in_openers && !in_closers {
-                    delta += 1;
-                } else if in_closers && !in_openers {
-                    delta -= 1;
-                }
-                // realigners (both opener+closer) at non-first position: net 0
+            } else if tok.is_opener && !tok.is_closer {
+                delta += 1;
+            } else if tok.is_closer && !tok.is_opener {
+                delta -= 1;
             }
+            // realigners (both opener+closer) at non-first position: net 0
         }
 
         if delta > 0 {
@@ -489,73 +743,26 @@ pub fn reindent(source: &str, indent_unit: &str) -> String {
         }
 
         // Enter raw mode unless this same line also closes it (e.g. `{% raw %}{% endraw %}`).
-        if first_kw == "raw" && !keywords.iter().skip(1).any(|(kw, _)| kw == "endraw") {
+        let jinja_keywords = jinja_tag_keywords_on_line(&full_text);
+        let first_kw = jinja_keywords
+            .first()
+            .map(|(kw, _)| kw.as_str())
+            .unwrap_or("");
+        if first_kw == "raw" && !jinja_keywords.iter().skip(1).any(|(kw, _)| kw == "endraw") {
             in_raw = true;
+        }
+
+        // Enter HTML-literal mode only if the last token in the chunk is still an
+        // unclosed <script>/<style>/<pre> opener (a same-line `<script></script>`
+        // closes itself and must not trigger literal mode).
+        if let Some(tag) = tokens.last().and_then(|t| t.enters_html_literal) {
+            html_literal = Some(tag);
         }
 
         i += 1;
     }
 
     out
-}
-
-/// True when `text`'s `{%`/`%}` occurrences balance — used to detect when a tag
-/// that started on one line has reached its closing delimiter, possibly several
-/// physical lines later.
-///
-/// jinja-lsp-zkrx: counts only `{%`/`%}` occurrences OUTSIDE string literals — a
-/// naive substring count treated `{% set sep = "50%} off" %}` as permanently
-/// unbalanced (2 `%}` vs 1 `{%`), so the multi-line-tag accumulator in
-/// `reindent` never terminated and swallowed the rest of the file as an
-/// unindented "continuation".
-///
-/// jinja-lsp-e1ef: string tracking is only active WHILE INSIDE a `{% %}` region
-/// (between an unescaped `{%` and its matching `%}`) — a quote character in host
-/// text (e.g. an apostrophe in "don't") is not a string delimiter, and treating
-/// it as one could open a phantom string that swallows a following tag's `{%`.
-fn tag_text_is_balanced(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut open = 0u32;
-    let mut close = 0u32;
-    let mut in_tag = false;
-    let mut in_str = false;
-    let mut str_char = b'"';
-    let mut escaped = false;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if in_tag && in_str {
-            if escaped {
-                escaped = false;
-            } else if b == b'\\' {
-                escaped = true;
-            } else if b == str_char {
-                in_str = false;
-            }
-            i += 1;
-            continue;
-        }
-        if in_tag && (b == b'"' || b == b'\'') {
-            in_str = true;
-            str_char = b;
-            i += 1;
-            continue;
-        }
-        if !in_tag && b == b'{' && bytes.get(i + 1) == Some(&b'%') {
-            in_tag = true;
-            open += 1;
-            i += 2;
-            continue;
-        }
-        if in_tag && b == b'%' && bytes.get(i + 1) == Some(&b'}') {
-            in_tag = false;
-            close += 1;
-            i += 2;
-            continue;
-        }
-        i += 1;
-    }
-    open == close
 }
 
 /// Mirrors Jinja2's runtime `trim_blocks` option: strip the first newline

@@ -1,9 +1,9 @@
 {{ x }}
 {% if y %}
-hello
+    hello
 {% endif %}
 {# comment #}
 {{ a|upper|trim }}
 {% for item in items %}
-  {{ item.name }}
+    {{ item.name }}
 {% endfor %}

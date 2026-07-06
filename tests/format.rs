@@ -34,7 +34,7 @@ fn fmt01_t05_interior_expression_spacing_untouched() {
 
 #[test]
 fn fmt01_already_normalized_noop() {
-    let src = "{{ x }}\n{% if y %}\nhello\n{% endif %}\n{# comment #}";
+    let src = "{{ x }}\n{% if y %}\n    hello\n{% endif %}\n{# comment #}";
     assert_eq!(format(src), src);
 }
 
@@ -305,7 +305,8 @@ fn fmt04_idempotent() {
 fn fmt02_t01_block_body_indented() {
     // A single block: body Jinja-tag lines get +4 spaces (default indent_size=4).
     let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
+    let want =
+        "{% block content %}\n    {% if x %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -319,15 +320,13 @@ fn fmt02_multiline_if_tag_opener_still_counted_and_endif_dedents_correctly() {
     // exactly as written (no reindent — its own hanging alignment is the
     // author's choice, not something this pass tries to fix).
     let src = "{% block content %}\n{% if x\n   and y %}\nhello\n{% endif %}\n{% endblock %}";
-    let want =
-        "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% if x\n   and y %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_multiline_tag_reindent_is_idempotent() {
-    let src =
-        "{% block content %}\n    {% if x\n   and y %}\nhello\n    {% endif %}\n{% endblock %}";
+    let src = "{% block content %}\n    {% if x\n   and y %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(
         format(src),
         src,
@@ -339,36 +338,38 @@ fn fmt02_multiline_tag_reindent_is_idempotent() {
 fn fmt02_t02_nested_blocks_compound() {
     // Nested blocks: depth 1 = 4 spaces, depth 2 = 8 spaces.
     let src = "{% block outer %}\n{% block inner %}\nhello\n{% endblock %}\n{% endblock %}";
-    let want =
-        "{% block outer %}\n    {% block inner %}\nhello\n    {% endblock %}\n{% endblock %}";
+    let want = "{% block outer %}\n    {% block inner %}\n        hello\n    {% endblock %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t03_for_loop_body_indented() {
     let src = "{% for item in list %}\n{% if item %}\nx\n{% endif %}\n{% endfor %}";
-    let want = "{% for item in list %}\n    {% if item %}\nx\n    {% endif %}\n{% endfor %}";
+    let want =
+        "{% for item in list %}\n    {% if item %}\n        x\n    {% endif %}\n{% endfor %}";
     assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t04_already_indented_is_noop() {
-    // Already formatted with 4 spaces — must not double-indent.
-    let src = "{% block content %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
+    // Already formatted with 4 spaces per depth level — must not double-indent.
+    let src = "{% block content %}\n    {% if x %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), src);
 }
 
 #[test]
-fn fmt02_t05_host_lines_untouched() {
-    // Host-language lines (non-Jinja-tag lines) keep their own indentation.
+fn fmt02_t05_html_line_reindented_to_combined_depth() {
+    // HTML lines are reindented to depth × indent_unit like Jinja-tag lines
+    // (djhtml's combined-tokenizer model), not left at their original indentation.
     let src = "{% block content %}\n  <p>hello</p>\n{% endblock %}";
-    assert_eq!(format(src), src);
+    let want = "{% block content %}\n    <p>hello</p>\n{% endblock %}";
+    assert_eq!(format(src), want);
 }
 
 #[test]
 fn fmt02_t06_macro_body_indented() {
     let src = "{% macro btn(label) %}\n{% if label %}\n<button>{{ label }}</button>\n{% endif %}\n{% endmacro %}";
-    let want = "{% macro btn(label) %}\n    {% if label %}\n<button>{{ label }}</button>\n    {% endif %}\n{% endmacro %}";
+    let want = "{% macro btn(label) %}\n    {% if label %}\n        <button>{{ label }}</button>\n    {% endif %}\n{% endmacro %}";
     assert_eq!(format(src), want);
 }
 
@@ -377,7 +378,7 @@ fn fmt02_t07_inline_set_not_opener() {
     // {% set x = value %} is an inline statement — must NOT increase depth.
     let src =
         "{% block content %}\n{% set x = 1 %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n    {% set x = 1 %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% set x = 1 %}\n    {% if x %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format(src), want);
 }
 
@@ -385,7 +386,61 @@ fn fmt02_t07_inline_set_not_opener() {
 fn fmt02_t08_elif_else_realign() {
     // elif/else re-align with the opener (depth stays consistent for blocks).
     let src = "{% block content %}\n{% if x %}\nhello\n{% elif y %}\nworld\n{% else %}\nfoo\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n    {% if x %}\nhello\n    {% elif y %}\nworld\n    {% else %}\nfoo\n    {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n    {% if x %}\n        hello\n    {% elif y %}\n        world\n    {% else %}\n        foo\n    {% endif %}\n{% endblock %}";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t10_html_tag_nesting_increases_depth() {
+    // HTML tag nesting must contribute to the same depth counter as Jinja tags
+    // (djhtml's combined-tokenizer model) — a {% if %}/{% endif %} nested inside
+    // an HTML element indents one level deeper than its enclosing tag, and text/
+    // {{ }} lines are reindented too, not left verbatim.
+    let src = "<div>\n<p>hello</p>\n{% if x %}\n<p>world</p>\n{% endif %}\n</div>";
+    let want =
+        "<div>\n    <p>hello</p>\n    {% if x %}\n        <p>world</p>\n    {% endif %}\n</div>";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t11_void_and_self_closing_html_tags_do_not_open_depth() {
+    // Void elements (br, input, img, ...) and explicitly self-closed tags (`/>`)
+    // never increase depth, with or without a trailing slash.
+    let src = "<div>\n<input type=\"text\">\n<br>\n<hr/>\n<p>x</p>\n</div>";
+    let want = "<div>\n    <input type=\"text\">\n    <br>\n    <hr/>\n    <p>x</p>\n</div>";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t12_script_style_pre_content_left_verbatim() {
+    // <script>/<style>/<pre> interior content is never reindented (like {% raw %}),
+    // even though the opening/closing tags themselves participate in depth tracking.
+    let src = "<div>\n<script>\n  const x   =1;\nfunction f() {\nreturn x;\n}\n</script>\n<p>after</p>\n</div>";
+    let want = "<div>\n    <script>\n  const x   =1;\nfunction f() {\nreturn x;\n}\n    </script>\n    <p>after</p>\n</div>";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t14_literal_tag_close_detection_respects_word_boundary() {
+    // A `</pre` substring that's actually part of a longer word (`</pretend>`)
+    // must not be mistaken for the real `</pre>` closing tag — otherwise a
+    // <pre> block containing that literal text would exit literal mode early
+    // and have its remaining lines incorrectly reindented.
+    let src = "<div>\n<pre>\nline one\n</pretend>\nline two\n</pre>\n<p>after</p>\n</div>";
+    let want =
+        "<div>\n    <pre>\nline one\n</pretend>\nline two\n    </pre>\n    <p>after</p>\n</div>";
+    assert_eq!(format(src), want);
+}
+
+#[test]
+fn fmt02_t13_mismatched_original_indent_normalized_to_html_depth() {
+    // The exact bug report: a {% if %}/{% endif %} block whose original
+    // indentation (4 spaces) doesn't match its surrounding HTML content's
+    // indentation (12 spaces) is normalized to the correct combined depth,
+    // instead of {% if %}/{% endif %} snapping to a shallow Jinja-only depth
+    // while the HTML/{{ }} lines stay at their original, inconsistent indent.
+    let src = "<form>\n            <div class=\"heading\">{{ _('Client signatures') }}</div>\n            {{ client_signature_form(1, client_signer_1) }}\n    {% if contract.has_coborrower %}\n            {{ client_signature_form(2, client_signer_2, required=false) }}\n    {% endif %}\n</form>";
+    let want = "<form>\n    <div class=\"heading\">{{ _('Client signatures') }}</div>\n    {{ client_signature_form(1, client_signer_1) }}\n    {% if contract.has_coborrower %}\n        {{ client_signature_form(2, client_signer_2, required=false) }}\n    {% endif %}\n</form>";
     assert_eq!(format(src), want);
 }
 
@@ -420,7 +475,8 @@ fn fmt02_t11_single_line_in_outer_block() {
 fn fmt02_t12_autoescape_indents_inner_tags() {
     // {% autoescape %} is an opener — inner {% if %} gets +1 depth.
     let src = "{% autoescape true %}\n{% if x %}\nok\n{% endif %}\n{% endautoescape %}";
-    let want = "{% autoescape true %}\n    {% if x %}\nok\n    {% endif %}\n{% endautoescape %}";
+    let want =
+        "{% autoescape true %}\n    {% if x %}\n        ok\n    {% endif %}\n{% endautoescape %}";
     assert_eq!(format(src), want);
 }
 
@@ -449,7 +505,7 @@ fn jinja_lsp_zkrx_string_literal_with_percent_brace_does_not_desync_reindent() {
     // terminated and swallowed every subsequent line in the file as an unindented
     // "continuation", losing all formatting for everything after that tag.
     let src = "{% block content %}\n{% set sep = \"50%} off\" %}\n{% if x %}\nhi\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n  {% set sep = \"50%} off\" %}\n  {% if x %}\nhi\n  {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% set sep = \"50%} off\" %}\n  {% if x %}\n    hi\n  {% endif %}\n{% endblock %}";
     assert_eq!(jinja_lsp::format::reindent(src, "  "), want);
 }
 
@@ -458,7 +514,7 @@ fn fmt02_t15_raw_block_content_untouched() {
     // Jinja-looking lines inside {% raw %} are literal output — must not be
     // re-indented, and must not corrupt depth tracking for what follows.
     let src = "{% raw %}\n{% if x %}\n{% endraw %}\n{% if y %}\nz\n{% endif %}";
-    let want = "{% raw %}\n{% if x %}\n{% endraw %}\n{% if y %}\nz\n{% endif %}";
+    let want = "{% raw %}\n{% if x %}\n{% endraw %}\n{% if y %}\n    z\n{% endif %}";
     assert_eq!(format(src), want);
 }
 
@@ -517,7 +573,7 @@ fn fmt05_t21_attribute_values_untouched() {
 #[test]
 fn fmt05_t22_blank_line_preserved() {
     // Blank host lines inside a block are reproduced exactly
-    let src = "{% if x %}\n\n<p>text</p>\n\n{% endif %}";
+    let src = "{% if x %}\n\n    <p>text</p>\n\n{% endif %}";
     assert_eq!(format(src), src);
 }
 
@@ -602,7 +658,7 @@ fn fmt_config_indent_size_2() {
         ..FormatterConfig::default()
     };
     let src = "{% block content %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block content %}\n  {% if x %}\nhello\n  {% endif %}\n{% endblock %}";
+    let want = "{% block content %}\n  {% if x %}\n    hello\n  {% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
 }
 
@@ -813,7 +869,7 @@ fn fmt_config_blank_lines_after_block_ignores_elif_else() {
         ..FormatterConfig::default()
     };
     let src = "{% if x %}\na\n{% else %}\nb\n{% endif %}\n{% block c %}z{% endblock %}";
-    let want = "{% if x %}\na\n{% else %}\nb\n{% endif %}\n\n{% block c %}z{% endblock %}";
+    let want = "{% if x %}\n    a\n{% else %}\n    b\n{% endif %}\n\n{% block c %}z{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
 }
 
@@ -829,21 +885,23 @@ fn fmt_config_blank_lines_after_block_does_not_fire_for_nested_closer() {
         ..FormatterConfig::default()
     };
     let src = "{% block a %}\n{% for x in xs %}\n{{ x }}\n{% endfor %}\n{% endblock %}";
-    let want = "{% block a %}\n    {% for x in xs %}\n{{ x }}\n    {% endfor %}\n{% endblock %}";
+    let want =
+        "{% block a %}\n    {% for x in xs %}\n        {{ x }}\n    {% endfor %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
 }
 
 // ─── jinja-lsp-qupa: trim_blocks / lstrip_blocks ─────────────────────────────
 
 #[test]
-fn fmt_config_trim_blocks_default_false_is_noop() {
+fn fmt_config_trim_blocks_default_false_does_not_strip_newline() {
     let cfg = FormatterConfig {
         newline_at_eof: false,
         trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
     let src = "{% if x %}\nhello\n{% endif %}";
-    assert_eq!(format_with_config(src, &cfg), src);
+    let want = "{% if x %}\n    hello\n{% endif %}";
+    assert_eq!(format_with_config(src, &cfg), want);
 }
 
 #[test]
@@ -857,7 +915,7 @@ fn fmt_config_trim_blocks_true_strips_newline_after_tag() {
     let src = "{% if x %}\nhello\n{% endif %}";
     assert_eq!(
         format_with_config(src, &cfg),
-        "{% if x %}hello\n{% endif %}"
+        "{% if x %}    hello\n{% endif %}"
     );
 }
 
@@ -884,14 +942,16 @@ fn fmt_config_lstrip_blocks_default_false_leaves_reindented_output_alone() {
         ..FormatterConfig::default()
     };
     let src = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block a %}\n    {% if x %}\nhello\n    {% endif %}\n{% endblock %}";
+    let want = "{% block a %}\n    {% if x %}\n        hello\n    {% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
 }
 
 #[test]
 fn fmt_config_lstrip_blocks_true_strips_leading_whitespace_before_tag() {
     // Same nested source as above, but lstrip_blocks=true flattens the leading
-    // whitespace reindent just added, regardless of depth.
+    // whitespace reindent just added on TAG lines specifically, regardless of
+    // depth — it does not touch the host "hello" line, which keeps its
+    // reindented depth (lstrip_blocks only strips whitespace before `{% %}`).
     let cfg = FormatterConfig {
         lstrip_blocks: true,
         newline_at_eof: false,
@@ -899,13 +959,14 @@ fn fmt_config_lstrip_blocks_true_strips_leading_whitespace_before_tag() {
         ..FormatterConfig::default()
     };
     let src = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
-    let want = "{% block a %}\n{% if x %}\nhello\n{% endif %}\n{% endblock %}";
+    let want = "{% block a %}\n{% if x %}\n        hello\n{% endif %}\n{% endblock %}";
     assert_eq!(format_with_config(src, &cfg), want);
 }
 
 #[test]
 fn fmt_config_lstrip_blocks_leaves_non_whitespace_prefix_untouched() {
-    // If there's real content before the tag on the same line, don't strip anything.
+    // If there's real content before the tag on the same line, don't strip anything
+    // — but the host "hello" line below it is still reindented per REQ-FMT-02.
     let cfg = FormatterConfig {
         lstrip_blocks: true,
         newline_at_eof: false,
@@ -913,7 +974,8 @@ fn fmt_config_lstrip_blocks_leaves_non_whitespace_prefix_untouched() {
         ..FormatterConfig::default()
     };
     let src = "text {% if x %}\nhello\n{% endif %}";
-    assert_eq!(format_with_config(src, &cfg), src);
+    let want = "text {% if x %}\n    hello\n{% endif %}";
+    assert_eq!(format_with_config(src, &cfg), want);
 }
 
 #[test]
@@ -928,7 +990,7 @@ fn fmt_config_trim_blocks_and_lstrip_blocks_combine() {
     let src = "    {% if x %}\nhello\n    {% endif %}";
     assert_eq!(
         format_with_config(src, &cfg),
-        "{% if x %}hello\n{% endif %}"
+        "{% if x %}    hello\n{% endif %}"
     );
 }
 
