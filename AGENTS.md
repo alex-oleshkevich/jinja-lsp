@@ -199,8 +199,9 @@ version **and** a dated `CHANGELOG.md` section for that version.
 
 ### Layout
 ```
-src/main.rs           clap CLI dispatch only — routes to linter/, format/cli.rs, server/
+src/main.rs           clap CLI dispatch only — routes to linter/, format/cli.rs, doctor.rs, server/
 src/linter/           the `check` front-end: orchestration + rich/compact/json output
+src/doctor.rs         the `doctor` front-end: config/template/builtin discovery report
 src/server/           tower-lsp backend (mod.rs) + ServerState (state.rs)
 src/config.rs         jinja.toml / [tool.jinja] discovery, zero-config, InitializationOptions overlay
 src/parsing/          tree-sitter wrapper, extractor, inline-template detection, queries/*.scm (17)

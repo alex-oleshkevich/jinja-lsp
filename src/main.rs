@@ -1,6 +1,7 @@
 // REQ-FOLD-01: main.rs only parses the CLI and routes. No analysis logic here —
 // `check` goes to linter/, `format` to format/cli.rs, `lsp` to server/.
 use clap::{Parser, Subcommand};
+use jinja_lsp::doctor::run_doctor;
 use jinja_lsp::format::cli::run_format;
 use jinja_lsp::linter::run_check;
 
@@ -34,6 +35,12 @@ enum Commands {
         /// Disable these diagnostic codes/prefixes
         #[arg(long, value_delimiter = ',')]
         ignore: Vec<String>,
+    },
+    /// Report what jinja-lsp discovers here: config, templates, and builtins
+    Doctor {
+        /// Path to config file (overrides discovery)
+        #[arg(long, short = 'c')]
+        config: Option<String>,
     },
     /// Format Jinja templates in place (or --check / --diff read-only)
     Format {
@@ -70,6 +77,7 @@ async fn main() {
             select,
             ignore,
         } => run_check(paths, &format, verbose, config.as_deref(), &select, &ignore),
+        Commands::Doctor { config } => run_doctor(config.as_deref()),
         Commands::Format {
             paths,
             config,

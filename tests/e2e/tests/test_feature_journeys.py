@@ -399,3 +399,54 @@ async def test_range_formatting_returns_edits(client):
         assert e.range.start.line <= 1, (
             f"range formatting escaped its requested range: {e.range}"
         )
+
+
+@pytest.mark.asyncio
+async def test_formatting_capabilities_are_advertised(client):
+    """REQ-FMT-07: an editor only offers Format Document if the server says so."""
+    caps = client.server_capabilities
+    assert caps.document_formatting_provider, (
+        "documentFormattingProvider must be declared or no editor will offer formatting"
+    )
+    assert caps.document_range_formatting_provider, (
+        "documentRangeFormattingProvider must be declared for format-selection"
+    )
+
+
+def _apply_edits(text: str, edits) -> str:
+    """Apply LSP TextEdits the way an editor does: last-to-first, by position."""
+    lines = text.split("\n")
+
+    def offset(pos):
+        return sum(len(l) + 1 for l in lines[: pos.line]) + pos.character
+
+    out = text
+    for e in sorted(edits, key=lambda e: (e.range.start.line, e.range.start.character), reverse=True):
+        out = out[: offset(e.range.start)] + e.new_text + out[offset(e.range.end) :]
+    return out
+
+
+@pytest.mark.asyncio
+async def test_applying_the_returned_edits_yields_formatted_text(client):
+    """REQ-FMT-07: the edits must be applicable, not merely present.
+
+    Every other formatting test asserts that edits come back. This one does what
+    the editor does with them — splices them into the buffer — which is the only
+    way a wrong range or offset shows up.
+    """
+    source = "{%if x%}\n{{y|upper}}\n{%endif%}\n"
+    uri = open_source(client, "file:///tmp/jinja_lsp_e2e_apply.html", source)
+    await client.wait_for_notification("textDocument/publishDiagnostics")
+
+    edits = await client.text_document_formatting_async(
+        lsp.DocumentFormattingParams(
+            text_document=_doc(uri),
+            options=lsp.FormattingOptions(tab_size=2, insert_spaces=True),
+        )
+    )
+    assert edits, "the source is unformatted, so edits must come back"
+
+    result = _apply_edits(source, edits)
+    assert "{% if x %}" in result, f"delimiter padding not applied: {result!r}"
+    assert "{{ y | upper }}" in result, f"pipe padding not applied: {result!r}"
+    assert "{% endif %}" in result, f"closing tag not formatted: {result!r}"

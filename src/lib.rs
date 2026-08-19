@@ -2,6 +2,7 @@ pub mod builtins;
 pub mod config;
 pub mod diagnostic;
 pub mod diagnostics;
+pub mod doctor;
 pub mod edit;
 pub mod features;
 pub mod format;

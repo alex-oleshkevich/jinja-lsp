@@ -200,7 +200,14 @@ preferred_quote = "double"
 jinja-lsp lsp                                              # run the language server over stdio
 jinja-lsp check PATH [--select CODES] [--ignore CODES] [--format rich|compact|json]
 jinja-lsp format PATH [--check]
+jinja-lsp doctor [--config PATH]                           # report what it discovers here
 ```
+
+`doctor` answers "why is it not seeing my templates". It prints the config file it
+found (or that it fell back to zero-config), each template directory with how many
+files matched, the builtin sources that loaded and what each contributed, and any
+`*.hints.md` sidecars. It reports directories you configured but that do not exist,
+which the indexer skips silently, and exits 1 when it finds a problem.
 
 `check`'s `json` output matches the format the test suite asserts against, so it diffs cleanly in CI. `format` rewrites the Jinja layer only and is round-trip safe.
 
