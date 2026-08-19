@@ -34,6 +34,11 @@ pub fn filter_by_config<'a>(
 }
 
 /// Returns true if `filter` (a full code or class prefix) matches `code`.
-fn code_matches(filter: &str, code: &str) -> bool {
+///
+/// The single definition of the select/ignore matching rule (REQ-LINT-03, ADR-003):
+/// a filter entry is a full code (`JINJA-E101`) or a class prefix (`JINJA-E1`, `JINJA-W`),
+/// never a slug. `config::JinjaConfig::validate` shares it so a config-time overlap warning
+/// and the run-time filter can never disagree about what a filter matches.
+pub(crate) fn code_matches(filter: &str, code: &str) -> bool {
     code.starts_with(filter)
 }

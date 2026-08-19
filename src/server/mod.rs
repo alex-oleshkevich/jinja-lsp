@@ -37,6 +37,7 @@ use crate::features::semantic_tokens::{
     semantic_tokens_full as stok_full, semantic_tokens_range as stok_range,
 };
 use crate::features::signature_help::signature_help as sig_help_feature;
+use crate::features::source_line;
 use crate::features::symbols::{
     SymbolKind as InternalSymbolKind, WorkspaceSymbol as InternalWorkspaceSymbol, document_symbols,
     workspace_symbols,
@@ -1730,11 +1731,6 @@ pub fn byte_col_to_lsp_char(line_str: &str, byte_col: u32, utf8: bool) -> u32 {
         safe -= 1;
     }
     line_str[..safe].chars().map(|c| c.len_utf16() as u32).sum()
-}
-
-/// Borrow the Nth line from `source` (empty string when out of bounds).
-fn source_line(source: &str, line: u32) -> &str {
-    source.split('\n').nth(line as usize).unwrap_or("")
 }
 
 /// Convert a workspace key back to a URI for the client.

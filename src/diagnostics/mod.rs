@@ -2,6 +2,7 @@
 
 pub mod checks;
 
+pub(crate) use filter::code_matches;
 pub use filter::filter_by_config;
 pub use noqa::{NoqaDirective, parse_noqa_directives, suppress_by_noqa};
 

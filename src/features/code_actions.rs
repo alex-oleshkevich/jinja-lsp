@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::source_line;
 use crate::{
     builtins::registry::{Category, Registry},
     diagnostic::Diagnostic,
@@ -744,12 +745,16 @@ fn import_text_edit(index: &TemplateIndex, macro_path: &str, macro_name: &str) -
 /// key when the template has no recorded `relative_path` (e.g. workspace already keyed by
 /// relative paths).
 fn find_macro_in_workspace(workspace: &WorkspaceIndex, name: &str) -> Option<String> {
-    workspace.templates.iter().find_map(|(path, idx)| {
-        idx.macros
-            .iter()
-            .any(|m| m.name == name)
-            .then(|| idx.relative_path.clone().unwrap_or_else(|| path.clone()))
-    })
+    // Goes through find_macro_with_path so the suggested template is stable when the
+    // same macro name is defined in more than one template — iterating `templates`
+    // (a HashMap) directly picked an arbitrary one, so the offered import could differ
+    // between two runs over an unchanged workspace.
+    let (path, _) = workspace.find_macro_with_path(name)?;
+    let relative = workspace
+        .templates
+        .get(path)
+        .and_then(|idx| idx.relative_path.clone());
+    Some(relative.unwrap_or_else(|| path.to_owned()))
 }
 
 /// Edit-distance threshold for near-match suggestions.
@@ -841,11 +846,6 @@ fn byte_to_line(source: &str, byte: usize) -> u32 {
         .bytes()
         .filter(|&b| b == b'\n')
         .count() as u32
-}
-
-/// Return the source line (without trailing newline) at 0-based `line`.
-fn source_line(source: &str, line: u32) -> &str {
-    source.split('\n').nth(line as usize).unwrap_or("")
 }
 
 /// A whole-line delete: replaces `[line, 0) .. [line+1, 0)` with "".

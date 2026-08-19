@@ -6,8 +6,9 @@
 //   • cursor IS on a Reference  →  usage (Read kind)
 //   • cursor is NOT on a Reference but inside Jinja  →  binding (Write kind)
 
+use super::{inside_jinja, make_span};
 use crate::{
-    builtins::registry::{Category, Registry},
+    builtins::registry::Registry,
     workspace::{
         index::TemplateIndex,
         symbols::{ReferenceKind, Span},
@@ -74,7 +75,7 @@ pub fn document_highlight(
     }
 
     // Host-owned (built-in) → empty (REQ-HL-04).
-    if is_host_owned(word, registry) {
+    if registry.is_host_owned(word) {
         return vec![];
     }
 
@@ -191,18 +192,6 @@ fn is_read_kind(kind: ReferenceKind) -> bool {
     matches!(kind, ReferenceKind::Identifier | ReferenceKind::Function)
 }
 
-fn is_host_owned(name: &str, registry: &Registry) -> bool {
-    [
-        Category::Filter,
-        Category::Function,
-        Category::Test,
-        Category::Variable,
-        Category::ContextVariable,
-    ]
-    .iter()
-    .any(|&cat| registry.get(cat, name).is_some())
-}
-
 /// Return the span of `name` within the tag starting at `tag_start_byte`.
 fn name_span_in_source(source: &str, tag_start_byte: usize, name: &str) -> Span {
     match super::find_name_in_tag(source, tag_start_byte, name) {
@@ -223,21 +212,4 @@ fn word_span_at(source: &str, byte: usize) -> Span {
         .map(|i| byte + i)
         .unwrap_or(source.len());
     make_span(source, start, end)
-}
-
-fn make_span(source: &str, start: usize, end: usize) -> Span {
-    let (sl, sc) = super::byte_to_line_col(source, start);
-    let (el, ec) = super::byte_to_line_col(source, end);
-    Span {
-        start_byte: start,
-        end_byte: end,
-        start_line: sl,
-        start_col: sc,
-        end_line: el,
-        end_col: ec,
-    }
-}
-
-fn inside_jinja(source: &str, byte: usize) -> bool {
-    super::inside_jinja(source, byte)
 }

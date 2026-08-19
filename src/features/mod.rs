@@ -22,6 +22,33 @@ pub fn layer_name() -> &'static str {
     "features"
 }
 
+/// Borrow the Nth 0-based line from `source` (empty string when out of bounds).
+///
+/// Shared by the code-action builders and the server's position-encoding conversions —
+/// both used to carry their own identical copy, so a change to line splitting (CRLF, for
+/// one) silently applied to only half the callers.
+pub(crate) fn source_line(source: &str, line: u32) -> &str {
+    source.split('\n').nth(line as usize).unwrap_or("")
+}
+
+/// Build a `Span` from raw byte offsets, computing line/col from `source`.
+pub(super) fn make_span(
+    source: &str,
+    start_byte: usize,
+    end_byte: usize,
+) -> crate::workspace::symbols::Span {
+    let (start_line, start_col) = byte_to_line_col(source, start_byte);
+    let (end_line, end_col) = byte_to_line_col(source, end_byte);
+    crate::workspace::symbols::Span {
+        start_byte,
+        end_byte,
+        start_line,
+        start_col,
+        end_line,
+        end_col,
+    }
+}
+
 /// Clamp `byte` to the nearest char boundary at or before `byte`.
 /// Avoids panics when an LSP byte offset lands mid-UTF-8-sequence.
 pub(super) fn clamp_to_char_boundary(source: &str, byte: usize) -> usize {

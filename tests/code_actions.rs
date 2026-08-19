@@ -1171,3 +1171,35 @@ fn gspz_remove_first_name_from_import_with_path_containing_import() {
         "first name must be removed cleanly even with 'import ' in the path"
     );
 }
+
+// ─── REQ-ACT-02: the import fix must name a deterministic template ────────────
+
+#[test]
+fn import_fix_target_is_stable_when_macro_name_is_defined_in_several_templates() {
+    // Self-review finding: find_macro_in_workspace walked `workspace.templates`
+    // (a HashMap) with find_map, so when the same macro name existed in more than
+    // one template the offered import named an arbitrary one — and Rust re-seeds
+    // its hasher per process, so two runs over an unchanged workspace could offer
+    // different templates. WorkspaceIndex::find_macro_with_path sorts by template
+    // key, so the pick is the lexicographically-first definer every time.
+    let src = "{{ post_url(post) }}";
+    let macro_src = "{% macro post_url(post) %}url{% endmacro %}";
+    let ws = ws_with(&[
+        ("z/macros.html", macro_src),
+        ("a/macros.html", macro_src),
+        ("m/macros.html", macro_src),
+    ]);
+    let idx = extract(src);
+    let diags = vec![e103(0, 3, "post_url")];
+
+    let actions = code_actions(src, "t.html", &diags, &idx, &ws, &reg());
+    let import_action = actions
+        .iter()
+        .find(|a| a.title.contains("Import"))
+        .expect("E103 must offer an import fix");
+    assert!(
+        import_action.title.contains("a/macros.html"),
+        "import fix must name the lexicographically-first definer, got: {}",
+        import_action.title
+    );
+}

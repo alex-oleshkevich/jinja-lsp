@@ -272,16 +272,31 @@ impl WorkspaceIndex {
             .and_then(|k| self.templates.get(k))
     }
 
-    /// Workspace-wide macro-name fallback search, used when a callee is neither a
-    /// local macro nor an explicit import. `templates` is a `HashMap`, so iterating
-    /// it directly picks an arbitrary match when the same macro name is defined in
-    /// more than one template; sort by template key first so the result is stable
-    /// across runs regardless of hash iteration order.
-    pub(crate) fn find_macro_workspace_wide(&self, name: &str) -> Option<&MacroDefinition> {
+    /// Workspace-wide macro-name search returning the owning template key alongside the
+    /// macro. `templates` is a `HashMap`, so iterating it directly picks an arbitrary
+    /// match when the same macro name is defined in more than one template; sort by
+    /// template key first so the result is stable across runs regardless of hash
+    /// iteration order.
+    ///
+    /// This is the single workspace-wide macro lookup — every caller that needs the
+    /// defining template (call hierarchy, the import quick-fix) goes through it rather
+    /// than re-walking `templates`, which is how the unsorted variants crept back in.
+    pub(crate) fn find_macro_with_path(&self, name: &str) -> Option<(&str, &MacroDefinition)> {
         let mut keys: Vec<&str> = self.templates.keys().map(String::as_str).collect();
         keys.sort_unstable();
-        keys.into_iter()
-            .find_map(|k| self.templates[k].macros.iter().find(|m| m.name == name))
+        keys.into_iter().find_map(|k| {
+            self.templates[k]
+                .macros
+                .iter()
+                .find(|m| m.name == name)
+                .map(|m| (k, m))
+        })
+    }
+
+    /// Workspace-wide macro-name fallback search, used when a callee is neither a
+    /// local macro nor an explicit import.
+    pub(crate) fn find_macro_workspace_wide(&self, name: &str) -> Option<&MacroDefinition> {
+        self.find_macro_with_path(name).map(|(_, m)| m)
     }
 
     // Maps an extends target (relative path) to the actual map key, handling

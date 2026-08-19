@@ -204,6 +204,27 @@ impl Registry {
         self.entries.get(&category)?.get(name)
     }
 
+    /// True when `name` is owned by the host rather than by a template — a built-in or
+    /// packaged filter/function/test, or a context variable the host injects.
+    ///
+    /// This is the companion principle in one place (constitution P5): the features that
+    /// must stay silent on host-owned symbols — go-to-definition (REQ-DEF-06),
+    /// find-references (REQ-REF-04) and document-highlight (REQ-HL-04) — each carried
+    /// their own copy of this category list, so adding a `Category` and updating only
+    /// some of them would have made the features disagree about what jinja-lsp owns.
+    /// It lives next to `Category` so the list cannot drift from the enum.
+    pub fn is_host_owned(&self, name: &str) -> bool {
+        [
+            Category::Filter,
+            Category::Function,
+            Category::Test,
+            Category::Variable,
+            Category::ContextVariable,
+        ]
+        .iter()
+        .any(|&cat| self.get(cat, name).is_some())
+    }
+
     /// REQ-BLTN-01: scan by name across all categories.
     pub fn scan_by_name(&self, name: &str) -> Vec<&DocEntry> {
         self.entries

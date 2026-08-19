@@ -123,3 +123,34 @@ fn execute_command_drops_state_guard_before_apply_edit() {
          to drop the state guard immediately before client.apply_edit; found {occurrences}"
     );
 }
+
+// REQ-REF-02 / F10 §5: workspace-wide lookups must be order-stable.
+
+#[test]
+fn no_unsorted_workspace_templates_walk_in_features() {
+    // `WorkspaceIndex::templates` is a HashMap, so walking it directly and taking the
+    // first match yields a different answer per process (Rust re-seeds its hasher on
+    // every run). Two feature modules did exactly that for workspace-wide macro lookup,
+    // making the call-hierarchy target and the E103 import quick-fix non-reproducible.
+    // Both now go through WorkspaceIndex::find_macro_with_path, which sorts by key.
+    //
+    // Aggregations that are order-insensitive (collecting into a HashSet, summing) are
+    // fine — this guard covers `features/` only, where results are user-visible picks.
+    for (name, src) in [
+        (
+            "call_hierarchy.rs",
+            include_str!("../src/features/call_hierarchy.rs"),
+        ),
+        (
+            "code_actions.rs",
+            include_str!("../src/features/code_actions.rs"),
+        ),
+    ] {
+        assert!(
+            !src.contains(".templates.iter()"),
+            "{name} must not walk workspace.templates directly — use a sorted \
+             WorkspaceIndex lookup (find_macro_with_path) so the pick is stable \
+             across runs"
+        );
+    }
+}

@@ -1,7 +1,7 @@
 // REQ-DEF-01..09: go-to-definition for Jinja symbols.
 
 use crate::{
-    builtins::registry::{Category, Registry},
+    builtins::registry::Registry,
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
         symbols::{ReferenceKind, Span},
@@ -204,17 +204,7 @@ fn resolve_ident(
     }
 
     // Registry symbols are host-owned (REQ-DEF-06): return None.
-    let in_registry = [
-        Category::Filter,
-        Category::Function,
-        Category::Test,
-        Category::Variable,
-        Category::ContextVariable,
-    ]
-    .iter()
-    .any(|&cat| registry.get(cat, name).is_some());
-
-    if in_registry {
+    if registry.is_host_owned(name) {
         return None;
     }
 

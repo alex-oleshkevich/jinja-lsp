@@ -2,8 +2,9 @@
 
 use std::collections::HashSet;
 
+use super::inside_jinja;
 use crate::{
-    builtins::registry::{Category, Registry},
+    builtins::registry::Registry,
     workspace::{
         index::{TemplateIndex, WorkspaceIndex},
         symbols::{ReferenceKind, Span},
@@ -398,16 +399,7 @@ fn classify_reference(
     }
 
     // Host-owned (built-in registry symbol) → REQ-REF-04.
-    let in_registry = [
-        Category::Filter,
-        Category::Function,
-        Category::Test,
-        Category::Variable,
-        Category::ContextVariable,
-    ]
-    .iter()
-    .any(|&cat| registry.get(cat, name).is_some());
-    if in_registry {
+    if registry.is_host_owned(name) {
         return Some(Symbol::HostOwned);
     }
 
@@ -425,8 +417,4 @@ fn span_to_ref(path: &str, span: &Span) -> ReferenceLocation {
         end_line: span.end_line,
         end_col: span.end_col,
     }
-}
-
-fn inside_jinja(source: &str, byte: usize) -> bool {
-    super::inside_jinja(source, byte)
 }

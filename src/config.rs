@@ -7,6 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostics::code_matches;
 use crate::format::FormatterConfig;
 
 const KNOWN_EXTRAS: &[&str] = &["flask", "starlette", "starlette-babel", "starlette-flash"];
@@ -239,10 +240,6 @@ fn is_valid_lint_filter(code: &str) -> bool {
         Some('E') | Some('W') => chars.all(|c| c.is_ascii_digit()),
         _ => false,
     }
-}
-
-fn code_matches(filter: &str, code: &str) -> bool {
-    code.starts_with(filter)
 }
 
 // ---------- Internal TOML deserialization shape ----------------------------

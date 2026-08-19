@@ -302,17 +302,16 @@ fn span_to_range(s: &Span) -> HierarchyRange {
     }
 }
 
-/// Search all workspace templates for a macro named `name`, returning the first match.
+/// Search all workspace templates for a macro named `name`, returning the first match
+/// in template-key order (`WorkspaceIndex::find_macro_with_path` sorts, so the pick is
+/// stable when the same macro name is defined in more than one template).
 fn find_macro_in_workspace(
     workspace: &WorkspaceIndex,
     name: &str,
 ) -> Option<(String, MacroDefinition)> {
-    workspace.templates.iter().find_map(|(path, idx)| {
-        idx.macros
-            .iter()
-            .find(|m| m.name == name)
-            .map(|m| (path.clone(), m.clone()))
-    })
+    workspace
+        .find_macro_with_path(name)
+        .map(|(path, m)| (path.to_owned(), m.clone()))
 }
 
 /// Resolve a reference name to the macro's definition item.

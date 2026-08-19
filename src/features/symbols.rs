@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use super::make_span;
 use crate::workspace::{
     index::{TemplateIndex, WorkspaceIndex},
     symbols::{Span, TemplateRefKind, VariableScope},
@@ -654,18 +655,4 @@ fn full_tag_span(
                 .get(&t.start_byte)
                 .map(|&end| (t.start_byte, end))
         })
-}
-
-/// Build a `Span` from raw byte offsets, computing line/col from `source`.
-fn make_span(source: &str, start_byte: usize, end_byte: usize) -> Span {
-    let (sl, sc) = super::byte_to_line_col(source, start_byte);
-    let (el, ec) = super::byte_to_line_col(source, end_byte);
-    Span {
-        start_byte,
-        end_byte,
-        start_line: sl,
-        start_col: sc,
-        end_line: el,
-        end_col: ec,
-    }
 }
