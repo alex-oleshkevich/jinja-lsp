@@ -130,26 +130,68 @@ To control server order alongside other language servers or pass initialization 
 
 ## Configuration
 
-Zero config for standard projects — template directories are discovered automatically (`templates/`, `<project-name>/templates/`, `jinja/`, `j2/`). A discovered config file (`jinja.toml`, then `[tool.jinja]` in `pyproject.toml`) — or the zero-config defaults when there's none — is the base; the editor's `InitializationOptions` are then overlaid on top, **overriding only the keys they set** while leaving the rest of the file intact.
+Most projects need no configuration. Template directories are found automatically by looking for `templates/`, `<project-name>/templates/`, `jinja/`, and `j2/`.
+
+When you do want to configure something, the server walks up from the project root and takes the first of these it finds:
+
+1. `jinja.toml`
+2. `[tool.jinja]` in `pyproject.toml`
+
+Your editor's `initializationOptions` are layered on top of whichever it found. The overlay replaces only the keys it sets, so an editor setting for `extras` will not wipe out the `templates` list in your `jinja.toml`. Clearing a setting in your editor falls back to the file value rather than leaving the old override in place. Both files are watched, so edits apply without restarting the server.
+
+### General options
 
 | Option | Default | |
 |---|---|---|
-| `templates` | _(auto-discovered)_ | template root directories; `"..."` expands to the discovered set |
+| `templates` | _(auto-discovered)_ | template root directories. `"..."` expands to the auto-discovered set, so you can add a directory without losing the defaults |
 | `extensions` | `["html", "jinja", "jinja2", "j2"]` | file extensions to scan |
-| `extras` | `[]` | framework packs: `flask`, `starlette`, `starlette-babel`, `starlette-flash` |
-| `hints` | `[]` | directories of hint files describing your project's context variables/macros |
-| `custom_builtins` | `[]` | directories of built-in-format `*.md` docs for third-party filters/functions/tests |
-| `inline_patterns` | `["render_template_string"]` | host render-function names whose string argument is parsed as an inline template |
-| `lint.select` | _(all)_ | diagnostic codes/classes to enable (`JINJA-E1`, `JINJA-W`, …) |
-| `lint.ignore` | `[]` | diagnostic codes/classes to suppress |
+| `extras` | `[]` | framework packs that teach the server about globals your framework injects: `flask`, `starlette`, `starlette-babel`, `starlette-flash` |
+| `hints` | `[]` | directories of hint files describing your own context variables and macros |
+| `custom_builtins` | `[]` | directories of `*.md` docs for third-party filters, functions, and tests |
+| `inline_patterns` | `["render_template_string"]` | host function names whose string argument is parsed as an inline template |
+| `lint.select` | _(all)_ | diagnostic codes or classes to enable, such as `JINJA-E1` or `JINJA-W` |
+| `lint.ignore` | `[]` | diagnostic codes or classes to suppress |
 
 ```toml
 # jinja.toml
-templates = ["templates"]
+templates = ["templates", "..."]
 extras = ["starlette"]
 
 [lint]
 ignore = ["JINJA-W106"]
+```
+
+To suppress a finding in one place rather than project-wide, use a comment in the template: `{# noqa #}` for that line, `{# noqa: JINJA-W201 #}` for one code, or `{# noqa-file #}` for the whole file.
+
+### Formatter options
+
+These live under `[format]` and apply to both `jinja-lsp format` and formatting from your editor. The formatter only rewrites what is inside Jinja delimiters, so your HTML, YAML, or whatever else the file contains is reproduced byte for byte.
+
+| Option | Default | |
+|---|---|---|
+| `indent_size` | `4` | spaces per indent level, ignored when `use_tabs` is set |
+| `use_tabs` | `false` | indent with tabs instead of spaces |
+| `space_around_pipe` | `true` | `x \| upper` rather than `x\|upper` |
+| `space_around_operators` | `false` | `a + b` rather than `a+b`, for symbolic operators only |
+| `space_after_comma` | `true` | `truncate(20, true)` rather than `truncate(20,true)`, in filter-call arguments |
+| `space_inside_parens` | `false` | `truncate( 20, true )` rather than `truncate(20, true)`, in filter-call arguments |
+| `space_inside_variable_delimiters` | `true` | `{{ x }}` rather than `{{x}}` |
+| `space_inside_block_delimiters` | `true` | `{% if x %}` rather than `{%if x%}` |
+| `blank_lines_after_block` | `0` | blank lines to leave after a top-level `{% endblock %}`, `{% endfor %}`, and so on |
+| `trim_blocks` | `false` | drop the first newline after a `{% %}` tag, matching Jinja2's runtime option of the same name |
+| `lstrip_blocks` | `false` | drop leading whitespace before a `{% %}` tag, likewise |
+| `preferred_quote` | `"preserve"` | `"single"` or `"double"` to normalize string literals, `"preserve"` to leave them alone |
+| `newline_at_eof` | `true` | end the file with exactly one newline |
+| `trim_trailing_whitespace` | `true` | strip trailing whitespace from every line |
+
+Two things the formatter deliberately leaves alone. Keyword operators (`and`, `or`, `is`, `in`, `not`) always keep their surrounding spaces, whatever `space_around_operators` says, because removing them would change how the expression tokenizes: `andb` is one identifier, not `and` followed by `b`. And the comma and paren options above cover filter-call arguments only. Commas you wrote in a macro call, a dict, or a list stay exactly as you typed them, so `{{ post_url(post,absolute=true) }}` is left untouched.
+
+```toml
+# jinja.toml
+[format]
+indent_size = 2
+space_around_pipe = false
+preferred_quote = "double"
 ```
 
 ## CLI
