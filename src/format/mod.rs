@@ -31,7 +31,8 @@ pub struct FormatterConfig {
     /// Use hard tabs instead of spaces for indentation (default false).
     #[serde(default)]
     pub use_tabs: bool,
-    /// Add spaces around the `|` filter pipe operator: `x | filter` vs `x|filter` (default false).
+    /// Add spaces around the `|` filter pipe operator (default true, REQ-FMT-04).
+    /// Set `space_around_pipe = false` in jinja.toml `[format]` for compact `x|filter`.
     /// The `is` test operator always has spaces regardless of this setting.
     #[serde(default)]
     pub space_around_pipe: bool,
@@ -103,7 +104,7 @@ impl Default for FormatterConfig {
         Self {
             indent_size: 4,
             use_tabs: false,
-            space_around_pipe: false,
+            space_around_pipe: true,
             space_around_operators: false,
             space_after_comma: true,
             space_inside_parens: false,
@@ -169,12 +170,12 @@ impl FormatOptions {
     }
 }
 
-/// Pure formatting config: 4-space indent, compact pipes, no file-meta concerns.
+/// Pure formatting config: 4-space indent, REQ-FMT-04 spaced pipes, no file-meta concerns.
 /// Used by `format()` and integration tests that care about normalization, not file-writing.
 const FORMAT_PURE: FormatterConfig = FormatterConfig {
     indent_size: 4,
     use_tabs: false,
-    space_around_pipe: false,
+    space_around_pipe: true,
     space_around_operators: false,
     space_after_comma: true,
     space_inside_parens: false,

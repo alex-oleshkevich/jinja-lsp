@@ -308,6 +308,117 @@ fn zed_no_nonexistent_api_calls() {
     );
 }
 
+// ─── T-19: REQ-EDIT-14 — WASM-sandbox conduct (jinja-lsp-1scj.1) ─────────────
+
+/// Strip `//` comment lines so a "never call X" test reads code, not prose —
+/// the comments explaining *why* an API is forbidden name that API.
+fn code_only(src: &str) -> String {
+    src.lines()
+        .map(|l| match l.find("//") {
+            Some(i) => &l[..i],
+            None => l,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn zed_command_passes_the_user_shell_environment() {
+    let src = code_only(include_str!("../editors/zed/src/lib.rs"));
+    // `env: Default::default()` hands the server an empty environment. Launched from
+    // a terminal the server may inherit enough to work, so this only breaks for users
+    // who start Zed from a desktop icon — PATH, an activated virtualenv and every
+    // toolchain variable go missing, and template discovery silently differs.
+    assert!(
+        !src.contains("env: Default::default()"),
+        "REQ-EDIT-14: zed::Command must not strip the environment; use worktree.shell_env()"
+    );
+    assert!(
+        src.contains("worktree.shell_env()"),
+        "REQ-EDIT-14: language_server_command must source env from worktree.shell_env()"
+    );
+}
+
+#[test]
+fn zed_never_reads_env_through_std() {
+    let src = code_only(include_str!("../editors/zed/src/lib.rs"));
+    // The WASM sandbox does not wire up host OS syscalls: `std::env::var` compiles
+    // cleanly and then always returns Err at runtime, so the failure looks like a
+    // missing setting rather than an unavailable API.
+    assert!(
+        !src.contains("std::env::var") && !src.contains("env::var("),
+        "REQ-EDIT-14: use worktree.shell_env()/worktree.which(), never std::env::var"
+    );
+}
+
+#[test]
+fn zed_implements_all_three_lsp_settings_hooks() {
+    let src = include_str!("../editors/zed/src/lib.rs");
+    // The extension is the stable interface: all three hooks ship even when the
+    // server does not consume one yet, so adopting it later needs no extension release.
+    for hook in [
+        "language_server_command",
+        "language_server_initialization_options",
+        "language_server_workspace_configuration",
+    ] {
+        assert!(
+            src.contains(&format!("fn {hook}")),
+            "REQ-EDIT-14: {hook} must be implemented"
+        );
+    }
+    assert_eq!(
+        src.matches("LspSettings::for_worktree").count(),
+        3,
+        "REQ-EDIT-14: each of the three hooks must route through LspSettings::for_worktree"
+    );
+}
+
+// ─── T-20: REQ-EDIT-13 — preinstalled binary, never downloaded (jinja-lsp-1scj.2) ──
+
+#[test]
+fn zed_extension_has_no_download_path() {
+    let src = code_only(include_str!("../editors/zed/src/lib.rs"));
+    // ADR-011: the extension must never fetch the server. The user installs it.
+    for forbidden in [
+        "latest_github_release",
+        "download_file",
+        "GithubReleaseOptions",
+        "make_file_executable",
+    ] {
+        assert!(
+            !src.contains(forbidden),
+            "ADR-011/REQ-EDIT-13: the extension must never download the binary, found {forbidden:?}"
+        );
+    }
+}
+
+#[test]
+fn zed_binary_resolution_is_two_step_then_fails_with_guidance() {
+    let src = include_str!("../editors/zed/src/lib.rs");
+    // Step 1: an explicit LspSettings binary.path. Step 2: worktree.which on PATH.
+    // No third step — when both miss, fail with the message naming the releases page.
+    let explicit = src
+        .find("binary.path")
+        .expect("REQ-EDIT-13: step 1 must honour an explicit LspSettings binary.path");
+    let which = src
+        .find("worktree\n            .which(SERVER_NAME)")
+        .or_else(|| src.find("worktree.which(SERVER_NAME)"))
+        .expect("REQ-EDIT-13: step 2 must fall back to worktree.which(SERVER_NAME)");
+    assert!(
+        explicit < which,
+        "REQ-EDIT-13: the explicit binary path must be tried before PATH lookup"
+    );
+    assert!(
+        src.contains("binary_not_found_message"),
+        "REQ-EDIT-13: a missing binary must fail with the shared guidance message"
+    );
+    let msg = include_str!("../editors/zed/src/lib.rs");
+    assert!(
+        msg.contains("does not download it") && msg.contains("/releases"),
+        "REQ-EDIT-13: the message must say the extension does not download and name the releases page"
+    );
+}
+
 #[test]
 fn zed_binary_sha256_published_by_release_workflow() {
     let src = include_str!("../.github/workflows/release.yml");

@@ -190,3 +190,96 @@ fn release_publish_job_depends_on_build_and_wheels() {
     assert!(deps.contains(&"build"), "publish must need: build");
     assert!(deps.contains(&"wheels"), "publish must need: wheels");
 }
+
+// ─── ADR-011: the retired distribution channels stay retired (jinja-lsp-1scj.3) ──
+
+#[test]
+fn release_never_publishes_to_crates_io() {
+    let rel_str = serde_yaml::to_string(&release_workflow()).unwrap();
+    // The `jinja-lsp` name on crates.io belongs to an unrelated project, and the
+    // tree-sitter-jinja grammars are git dependencies, which crates.io rejects.
+    // The step that used to be here never actually published anything.
+    for forbidden in ["cargo publish", "crates-io", "CARGO_REGISTRY_TOKEN"] {
+        assert!(
+            !rel_str.contains(forbidden),
+            "ADR-011: crates.io publishing is retired, found {forbidden:?} in release.yml"
+        );
+    }
+}
+
+#[test]
+fn release_never_publishes_a_vscode_extension() {
+    let rel_str = serde_yaml::to_string(&release_workflow()).unwrap();
+    for forbidden in ["vsce", "vscode", "VSCE_PAT", "ovsx"] {
+        assert!(
+            !rel_str.to_lowercase().contains(&forbidden.to_lowercase()),
+            "ADR-011: the VS Code extension is retired, found {forbidden:?} in release.yml"
+        );
+    }
+    assert!(
+        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("editors/vscode")
+            .exists(),
+        "ADR-011: editors/vscode/ must not come back"
+    );
+}
+
+#[test]
+fn zed_extension_package_carries_no_server_binary() {
+    // ADR-011/REQ-EDIT-13: the packaged extension ships the WASM + grammar only.
+    // A bundled binary would defeat the preinstalled contract just as surely as a
+    // download would, and would make the extension platform-specific.
+    let script = include_str!("../scripts/package-zed-extension.sh");
+    for forbidden in ["target/release/jinja-lsp", "cp $BINARY", "jinja-lsp-v"] {
+        assert!(
+            !script.contains(forbidden),
+            "ADR-011: the Zed package must not carry the server binary, found {forbidden:?}"
+        );
+    }
+}
+
+// ─── REQ-REL-14: channel ordering and independence (jinja-lsp-1scj.4) ────────
+
+#[test]
+fn aur_publish_runs_after_the_github_release() {
+    let rel = release_workflow();
+    let needs = rel["jobs"]["aur-publish"]["needs"].clone();
+    // The PKGBUILD pins the sha256 of the released archives, so the GitHub Release
+    // and its checksummed artifacts must exist before AUR runs — not in parallel.
+    let deps: Vec<String> = match needs {
+        serde_yaml::Value::String(s) => vec![s],
+        serde_yaml::Value::Sequence(s) => s
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+        other => panic!("aur-publish.needs must be a string or sequence, got {other:?}"),
+    };
+    assert!(
+        deps.contains(&"publish".to_owned()),
+        "REQ-REL-14: aur-publish must need: publish; got {deps:?}"
+    );
+}
+
+#[test]
+fn a_pypi_failure_does_not_skip_aur() {
+    let rel = release_workflow();
+    let steps = rel["jobs"]["publish"]["steps"]
+        .as_sequence()
+        .expect("publish steps");
+    let pypi = steps
+        .iter()
+        .find(|s| {
+            s["uses"]
+                .as_str()
+                .is_some_and(|u| u.contains("pypi-publish"))
+        })
+        .expect("REQ-REL-14: publish job must have a PyPI step");
+    // Each channel is independent. Without continue-on-error a PyPI-side config
+    // problem (a trusted publisher not yet set up) fails the whole publish job,
+    // and `aur-publish` — which needs it — is silently skipped.
+    assert_eq!(
+        pypi["continue-on-error"].as_bool(),
+        Some(true),
+        "REQ-REL-14: the PyPI step must be continue-on-error so AUR still runs"
+    );
+}

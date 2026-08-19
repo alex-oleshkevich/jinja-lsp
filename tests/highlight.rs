@@ -332,3 +332,50 @@ fn jinja_lsp_kj7z_write_resolves_to_the_cursors_own_loop_not_the_first_same_name
         "write span must be the SECOND loop's target (the cursor's own scope), not the first"
     );
 }
+
+// ─── F11 test-plan row 3: REQ-HL-01 — macro parameter (jinja-lsp-rwog) ───────
+
+#[test]
+fn hl01_macro_parameter_highlights_decl_and_body_uses() {
+    // The exact synthetic doc the F11 test plan specifies for row 3. The row was
+    // never implemented: parameters live in MacroDefinition::parameters, not in
+    // TemplateIndex::variables, so document_highlight returned nothing.
+    let src = "{% macro m(words) %}{{ words }}{% endmacro %}";
+    let index = extract(src);
+    let registry = Registry::load_core();
+    // cursor on `words` inside the body (`{{ words }}` starts at byte 20)
+    let hl = document_highlight(src, 0, 24, &index, &registry);
+
+    let write = hl.iter().find(|h| h.kind == HighlightKind::Write);
+    let read = hl.iter().find(|h| h.kind == HighlightKind::Read);
+    assert!(write.is_some(), "the parameter declaration must be Write");
+    assert!(read.is_some(), "the in-body use must be Read");
+
+    let w = write.unwrap();
+    assert_eq!(
+        &src[w.range.start_byte..w.range.end_byte],
+        "words",
+        "the Write range must cover the parameter name in the macro tag"
+    );
+}
+
+#[test]
+fn hl01_macro_parameter_is_scoped_to_its_own_macro() {
+    // REQ-HL-02: two macros with a same-named parameter are distinct symbols.
+    let src = "{% macro a(x) %}{{ x }}{% endmacro %}{% macro b(x) %}{{ x }}{% endmacro %}";
+    let index = extract(src);
+    let registry = Registry::load_core();
+    // cursor on the `x` inside macro b's body
+    let cursor = src.rfind("{{ x }}").unwrap() + 3;
+    let hl = document_highlight(src, 0, cursor as u32, &index, &registry);
+
+    assert!(!hl.is_empty(), "highlight must resolve inside macro b");
+    let b_start = src.find("{% macro b").unwrap();
+    for h in &hl {
+        assert!(
+            h.range.start_byte >= b_start,
+            "macro a's occurrences must stay dark; got a highlight at {}",
+            h.range.start_byte
+        );
+    }
+}

@@ -131,12 +131,6 @@ async def test_document_highlight_marks_loop_binding_and_use(client):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="REQ-HL-01 lists a macro parameter as highlightable and the F11 test "
-           "plan specifies this exact doc as row 3, but that row was never "
-           "implemented and document_highlight returns nothing — jinja-lsp-rwog",
-)
 @pytest.mark.asyncio
 async def test_document_highlight_marks_macro_parameter(client):
     """REQ-HL-01 (F11 test plan row 3): a macro parameter highlights in its body."""
@@ -153,6 +147,13 @@ async def test_document_highlight_marks_macro_parameter(client):
         )
     )
     assert result, "highlight on the `words` macro parameter must not be empty"
+    kinds = {h.kind for h in result}
+    assert lsp.DocumentHighlightKind.Write in kinds, (
+        f"the parameter declaration must be Write; got {kinds}"
+    )
+    assert lsp.DocumentHighlightKind.Read in kinds, (
+        f"the in-body use must be Read; got {kinds}"
+    )
 
 
 @pytest.mark.asyncio
@@ -321,14 +322,6 @@ async def test_formatting_returns_edits_for_unformatted_source(client):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="REQ-FMT-04 requires `x|e` -> `x | e`, but src/format/mod.rs hardcodes "
-           "space_around_pipe: false (a field no config file can set, documented "
-           "in no spec) and strips the spaces instead. The golden fixture "
-           "03_pipe_spacing.expected was regenerated against the implementation, "
-           "so it defends the inverted behavior — jinja-lsp-85to",
-)
 @pytest.mark.asyncio
 async def test_formatting_pads_filter_pipes(client):
     """REQ-FMT-04: a filter pipe gets one space on each side."""

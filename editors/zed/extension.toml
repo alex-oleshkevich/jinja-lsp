@@ -1,6 +1,6 @@
 id = "jinja-plus"
 name = "Jinja Plus"
-version = "0.1.0"
+version = "0.2.0"
 schema_version = 1
 description = "Jinja2 template language support for Zed"
 authors = ["alex-oleshkevich"]

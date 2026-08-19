@@ -47,6 +47,13 @@ pub struct MacroDefinition {
 pub struct Parameter {
     pub name: String,
     pub default: Option<String>,
+    /// Span of the parameter name inside the `{% macro %}` control tag.
+    ///
+    /// Parameters are bindings, so F11 needs a range to mark `Write` at. They are
+    /// deliberately **not** pushed into `TemplateIndex::variables`: their name span
+    /// sits in the control tag, outside `MacroDefinition::body`, which would make
+    /// W402 (`set` outside a block) fire on every parameter.
+    pub name_span: Span,
 }
 
 /// REQ-DATA-02

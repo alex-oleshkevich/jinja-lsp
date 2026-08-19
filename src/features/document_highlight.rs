@@ -111,6 +111,27 @@ pub fn document_highlight(
         return with_write_and_reads(write, word, index);
     }
 
+    // Macro parameter? jinja-lsp-rwog: REQ-HL-01 lists parameters as highlightable,
+    // but they live in `MacroDefinition::parameters`, not `index.variables` (see the
+    // note on `Parameter::name_span` for why). Resolve against the macro whose body
+    // contains the cursor, so `{% macro a(x) %}{{ x }}{% endmacro %}{% macro b(x) %}`
+    // highlights only the one the cursor is inside (REQ-HL-02).
+    if let Some((mac, param)) = index.macros.iter().find_map(|m| {
+        (m.body.start_byte <= byte && byte <= m.body.end_byte)
+            .then(|| m.parameters.iter().find(|p| p.name == word).map(|p| (m, p)))
+            .flatten()
+    }) {
+        let mut result = vec![];
+        if param.name_span.start_byte < param.name_span.end_byte {
+            result.push(DocumentHighlight {
+                range: param.name_span.clone(),
+                kind: HighlightKind::Write,
+            });
+        }
+        result.extend(reads_in_range(word, index, &mac.body));
+        return result;
+    }
+
     // Variable defined in this file? jinja-lsp-kj7z: pick the binding whose
     // valid_range actually contains the cursor (tightest match, mirroring
     // rename.rs's tightest_scope_for) instead of text-scanning for the first
@@ -179,6 +200,24 @@ fn reads_only(name: &str, index: &TemplateIndex) -> Vec<DocumentHighlight> {
         .references
         .iter()
         .filter(|r| r.name == name && is_read_kind(r.kind))
+        .map(|r| DocumentHighlight {
+            range: r.span.clone(),
+            kind: HighlightKind::Read,
+        })
+        .collect()
+}
+
+/// `reads_only`, bounded to a binding's scope (REQ-HL-02).
+fn reads_in_range(name: &str, index: &TemplateIndex, scope: &Span) -> Vec<DocumentHighlight> {
+    index
+        .references
+        .iter()
+        .filter(|r| {
+            r.name == name
+                && is_read_kind(r.kind)
+                && scope.start_byte <= r.span.start_byte
+                && r.span.end_byte <= scope.end_byte
+        })
         .map(|r| DocumentHighlight {
             range: r.span.clone(),
             kind: HighlightKind::Read,

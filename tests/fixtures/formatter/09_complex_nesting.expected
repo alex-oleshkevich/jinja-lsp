@@ -2,7 +2,7 @@
 {% block content %}
     {% for post in posts %}
         {% if post.published %}
-            <h2>{{ post.title|upper }}</h2>
+            <h2>{{ post.title | upper }}</h2>
             {% if post.tags %}
                 {% for tag in post.tags %}
                     <span>{{ tag }}</span>

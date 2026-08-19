@@ -172,31 +172,35 @@ fn fmt01_idempotent() {
     }
 }
 
-// ─── REQ-FMT-04: T-15 — Pipe spacing (default: compact) ─────────────────────
+// ─── REQ-FMT-04: T-15 — Pipe spacing (default: one space each side) ─────────
 
 #[test]
-fn fmt04_t15_compact_pipe_default() {
-    // Default: space_around_pipe=false → compact notation `x|filter`.
-    assert_eq!(format("{{ x|e }}"), "{{ x|e }}");
-    assert_eq!(format("{{ x | e }}"), "{{ x|e }}");
+fn fmt04_t15_spaced_pipe_default() {
+    // REQ-FMT-04: "A filter pipe gets one space on each side: x|e -> x | e".
+    assert_eq!(format("{{ x|e }}"), "{{ x | e }}");
+    assert_eq!(format("{{ x | e }}"), "{{ x | e }}");
 }
 
 #[test]
-fn fmt04_t15_spaced_pipe_with_config() {
-    // Opt-in: space_around_pipe=true → spaced notation `x | filter`.
+fn fmt04_t15_compact_pipe_with_config() {
+    // Opt-out: space_around_pipe=false → compact notation `x|filter`.
     let cfg = FormatterConfig {
-        space_around_pipe: true,
+        space_around_pipe: false,
         newline_at_eof: false,
         trim_trailing_whitespace: false,
         ..FormatterConfig::default()
     };
-    assert_eq!(format_with_config("{{ x|e }}", &cfg), "{{ x | e }}");
+    assert_eq!(format_with_config("{{ x | e }}", &cfg), "{{ x|e }}");
 }
 
 #[test]
 fn fmt04_t16_chained_pipes() {
-    assert_eq!(format("{{ name|upper|trim }}"), "{{ name|upper|trim }}");
-    assert_eq!(format("{{ name | upper | trim }}"), "{{ name|upper|trim }}");
+    // REQ-FMT-04: "name|upper|trim -> name | upper | trim".
+    assert_eq!(format("{{ name|upper|trim }}"), "{{ name | upper | trim }}");
+    assert_eq!(
+        format("{{ name | upper | trim }}"),
+        "{{ name | upper | trim }}"
+    );
 }
 
 #[test]
@@ -221,11 +225,12 @@ fn fmt04_t18_filter_call_arg_commas() {
 }
 
 #[test]
-fn fmt04_t18_compact_filter_call_arg_commas() {
-    // With default (compact pipes): filter args still get spaces, pipe stays compact.
+fn fmt04_t18_spaced_filter_call_arg_commas() {
+    // REQ-FMT-04 verbatim: "truncate( 20,true ) -> truncate(20, true)", with the
+    // pipe padded by the same requirement.
     assert_eq!(
         format("{{ x | truncate( 20,true ) }}"),
-        "{{ x|truncate(20, true) }}"
+        "{{ x | truncate(20, true) }}"
     );
 }
 
@@ -269,14 +274,14 @@ fn fmt04_t44_non_filter_call_commas_untouched() {
 
 #[test]
 fn fmt04_combined_pipe_and_delimiter() {
-    // FMT-01 (tight delimiter) + FMT-04 compact pipe (default).
-    assert_eq!(format("{{name|upper}}"), "{{ name|upper }}");
+    // FMT-01 (delimiter padding) + FMT-04 (pipe padding).
+    assert_eq!(format("{{name|upper}}"), "{{ name | upper }}");
 }
 
 #[test]
 fn fmt04_marker_plus_pipe() {
-    // Marker spacing (FMT-03) + compact pipe (default).
-    assert_eq!(format("{{- name|trim -}}"), "{{- name|trim -}}");
+    // Marker spacing (FMT-03) + pipe padding (FMT-04).
+    assert_eq!(format("{{- name|trim -}}"), "{{- name | trim -}}");
 }
 
 // ─── REQ-FMT-04: Idempotence extension ───────────────────────────────────────
@@ -766,7 +771,7 @@ fn fmt_config_space_inside_parens_default_false() {
     };
     assert_eq!(
         format_with_config("{{ name|upper(20, true) }}", &cfg),
-        "{{ name|upper(20, true) }}"
+        "{{ name | upper(20, true) }}"
     );
 }
 
@@ -780,7 +785,7 @@ fn fmt_config_space_inside_parens_true() {
     };
     assert_eq!(
         format_with_config("{{ name|upper(20, true) }}", &cfg),
-        "{{ name|upper( 20, true ) }}"
+        "{{ name | upper( 20, true ) }}"
     );
 }
 

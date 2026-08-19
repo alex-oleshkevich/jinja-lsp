@@ -194,12 +194,14 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
         let mut ms = cur.matches(pq, tree.root_node(), bytes);
         while let Some(m) = ms.next() {
             let mut name = None;
+            let mut name_span = Span::default();
             let mut default = None;
             let mut key = None;
             for cap in m.captures {
                 match pq.capture_names()[cap.index as usize] {
                     "name" => {
                         name = Some(txt(cap.node, bytes).to_owned());
+                        name_span = node_span(cap.node);
                         key = ancestor(cap.node, "macro_statement").map(|n| n.start_byte());
                     }
                     "default" => default = Some(txt(cap.node, bytes).to_owned()),
@@ -207,10 +209,11 @@ fn do_macros(tree: &tree_sitter::Tree, bytes: &[u8], idx: &mut TemplateIndex) {
                 }
             }
             if let (Some(n), Some(k)) = (name, key) {
-                param_map
-                    .entry(k)
-                    .or_default()
-                    .push(Parameter { name: n, default });
+                param_map.entry(k).or_default().push(Parameter {
+                    name: n,
+                    default,
+                    name_span,
+                });
             }
         }
     }

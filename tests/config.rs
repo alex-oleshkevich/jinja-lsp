@@ -665,7 +665,8 @@ fn config_format_section_defaults_when_absent() {
     let cfg = JinjaConfig::default();
     assert_eq!(cfg.format, FormatterConfig::default());
     assert_eq!(cfg.format.indent_size, 4);
-    assert!(!cfg.format.space_around_pipe);
+    // REQ-FMT-04: a filter pipe gets one space on each side by default.
+    assert!(cfg.format.space_around_pipe);
     assert!(cfg.format.space_after_comma);
     assert!(cfg.format.newline_at_eof);
     assert!(cfg.format.trim_trailing_whitespace);

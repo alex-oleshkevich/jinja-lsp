@@ -20,6 +20,13 @@ impl zed::Extension for JinjaLspExtension {
         language_server_id: &LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
+        // REQ-EDIT-14: hand the server the user's shell environment. `Default::default()`
+        // here strips PATH, an activated virtualenv, and every toolchain variable, which
+        // only shows up when Zed is launched from a desktop icon rather than a terminal.
+        // The WASM sandbox does not wire up host syscalls, so `std::env::var` is not an
+        // alternative — it compiles and always returns `Err`.
+        let env = worktree.shell_env();
+
         let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
             .ok()
             .and_then(|s| s.binary);
@@ -29,7 +36,7 @@ impl zed::Extension for JinjaLspExtension {
             return Ok(zed::Command {
                 command: binary.path.unwrap_or_else(|| SERVER_NAME.to_owned()),
                 args: binary.arguments.unwrap_or_else(|| vec!["lsp".to_owned()]),
-                env: Default::default(),
+                env,
             });
         }
 
@@ -40,7 +47,7 @@ impl zed::Extension for JinjaLspExtension {
         Ok(zed::Command {
             command: binary,
             args: vec!["lsp".to_owned()],
-            env: Default::default(),
+            env,
         })
     }
 
@@ -54,6 +61,20 @@ impl zed::Extension for JinjaLspExtension {
         let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
             .ok()
             .and_then(|s| s.initialization_options);
+        Ok(settings)
+    }
+
+    /// REQ-EDIT-14: the third `LspSettings` hook. The server does not consume
+    /// `workspace/configuration` today, but the extension is the stable interface —
+    /// wiring it now means the server can adopt it without an extension release.
+    fn language_server_workspace_configuration(
+        &mut self,
+        language_server_id: &LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> Result<Option<serde_json::Value>> {
+        let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
+            .ok()
+            .and_then(|s| s.settings.clone());
         Ok(settings)
     }
 }

@@ -54,10 +54,12 @@ fn macro_definition_has_name_params_body_span() {
             Parameter {
                 name: "post".into(),
                 default: None,
+                name_span: span(),
             },
             Parameter {
                 name: "label".into(),
                 default: Some("\"\"".into()),
+                name_span: span(),
             },
         ],
         body: span(),
