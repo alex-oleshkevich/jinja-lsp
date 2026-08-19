@@ -283,3 +283,26 @@ fn a_pypi_failure_does_not_skip_aur() {
         "REQ-REL-14: the PyPI step must be continue-on-error so AUR still runs"
     );
 }
+
+// ─── REQ-STACK-01: the declared MSRV is actually built (jinja-lsp-xt7) ───────
+
+#[test]
+fn ci_builds_against_the_declared_msrv() {
+    let cargo: toml::Value =
+        toml::from_str(include_str!("../Cargo.toml")).expect("Cargo.toml must be valid TOML");
+    let msrv = cargo["package"]["rust-version"]
+        .as_str()
+        .expect("Cargo.toml must declare rust-version");
+
+    let ci = ci_workflow();
+    let job = ci["jobs"]["msrv"].as_mapping().expect(
+        "REQ-STACK-01: ci.yml must have an msrv job; every other job uses stable, \
+                 so rust-version would be a claim nothing verifies",
+    );
+    let job_str = serde_yaml::to_string(job).unwrap();
+    assert!(
+        job_str.contains(&format!("dtolnay/rust-toolchain@{msrv}")),
+        "REQ-STACK-01: the msrv job must pin the toolchain to {msrv} (the declared \
+         rust-version), so the two cannot drift apart; got:\n{job_str}"
+    );
+}

@@ -154,3 +154,59 @@ fn no_unsorted_workspace_templates_walk_in_features() {
         );
     }
 }
+
+// ─── REQ-FOLD-04: one module per check (jinja-lsp-8yz) ──────────────────────
+
+#[test]
+fn each_check_lives_in_its_own_module() {
+    // checks/ was a single 1112-line mod.rs holding every check as a private fn.
+    // mod.rs is now the dispatcher only: it declares the modules and calls them.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/diagnostics/checks");
+    let modules: Vec<String> = std::fs::read_dir(&dir)
+        .expect("checks dir must exist")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".rs") && n != "mod.rs")
+        .collect();
+    assert!(
+        modules.len() >= 18,
+        "REQ-FOLD-04: expected one module per check, found {}: {modules:?}",
+        modules.len()
+    );
+
+    // Every module name must map to at least one real diagnostic code, so a stray
+    // helper file cannot masquerade as a check module.
+    use jinja_lsp::diagnostics::DiagCode;
+    let known: Vec<String> = DiagCode::ALL
+        .iter()
+        .map(|c| {
+            c.code_str()
+                .trim_start_matches("JINJA-")
+                .to_ascii_lowercase()
+        })
+        .collect();
+    for m in &modules {
+        let stem = m.trim_end_matches(".rs");
+        assert!(
+            stem.split('_').all(|part| known.iter().any(|k| k == part)),
+            "REQ-FOLD-04: {m} does not name a diagnostic code (or a combination of them)"
+        );
+    }
+}
+
+#[test]
+fn checks_mod_is_a_dispatcher_not_an_implementation() {
+    let src = include_str!("../src/diagnostics/checks/mod.rs");
+    assert!(
+        src.lines().count() < 200,
+        "REQ-FOLD-04: checks/mod.rs must stay a dispatcher; it is {} lines — a check \
+         implementation has crept back in",
+        src.lines().count()
+    );
+    // The only `fn check_*` allowed here would be an implementation; the dispatcher
+    // calls them but must not define them.
+    assert!(
+        !src.contains("\nfn check_"),
+        "REQ-FOLD-04: checks/mod.rs must not define a check; move it to its own module"
+    );
+}

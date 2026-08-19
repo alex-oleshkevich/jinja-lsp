@@ -53,6 +53,19 @@ jobs:
       - name: cargo nextest run
         run: cargo nextest run --locked
 
+  # REQ-STACK-01: the declared MSRV must actually build. Every other job uses
+  # `stable`, so without this `rust-version = "1.85"` in Cargo.toml is a claim
+  # nothing verifies — and a stable-only feature can creep in unnoticed.
+  msrv:
+    name: Build on MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check --locked --all-targets
+        run: cargo check --locked --all-targets
+
   # REQ-REL-03: Python E2E gate — pytest-lsp on Linux only.
   e2e:
     name: Python E2E

@@ -327,13 +327,8 @@ fn jinja_lsp_md8e_check_w202_early_returns_when_no_macros() {
     // from-imports (O(templates^2 x refs) for a full lint run) even for templates
     // that define no macros at all — the common case, and one where the scan can
     // never produce a diagnostic. It must bail out before the workspace scan.
-    let src = include_str!("../src/diagnostics/checks/mod.rs");
-    let start = src.find("fn check_w202(").expect("check_w202 must exist");
-    let end = start
-        + src[start..]
-            .find("\n// ── W203")
-            .expect("W203 section must follow check_w202");
-    let func = &src[start..end];
+    // REQ-FOLD-04 (jinja-lsp-8yz): each check now lives in its own module.
+    let func = include_str!("../src/diagnostics/checks/w202.rs");
     assert!(
         func.contains("index.macros.is_empty()"),
         "check_w202 must early-return when index.macros is empty: {func}"

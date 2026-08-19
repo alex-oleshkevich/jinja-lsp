@@ -265,3 +265,65 @@ fn fixture_config_reload() {
 fn fixture_user_hints() {
     check_or_update("user-hints");
 }
+
+// ---------- jinja-lsp-syv1: the corpus must track DiagCode::ALL --------------
+
+/// Every diagnostic code has a golden fixture, and every fixture has a code.
+///
+/// `tests/diagnostics.rs` already forces a new `DiagCode` variant into
+/// `DiagCode::ALL` at compile time, but nothing tied `ALL` to the fixture
+/// directory: a new code could ship with no `expected-diagnostics.json`, no
+/// `corpus_*()` test, and a green suite. `tests/format_fixtures.rs` avoids the
+/// same trap by walking its directory; the corpus tests predate that idea.
+#[test]
+fn corpus_fixtures_cover_exactly_diagcode_all() {
+    use jinja_lsp::diagnostics::DiagCode;
+
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/corpus");
+    let on_disk: std::collections::BTreeSet<String> = fs::read_dir(&corpus)
+        .unwrap_or_else(|e| panic!("{}: {e}", corpus.display()))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+
+    let expected: std::collections::BTreeSet<String> = DiagCode::ALL
+        .iter()
+        // "JINJA-E001" -> "e001", the directory naming convention.
+        .map(|c| {
+            c.code_str()
+                .trim_start_matches("JINJA-")
+                .to_ascii_lowercase()
+        })
+        .collect();
+
+    let missing: Vec<_> = expected.difference(&on_disk).collect();
+    assert!(
+        missing.is_empty(),
+        "every diagnostic code needs tests/fixtures/corpus/<code>/expected-diagnostics.json \
+         (see AGENTS.md 'Adding a code'); missing: {missing:?}"
+    );
+
+    let orphaned: Vec<_> = on_disk.difference(&expected).collect();
+    assert!(
+        orphaned.is_empty(),
+        "these corpus fixtures have no matching DiagCode — a removed or renamed code \
+         leaves its fixture behind: {orphaned:?}"
+    );
+}
+
+#[test]
+fn every_corpus_fixture_carries_its_golden_file() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/corpus");
+    for entry in fs::read_dir(&corpus).expect("corpus dir must exist") {
+        let dir = entry.expect("readable entry").path();
+        if !dir.is_dir() {
+            continue;
+        }
+        assert!(
+            dir.join("expected-diagnostics.json").is_file(),
+            "{} has no expected-diagnostics.json",
+            dir.display()
+        );
+    }
+}
