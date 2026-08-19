@@ -202,7 +202,7 @@ version **and** a dated `CHANGELOG.md` section for that version.
 src/main.rs           clap CLI dispatch only — routes to linter/, format/cli.rs, doctor.rs, server/
 src/linter/           the `check` front-end: orchestration + rich/compact/json output
 src/doctor.rs         the `doctor` front-end: config/template/builtin discovery report
-src/server/           tower-lsp backend (mod.rs) + ServerState (state.rs)
+src/server/           tower-lsp backend (mod.rs) + ServerState (state.rs) + lsp_types conversions (convert.rs)
 src/config.rs         jinja.toml / [tool.jinja] discovery, zero-config, InitializationOptions overlay
 src/parsing/          tree-sitter wrapper, extractor, inline-template detection, queries/*.scm (17)
 src/workspace/        TemplateIndex, WorkspaceIndex, symbols, builder (Pass 2)
@@ -299,6 +299,7 @@ setting correctly falls back instead of leaving a stale value. Keys: `templates`
 - The upstream grammar exposes `language()`, not `LANGUAGE_JINJA` — use `tree_sitter_jinja::language()`.
 - The inline grammar (`tree-sitter-jinja-inline`) uses `# statement` notation, not Jinja delimiters; test inputs must be `"# set x = 1"` not `"{{ x }}"`.
 - `blocks.scm` has no `scoped` capture because the upstream grammar does not model the `scoped` modifier; `BlockDefinition.scoped` defaults to `false` always.
+- A release bumps four manifests — `Cargo.toml`, `pyproject.toml`, `editors/zed/Cargo.toml`, `editors/zed/extension.toml` — and BOTH lockfiles. `editors/zed/` is a separate crate CI builds with `--locked`, so a stale `editors/zed/Cargo.lock` breaks CI while every root gate stays green; `just check` runs that build now.
 
 ---
 

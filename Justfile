@@ -29,11 +29,26 @@ lint:
 fmt:
     cargo fmt
 
+# Build the Zed extension the way CI does. It is a separate crate with its own
+# lockfile, so the root `cargo` gates never touch it: a version bump in
+# editors/zed/Cargo.toml that leaves editors/zed/Cargo.lock stale breaks the
+# `--locked` build in CI and nothing locally.
+check-zed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! rustup target list --installed | grep -q wasm32-wasip2; then
+        echo "skipping Zed extension build: rustup target add wasm32-wasip2" >&2
+        exit 0
+    fi
+    cd editors/zed
+    cargo build --release --locked --target wasm32-wasip2
+
 # The same gates CI runs (.github/workflows/ci.yml), in the same order.
 check:
     cargo fmt --check
     cargo clippy --all-targets -- -D warnings
     cargo nextest run
+    just check-zed
 
 # Everything `check` runs, plus the Python e2e gate.
 check-all: check test-e2e
