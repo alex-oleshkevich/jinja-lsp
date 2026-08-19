@@ -306,3 +306,71 @@ fn ci_builds_against_the_declared_msrv() {
          rust-version), so the two cannot drift apart; got:\n{job_str}"
     );
 }
+
+// ─── The curl|bash installer must track the release workflow's asset names ───
+
+#[test]
+fn installer_targets_match_the_release_build_matrix() {
+    // install.sh constructs asset URLs by hand. If release.yml adds, drops or
+    // renames a target, the installer 404s for exactly the users on that platform
+    // — and nothing else in the suite would notice.
+    let installer = include_str!("../install.sh");
+    let rel = serde_yaml::to_string(&release_workflow()).unwrap();
+
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+    ] {
+        assert!(
+            rel.contains(target),
+            "release.yml no longer builds {target}; install.sh still offers it"
+        );
+        assert!(
+            installer.contains(target),
+            "release.yml builds {target} but install.sh cannot install it"
+        );
+    }
+
+    // Intel macOS is deliberately absent from the matrix, and Rosetta only runs
+    // x86_64 on arm64 — never the reverse — so those users have no fallback and
+    // must get a real message instead of a 404.
+    assert!(
+        !rel.contains("x86_64-apple-darwin"),
+        "an Intel macOS build now exists; install.sh must stop rejecting it"
+    );
+    assert!(
+        installer.contains("Intel macOS has no published build"),
+        "install.sh must explain the missing Intel macOS build, not 404"
+    );
+}
+
+#[test]
+fn installer_verifies_checksums_and_needs_no_privileges() {
+    // Strip `#` comments: the lines documenting *why* sudo is never used name it.
+    let raw = include_str!("../install.sh");
+    let installer: String = raw
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    // A curl|bash script runs arbitrary downloaded bytes; verifying the published
+    // checksum is the one control that makes that defensible.
+    assert!(
+        installer.contains("verify_checksum") && installer.contains("Refusing to install"),
+        "install.sh must verify the published sha256 before installing"
+    );
+    // Naming a system path would mean sudo, and a curl|bash installer must never
+    // ask for it.
+    for forbidden in ["sudo", "/usr/local/bin", "/usr/bin"] {
+        assert!(
+            !installer.contains(forbidden),
+            "install.sh must install into the user's own bin dir, found {forbidden:?}"
+        );
+    }
+    assert!(
+        installer.contains(".local/bin"),
+        "install.sh must default to ~/.local/bin"
+    );
+}
