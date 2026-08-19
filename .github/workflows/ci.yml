@@ -66,6 +66,25 @@ jobs:
       - name: cargo check --locked --all-targets
         run: cargo check --locked --all-targets
 
+  # REQ-EDIT-07/14: the Zed extension is its own crate, outside the workspace, so
+  # `cargo nextest run` never compiles it — tests/zed_extension.rs only greps the
+  # source as text. Without this job an API misuse or syntax error in lib.rs ships
+  # undetected, and the failure surfaces to users as an extension that won't load.
+  zed-extension:
+    name: Build Zed extension (wasm32-wasip2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: editors/zed
+      - name: cargo build --release --target wasm32-wasip2
+        working-directory: editors/zed
+        run: cargo build --release --locked --target wasm32-wasip2
+
   # REQ-REL-03: Python E2E gate — pytest-lsp on Linux only.
   e2e:
     name: Python E2E

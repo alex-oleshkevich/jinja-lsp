@@ -513,3 +513,32 @@ fn zed_jinja2_json_config_is_correct() {
 fn zed_jinja2_markdown_config_is_correct() {
     assert_embed_language_config("jinja2-markdown", "Jinja2 (Markdown)", "markdown");
 }
+
+// ─── REQ-EDIT-07/14: the extension crate must actually compile in CI ─────────
+
+#[test]
+fn ci_builds_the_zed_extension_for_wasm() {
+    // The extension is a separate crate outside the cargo workspace, so the main
+    // suite never type-checks it — every test in this file reads lib.rs as *text*.
+    // Only a real wasm32-wasip1 build catches an API misuse; the WASM sandbox is
+    // also where such a mistake is least visible, since the extension simply fails
+    // to load rather than reporting anything.
+    let ci: serde_yaml::Value = serde_yaml::from_str(include_str!("../.github/workflows/ci.yml"))
+        .expect("ci.yml must be valid YAML");
+    let job = ci["jobs"]["zed-extension"]
+        .as_mapping()
+        .expect("ci.yml must have a zed-extension job that compiles the extension");
+    let job_str = serde_yaml::to_string(job).unwrap();
+    // Must match the target scripts/package-zed-extension.sh actually ships, or CI
+    // would be green on a build nobody installs.
+    let packaged = include_str!("../scripts/package-zed-extension.sh");
+    let target = packaged
+        .lines()
+        .find_map(|l| l.strip_prefix("WASM_TARGET=\""))
+        .and_then(|l| l.split('"').next())
+        .expect("package-zed-extension.sh must declare WASM_TARGET");
+    assert!(
+        job_str.contains(target),
+        "the zed-extension job must build {target}, the target that is packaged: {job_str}"
+    );
+}
