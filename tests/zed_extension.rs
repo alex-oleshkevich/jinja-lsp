@@ -542,3 +542,43 @@ fn ci_builds_the_zed_extension_for_wasm() {
         "the zed-extension job must build {target}, the target that is packaged: {job_str}"
     );
 }
+
+// ─── Marketplace validator preflight (jinja-lsp-1scj.5) ─────────────────────
+
+#[test]
+fn zed_extension_directory_carries_its_own_license() {
+    // The zed-industries/extensions validator reads the extension *directory*
+    // (submitted as a git submodule with path = "editors/zed"), not the repo root
+    // and not the packaged zip. A LICENSE only at the root, or only copied into the
+    // packaging stage dir, passes every local check and then fails the submission.
+    //
+    // This does not contradict jinja_lsp_r52g: that guards against the packaging
+    // *script* creating an untracked editors/zed/LICENSE at build time. The file
+    // must be committed, not generated.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let ext_license = root.join("editors/zed/LICENSE");
+    assert!(
+        ext_license.is_file(),
+        "editors/zed/LICENSE must be committed — the marketplace validator checks \
+         the extension directory, not the repo root"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&ext_license).expect("readable"),
+        std::fs::read_to_string(root.join("LICENSE")).expect("readable"),
+        "editors/zed/LICENSE must match the repo-root LICENSE"
+    );
+}
+
+#[test]
+fn zed_manifest_declares_repository_and_authors() {
+    // Both are validator requirements and both are easy to leave stale after a
+    // rename — the repository URL is how the marketplace links back to the source.
+    let m = manifest();
+    let repo = m["repository"].as_str().unwrap_or("");
+    assert!(
+        repo.starts_with("https://github.com/") && repo.contains("jinja-lsp"),
+        "extension.toml repository must be the canonical GitHub URL; got {repo:?}"
+    );
+    let authors = m["authors"].as_array().expect("authors must be an array");
+    assert!(!authors.is_empty(), "extension.toml must declare authors");
+}
