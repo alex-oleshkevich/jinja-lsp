@@ -5,6 +5,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 ## [Unreleased]
 
+<!-- Add entries above this line when cutting a release -->
+
+## [0.2.0] - 2026-08-19
+
+### Added
+- Zed extension now covers 24 Jinja2 language variants — a base `Jinja2` plus
+  `jinja2-html` and 19 host-format combinations (YAML, JSON, Markdown, …), with
+  the LSP still attaching to bare `.jinja`/`.j2` files.
+- Server lifecycle observability: a version and build banner on startup, a
+  fallback log filter, and `--no-color` log output.
+
+### Fixed
+- Workspace-wide macro lookup is now deterministic. `call_hierarchy` and the
+  E103 "add import" quick-fix walked a `HashMap`, so with a macro defined in
+  several templates they picked an arbitrary definer that changed between runs.
+- Formatter: HTML lines are reindented using the combined HTML + Jinja tag
+  depth, instead of the Jinja depth alone.
+- Parsing: function calls chained off an attribute (`obj.method()`) are captured,
+  not just bare calls.
+- Parsing: the inline gettext shorthand `_('msg')` is captured, so it gets hover.
+- Hover: shows the workspace-relative template path rather than the absolute
+  workspace key.
+- Code lens clicks did nothing — `Command.command` was always empty.
+- Zed: added the `language_ids` mapping, without which the server rejected
+  `didOpen`; added the missing syntax highlighting for `Jinja2 (HTML)`; and
+  pointed the grammar at the `tree-sitter-jinja` monorepo subdirectory.
+- Config reloads now report success through `window/logMessage`.
+
 ### Removed
 - VS Code extension (`editors/vscode/`) and its VS Code Marketplace release step.
 - crates.io publish step — the `jinja-lsp` name there belongs to an unrelated
@@ -18,8 +46,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 - AUR package renamed `jinja-lsp-bin` → `jinja-lsp-plus-bin` — the
   `jinja-lsp-bin` name belongs to an unrelated project, same collision as
   crates.io.
-
-<!-- Add entries above this line when cutting a release -->
+- A `Justfile` is now the entry point for every routine task (`just --list`),
+  so local commands and CI gates cannot drift apart. `just release X.Y.Z`
+  checks the tag/version and CHANGELOG gates before tagging.
 
 ## [0.1.0] - 2026-07-03
 
