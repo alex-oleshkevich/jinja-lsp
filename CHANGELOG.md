@@ -7,6 +7,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 <!-- Add entries above this line when cutting a release -->
 
+## [0.4.0] - 2026-08-19
+
+### Added
+- `jinja-lsp doctor` — reports the config file it found (or that it fell back to
+  zero-config), every template directory with how many files matched, which
+  builtin sources loaded and what each contributed, and any `*.hints.md`
+  sidecars. It walks what was *configured* rather than what survived resolution,
+  so a typo'd `templates` entry is named instead of silently dropped, and a
+  directory that exists but matched nothing is reported with the extension list.
+  Exits 1 on problems, 2 if the config cannot be read.
+
+### Fixed
+- Zed: `{%`, `{{` and `{#` now auto-close in the base `Jinja2` and
+  `Jinja2 (HTML)` languages, which had no `brackets` table while the other 22
+  variants did — the two most-used of the set.
+- Zed: auto-close now fires before `<` (`autoclose_before` was set nowhere, so
+  typing `{{` immediately before `<br>` did nothing), brackets no longer
+  auto-close inside strings and comments, and `block_comment` uses the
+  structured form so toggling a comment keeps `{# text #}` spacing.
+- Zed: `{% raw %}` bodies render styled. The `markup.raw.block` capture matched
+  no theme key at all, since Zed has no `markup` root; it is now `text.literal`.
+- Zed: dropped the Neovim-only `@spell`/`@nospell` captures from all 24
+  highlight files — Zed resolves captures right-to-left, so they were shadowing
+  the capture beside them.
+
+### Changed
+- The Zed extension targets `zed_extension_api` 0.7 (was 0.2), widening the
+  range of Zed releases that can load it.
+
+### Documentation
+- README documents the `[format]` section (all fourteen keys) and config
+  discovery: which file wins, that the search walks up from the project root,
+  that both files are watched, and that an editor's `initializationOptions`
+  overlay replaces only the keys it sets.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added
