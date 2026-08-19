@@ -2,11 +2,11 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-26
+> **Version:** 0.3   ·   **Last updated:** 2026-08-19
 >
 > **Purpose:** The continuous-integration pipeline and the release process — what runs on every push (lint, Rust tests with golden fixtures, the Python LSP-protocol E2E), the cross-compiled binaries we ship, where we distribute them, and the SemVer/CHANGELOG/tag discipline that keeps releases honest.
 >
-> **Depends on:** [constitution](../constitution.md), [E03-tech-stack](../foundations/E03-tech-stack.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md)   ·   **Related:** [F19-cli-linter](F19-cli-linter.md), [F20-editor-integrations](F20-editor-integrations.md)
+> **Depends on:** [constitution](../constitution.md), [E03-tech-stack](../foundations/E03-tech-stack.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md)   ·   **Related:** [F19-cli-linter](F19-cli-linter.md), [F20-editor-integrations](F20-editor-integrations.md), [ADR-011](../decisions/ADR-011-distribution-channels.md)
 
 > Requirement tag: **REL**
 
@@ -16,13 +16,13 @@
 
 This spec is how the project stays shippable. Every push runs the same gates — formatting, lints, the Rust test suite with its golden fixtures, and the Python LSP-protocol E2E — and every tagged release produces signed, cross-compiled binaries and publishes them to the four places users get the tool.
 
-The throughline is *no surprises at release time*. If `main` is green, a release is mechanical: the gates already ran, the artifacts already build, and the version is already in lockstep with the tag. Releases are cut **on demand at maintainer discretion** — there is no fixed schedule; consumers that auto-track (the Zed binary fetch, marketplace updates) pull whatever the latest published tag is.
+The throughline is *no surprises at release time*. If `main` is green, a release is mechanical: the gates already ran, the artifacts already build, and the version is already in lockstep with the tag. Releases are cut **on demand at maintainer discretion** — there is no fixed schedule; consumers pull whatever the latest published tag is, through their own package manager.
 
 This spec covers:
 
 - The CI jobs: lint (clippy + rustfmt), Rust tests (cargo nextest, incl. golden `check` fixtures), and the Python E2E job (`pytest-lsp`).
 - The release artifacts: cross-compiled binaries for four targets.
-- Distribution: crates.io, **PyPI** (maturin wheels), the VS Code marketplace, and GitHub releases.
+- Distribution: GitHub releases, **PyPI** (maturin wheels), **AUR**, and the **Zed extension marketplace**.
 - Versioning discipline: SemVer, a per-release CHANGELOG, and the tag↔`Cargo.toml` version gate.
 
 ## 2. Non-Goals / Out of Scope
@@ -30,7 +30,10 @@ This spec covers:
 - The test *content* — what the golden fixtures and `pytest-lsp` cases assert — owned by [E17-testing](../foundations/E17-testing.md) and [E29-e2e-testing](../foundations/E29-e2e-testing.md).
 - The editor extensions themselves — owned by [F20-editor-integrations](F20-editor-integrations.md); this spec only builds and publishes them.
 - The tech-stack choices (Rust edition, dep versions) — owned by [E03-tech-stack](../foundations/E03-tech-stack.md).
-- **Intel (x86_64) macOS prebuilt binaries** — we ship only `aarch64-apple-darwin` (REQ-REL-05). Apple Silicon is the forward-looking default and Intel Macs are EOL hardware; Intel users `cargo install jinja-lsp` (which builds natively for their host) rather than downloading a prebuilt. Revisit as a MINOR release if demand warrants.
+- **crates.io publishing** — dropped ([ADR-011](../decisions/ADR-011-distribution-channels.md)). The grammar is a git-pinned dependency ([ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)) and `cargo publish` rejects git deps, so the channel would have required maintaining a vendored grammar crate for the smallest audience of the four; the `jinja-lsp` name there also belongs to an unrelated project. There is no `cargo install jinja-lsp` path.
+- **A VS Code marketplace publish** — there is no VS Code extension to publish ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) §2).
+- **Shipping the server binary inside any editor extension** — extensions carry no binary and fetch none ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) REQ-EDIT-13). Users install the binary from one of the REQ-REL-06 channels.
+- **Intel (x86_64) macOS prebuilt binaries** — we ship only `aarch64-apple-darwin` (REQ-REL-05). Apple Silicon is the forward-looking default and Intel Macs are EOL hardware; Intel users build from source with `cargo build --release` against a checkout rather than downloading a prebuilt. Revisit as a MINOR release if demand warrants.
 
 ## 3. Background & Rationale
 
@@ -38,7 +41,7 @@ The diagnostics engine has two distinct E2E branches ([E29](../foundations/E29-e
 
 Cross-compilation matters because the binary is the product ([ADR-001](../decisions/ADR-001-language-and-runtime.md)): a single self-contained executable with no runtime dependency. We ship it for the platforms developers actually run, so nobody has to compile from source.
 
-The version gate exists because a tag that disagrees with `Cargo.toml` is a footgun — crates.io would publish the wrong number, and the GitHub release would mislabel the binaries. CI refuses to release on a mismatch.
+The version gate exists because a tag that disagrees with `Cargo.toml` is a footgun — PyPI would publish the wrong number, the AUR package would pin the wrong checksum, and the GitHub release would mislabel the binaries. CI refuses to release on a mismatch.
 
 ## 4. Concepts & Definitions
 
@@ -93,13 +96,9 @@ The `aarch64-unknown-linux-gnu` target is cross-compiled from the x86_64 Linux r
 
 `Cargo.lock` is committed to the repo and CI runs a check that fails if it is stale (`cargo update --locked --workspace` produces no diff). Every release and dry-run build passes `--locked`, so a transitive dependency bump can never silently change a released binary — a dep update is a deliberate, reviewed `Cargo.lock` change, consistent with the reproducibility ADR-002 leans on.
 
-**REQ-REL-12 — crates.io publish vendors the git-pinned grammar dependency.**
-
-The tree-sitter Jinja grammar is a git-pinned dependency ([ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)), and `cargo publish` rejects crates with git dependencies. The crates.io release therefore publishes the grammar as a regular versioned dependency: the release job either (a) consumes an upstream-published `tree-sitter-jinja` crate at the pinned version, or (b) publishes a vendored grammar crate under our namespace first and depends on that by version. The git pin remains the source of truth for local/CI builds via `[patch.crates-io]`; only the crates.io channel substitutes the published version. The pinned revision and the published version must name the same grammar commit (asserted in the release job), so the crate users `cargo install` is built from the same grammar as every other channel.
-
 **REQ-REL-13 — Signed provenance for release artifacts.**
 
-Each release attaches **build provenance attestations** for every binary and wheel via GitHub artifact attestations (`actions/attest-build-provenance`, SLSA-style), and the `SHA256SUMS` file is itself signed (cosign / `gh attestation`). The checksum proves integrity; the attestation proves the artifact was built by this repo's release workflow from the tagged commit — so a downloader can verify *origin*, not just that the bytes match a checksum an attacker could have rewritten alongside the binary. The Zed extension's auto-download (REQ-EDIT-07, [F20](F20-editor-integrations.md)) verifies the attestation/signature, not only the digest. Signing key handling is specified in §13.1.
+Each release attaches **build provenance attestations** for every binary and wheel via GitHub artifact attestations (`actions/attest-build-provenance`, SLSA-style), and the `SHA256SUMS` file is itself signed (cosign / `gh attestation`). The checksum proves integrity; the attestation proves the artifact was built by this repo's release workflow from the tagged commit — so a downloader can verify *origin*, not just that the bytes match a checksum an attacker could have rewritten alongside the binary. Verification is performed by the **consumer** — a user downloading a release, or `makepkg` checking the AUR package's `sha256sums` — never by an editor extension at launch ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) REQ-EDIT-13). Signing key handling is specified in §13.1.
 
 **REQ-REL-10 — Platform wheels via maturin.**
 
@@ -113,16 +112,18 @@ Releases go to four channels, each serving a different consumer.
 
 | Channel | What ships | Consumed by |
 |---|---|---|
-| crates.io | the `jinja-lsp` crate | `cargo install jinja-lsp` users |
-| PyPI | platform wheels (the bundled binary) | `pip install jinja-lsp` / `uv tool install jinja-lsp` users |
-| VS Code marketplace | the VS Code extension ([F20](F20-editor-integrations.md)) | VS Code users |
-| GitHub releases | the four cross-compiled binaries + checksums | direct downloads, the Zed extension's binary fetch ([F20](F20-editor-integrations.md)) |
+| GitHub releases | the four cross-compiled binaries + checksums + attestations | direct downloads; the source the AUR package pins |
+| PyPI | platform wheels (the bundled binary) | `uv tool install jinja-lsp` / `pip install jinja-lsp` users |
+| AUR | `jinja-lsp-plus-bin` — a `PKGBUILD` pinning the GitHub release binaries by checksum | `yay -S jinja-lsp-plus-bin` / Arch users |
+| Zed marketplace | the `jinja-plus` extension **only**, never the binary ([F20](F20-editor-integrations.md)) | Zed users, who install the binary separately |
 
-A release publishes to all four from the same tag. The Zed extension's auto-download (REQ-EDIT-07) pulls from the GitHub release and verifies the signed checksum/attestation (REQ-REL-13). The `publish-pypi` job uploads the wheels via OIDC trusted publishing (`uv publish`), so no long-lived PyPI token is stored.
+A release publishes to all four from the same tag. Every channel ships **the binary the user installs themselves** — no channel installs it on their behalf, and the Zed channel ships no binary at all ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) REQ-EDIT-13). The `publish-pypi` job uploads the wheels via OIDC trusted publishing, so no long-lived PyPI token is stored. The AUR job pushes a regenerated `PKGBUILD` + `.SRCINFO` over plain `git`/`ssh` with a single deploy key; the package is named `jinja-lsp-plus-bin` because `jinja-lsp-bin` belongs to an unrelated project — the same name collision that ruled out crates.io.
+
+The Zed marketplace publish is **decoupled from the release tag**: the extension version tracks the extension's own changes, not the server's, and a server release that does not touch `editors/zed/` publishes nothing there.
 
 **REQ-REL-14 — Publish ordering.**
 
-The four channels are not published in parallel; they have a build→publish topology. The release runs in stages: (1) the version + CHANGELOG gates and the cross-compile of all four binaries; (2) the maturin wheels, which bundle those binaries and therefore depend on stage 1; (3) the publish steps. Within publish, crates.io goes first (it resolves and uploads the source crate, REQ-REL-12), then the GitHub release (binaries + signed checksums), then PyPI (wheels), then the marketplace. A stage fails the whole release before the next begins; the partial-publish recovery (§10) applies only across the immutable publish steps, where ordering makes "which channels already published" deterministic.
+The channels are not published in parallel; they have a build→publish topology. The release runs in stages: (1) the version + CHANGELOG gates and the cross-compile of all four binaries; (2) the maturin wheels, which bundle those binaries and therefore depend on stage 1; (3) the publish steps. Within publish, the **GitHub release goes first** (binaries + signed checksums), then PyPI (wheels), then AUR — which must come last of the three because its `PKGBUILD` pins the GitHub release artifacts by URL and SHA-256 and therefore cannot be built until that release exists. A stage fails the whole release before the next begins; the partial-publish recovery (§10) applies only across the immutable publish steps, where ordering makes "which channels already published" deterministic. A PyPI-side configuration failure must not abort the job before AUR runs — each channel is independent and one failing must not silently skip the rest.
 
 ### 5.4 Versioning discipline
 
@@ -178,11 +179,12 @@ What a tagged release publishes (REQ-REL-05, REQ-REL-06). Each binary ships with
 │  jinja_lsp-0.4.0-cp3-none-*.whl  (wheels, 4 targets)  maturin  ~4 MB  │
 │  SHA256SUMS                                      checksums      1 KB  │
 │                                                                       │
-│  Also published →  crates.io 0.4.0 · PyPI 0.4.0 · VS Code marketplace 0.4.0 │
+│  Also published →  PyPI 0.4.0 · AUR jinja-lsp-plus-bin 0.4.0-1        │
+│  Zed marketplace: jinja-plus (versioned independently)                │
 └───────────────────────────────────────────────────────────────────── ┘
 ```
 
-States: drafting (artifacts uploading) · published (all four channels confirmed) · version-gate failure (release aborted before publish; "tag v0.4.0 ≠ Cargo.toml 0.3.9").
+States: drafting (artifacts uploading) · published (GitHub + PyPI + AUR confirmed) · version-gate failure (release aborted before publish; "tag v0.4.0 ≠ Cargo.toml 0.3.9").
 
 ## 7. Visualizations
 
@@ -195,11 +197,13 @@ flowchart TD
     G -- yes --> C{CHANGELOG has<br/>vX.Y.Z section?}
     C -- no --> A
     C -- yes --> B[cross-compile<br/>4 targets]:::eng
-    B --> R1[crates.io]:::ok
-    B --> R2[VS Code marketplace]:::ok
-    B --> R3[GitHub release<br/>+ checksums]:::ok
-    B --> R4[PyPI<br/>maturin wheels]:::ok
+    B --> W[maturin wheels]:::eng
+    W --> R1[GitHub release<br/>+ checksums]:::ok
+    R1 --> R2[PyPI<br/>maturin wheels]:::ok
+    R2 --> R3[AUR<br/>jinja-lsp-plus-bin]:::ok
+    Z[Zed marketplace<br/>jinja-plus extension]:::sep
     classDef ok fill:#d4edda,stroke:#28a745;
+    classDef sep fill:#e2e3e5,stroke:#6c757d;
     classDef err fill:#f8d7da,stroke:#dc3545;
     classDef eng fill:#d1ecf1,stroke:#17a2b8;
 ```
@@ -245,7 +249,7 @@ binaries = ["jinja-lsp"]
 
 A contributor opens a PR adding `JINJA-W107`. CI runs the four gates (§6.1): clippy/rustfmt, the Rust suite on three OSes with the golden fixtures, and the `pytest-lsp` E2E. The golden job catches that a new fixture's `expected-diagnostics.json` was forgotten and fails with a unified diff. The contributor adds the golden, the gates go green, and the PR merges.
 
-Later a maintainer cuts `v0.4.0`. They bump `Cargo.toml` to `0.4.0`, add the §8 CHANGELOG section, and push the tag. The version gate confirms `0.4.0 == 0.4.0`, the CHANGELOG section exists, the four binaries cross-compile, the maturin wheels build, and the release publishes to crates.io, PyPI, the marketplace, and GitHub releases at once (§6.2). The Zed extension's next launch downloads the new Linux binary and checks it against `SHA256SUMS`.
+Later a maintainer cuts `v0.4.0`. They bump `Cargo.toml` to `0.4.0`, add the §8 CHANGELOG section, and push the tag. The version gate confirms `0.4.0 == 0.4.0`, the CHANGELOG section exists, the four binaries cross-compile, the maturin wheels build, and the release publishes in order: GitHub release, then PyPI, then AUR — whose `PKGBUILD` pins the just-published Linux tarballs by SHA-256 (§6.2). An Arch user runs `yay -S jinja-lsp-plus-bin` the next morning; `makepkg` verifies those checksums before installing. A Zed user updates the binary the same way they installed it and restarts Zed — the extension itself is unchanged and was not republished.
 
 ## 10. Edge Cases & Failure Modes
 
@@ -254,11 +258,12 @@ Later a maintainer cuts `v0.4.0`. They bump `Cargo.toml` to `0.4.0`, add the §8
 - **A golden fixture is stale** → the Rust gate fails with a unified diff; goldens are updated locally with `UPDATE_FIXTURES=1`, never in CI (REQ-REL-02).
 - **One target fails to cross-compile** → the whole release fails; we don't ship a partial set of binaries.
 - **A wheel target fails to build** → the whole release fails; we don't ship a partial wheel set (mirrors the binary rule).
-- **crates.io publish succeeds but the marketplace push fails** → the release is marked incomplete; crates.io publishes are immutable, so the next attempt bumps PATCH rather than re-publishing the same version.
-- **PyPI publish succeeds but another channel fails** → the release is marked incomplete; PyPI is immutable like crates.io, so a re-attempt bumps PATCH.
+- **The GitHub release publishes but PyPI or AUR fails** → the release is marked incomplete. PyPI is immutable, so a re-attempt bumps PATCH rather than re-publishing the same version. AUR is *not* immutable — a failed AUR push is re-runnable at the same version by bumping `pkgrel`, since it only repackages already-published binaries.
+- **PyPI fails for a PyPI-side configuration reason (e.g. trusted publisher not yet set up)** → the AUR step must still run; the PyPI step does not abort the job (REQ-REL-14). Each channel is independent and one failing must not silently skip the rest.
+- **AUR push runs before the GitHub release exists** → the `PKGBUILD` cannot resolve its source URLs or checksums; this is why AUR is ordered last (REQ-REL-14).
 - **A flaky `pytest-lsp` timeout** → the E2E job is retried once; a second failure blocks merge (we don't ignore protocol flakes).
-- **A published release is found broken post-publish** → because every channel is immutable, the fix is forward: bump PATCH and re-release (§10, above). For a release that is actively harmful (corrupt binary, wrong artifact), the bad version is additionally *yanked* — `cargo yank` on crates.io, the PyPI "yank release" action, deprecate/unpublish the marketplace version, and mark the GitHub release as not-latest / delete its assets — so resolvers stop selecting it while existing pins keep working. Yanking does not delete the version (the number stays burned); the superseding PATCH is the actual remedy. This is the rollback story for versioned releases (constitution §4.6; see §14).
-- **macOS Gatekeeper on the downloaded darwin binary** → the prebuilt `aarch64-apple-darwin` binary is **not codesigned or notarized**; macOS quarantines downloaded-and-unsigned executables, so a user who downloads the `.tar.gz` (or whom Zed auto-fetches) must clear quarantine (`xattr -d com.apple.quarantine`) or right-click→Open once. The `cargo install` and `pip`/`uv` paths are exempt (the binary isn't quarantine-flagged). Codesigning + notarization (requires an Apple Developer ID) is **out of scope** for now and tracked as OQ-REL-3; the user impact is the manual quarantine-clear above.
+- **A published release is found broken post-publish** → the fix is forward: bump PATCH and re-release (§10, above). For a release that is actively harmful (corrupt binary, wrong artifact), the bad version is additionally *yanked* — the PyPI "yank release" action, an AUR bump past the bad version, and marking the GitHub release as not-latest / deleting its assets — so resolvers stop selecting it while existing pins keep working. Yanking does not delete the version (the number stays burned); the superseding PATCH is the actual remedy. This is the rollback story for versioned releases (constitution §4.6; see §14).
+- **macOS Gatekeeper on the downloaded darwin binary** → the prebuilt `aarch64-apple-darwin` binary is **not codesigned or notarized**; macOS quarantines downloaded-and-unsigned executables, so a user who downloads the `.tar.gz` must clear quarantine (`xattr -d com.apple.quarantine`) or right-click→Open once. The `pip`/`uv` path is exempt (the binary isn't quarantine-flagged), which makes it the recommended macOS install. Codesigning + notarization (requires an Apple Developer ID) is **out of scope** for now and tracked as OQ-REL-3; the user impact is the manual quarantine-clear above.
 
 ## 11. Testing
 
@@ -344,46 +349,44 @@ Rows are CI-step assertions, unit tests (version/CHANGELOG gates), and dry-run r
 | Release/dry-run builds pass `--locked` (a lock-needing dep change fails, not silently resolves) | CI step | — | REQ-REL-11 |
 | `aarch64-unknown-linux-gnu` built via `cross`; both `-gnu` binaries link ≤ glibc 2.28 | dry-run e2e | — | REQ-REL-11, REQ-REL-05 |
 
-**Grammar git-dep → crates.io (REQ-REL-12)**
-
-| Behavior / scenario | Type | Fixtures | Verifies |
-|---|---|---|---|
-| crates.io publish substitutes the published grammar version for the git pin (no git dep in the published crate) | dry-run e2e | — | REQ-REL-12 |
-| Pinned grammar revision and published grammar version name the same commit (assertion) | unit | — | REQ-REL-12 |
-| `[patch.crates-io]` keeps local/CI builds on the git pin | CI step | — | REQ-REL-12 |
-
 **Signed provenance (REQ-REL-13)**
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
 | Each binary + wheel gets a build-provenance attestation; `SHA256SUMS` is signed | dry-run e2e | — | REQ-REL-13 |
 | Verifying an artifact against a tampered attestation/signature fails (origin, not just digest) | dry-run e2e | — | REQ-REL-13 |
+| No editor extension performs verification at launch — verification is the consumer's/`makepkg`'s step (structural assertion, ADR-011) | unit | — | REQ-REL-13 |
 
 **Publish ordering (REQ-REL-14)**
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
 | Stages run binaries → wheels → publish; wheels depend on the built binaries | dry-run e2e | — | REQ-REL-14 |
-| Publish order crates.io → GitHub release → PyPI → marketplace; a failed stage aborts before the next | dry-run e2e | — | REQ-REL-14 |
+| Publish order GitHub release → PyPI → AUR; a failed stage aborts before the next | dry-run e2e | — | REQ-REL-14 |
+| AUR is ordered after the GitHub release because its `PKGBUILD` pins that release's URLs + checksums | CI config | — | REQ-REL-14 |
+| A PyPI-side publish failure does not abort the job before the AUR step runs | CI config | — | REQ-REL-14 |
 
 **Yank / rollback (§10)**
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| A broken published version is yanked (cargo yank / PyPI yank / marketplace deprecate / GitHub un-latest); superseding PATCH is the remedy | dry-run e2e | — | §10 yank path |
+| A broken published version is yanked (PyPI yank / AUR bump past it / GitHub un-latest); superseding PATCH is the remedy | dry-run e2e | — | §10 yank path |
 
-**Distribution channels (REQ-REL-06) — four channels from one tag, dry run**
+**Distribution channels (REQ-REL-06) — four channels, dry run**
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| Publish crates.io (`jinja-lsp` crate) from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
-| Publish PyPI wheels via OIDC trusted publishing (`uv publish`, no stored token, `--dry-run`) | dry-run e2e | — | REQ-REL-06 |
-| Publish VS Code marketplace extension from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
-| Publish GitHub release (four binaries + checksums) from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
-| All four channels published from the same tag → "published" (§6.2 published state) | dry-run e2e | — | REQ-REL-06 |
+| Publish GitHub release (four binaries + checksums + attestations) from the tag (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| Publish PyPI wheels via OIDC trusted publishing (no stored token, `--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| Publish AUR `jinja-lsp-plus-bin`: `PKGBUILD` regenerated with the tag's version and the release tarballs' SHA-256; `.SRCINFO` regenerated; pushed over git+ssh (`--dry-run`) | dry-run e2e | — | REQ-REL-06 |
+| The AUR `PKGBUILD`'s pinned checksums equal the published release artifacts' checksums | unit | — | REQ-REL-06 |
+| The Zed extension package contains no server binary and no download logic | unit | — | REQ-REL-06 |
+| The Zed marketplace publish is not triggered by the release tag (versioned independently) | CI config | — | REQ-REL-06 |
+| All three tag-driven channels published from the same tag → "published" (§6.2 published state) | dry-run e2e | — | REQ-REL-06 |
 | Artifacts uploading → "drafting" state (§6.2 drafting state) | dry-run e2e | — | REQ-REL-06 |
-| crates.io succeeds but marketplace push fails → release incomplete; re-attempt bumps PATCH (immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
-| PyPI succeeds but another channel fails → release incomplete; re-attempt bumps PATCH (immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
+| GitHub release succeeds but PyPI fails → release incomplete; re-attempt bumps PATCH (immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
+| AUR push fails → re-runnable at the same version via `pkgrel` bump (AUR is not immutable) (§10) | dry-run e2e | — | REQ-REL-06 |
+| No release job publishes to crates.io or a VS Code marketplace (structural assertion over the workflow, ADR-011) | unit | — | REQ-REL-06 |
 
 **Versioning discipline (REQ-REL-07/08/09)**
 
@@ -410,15 +413,16 @@ Rows are CI-step assertions, unit tests (version/CHANGELOG gates), and dry-run r
 | REQ-REL-03 | pytest-lsp CI steps (pass + Linux-only + retry-once flake + double-fail) |
 | REQ-REL-04 | matrix CI config + §6.1 PR-check states (pending/passing/failing) |
 | REQ-REL-05 | cross-compile dry-run (four targets + checksums + one-target-fail abort) |
-| REQ-REL-06 | publish dry-run (four channels from one tag + drafting/published states + partial-publish aborts) |
+| REQ-REL-06 | publish dry-run (GitHub + PyPI + AUR from one tag, Zed independent + no-binary-in-extension + no-crates.io/no-VS-Code assertions + drafting/published states + partial-publish paths) |
 | REQ-REL-07 | SemVer maintainer policy (review-only; out-of-gate per §11.1) |
 | REQ-REL-08 | CHANGELOG-gate unit tests (pass + missing-section abort) |
 | REQ-REL-09 | version-gate unit tests (pass + pyproject-derives + mismatch abort) |
 | REQ-REL-10 | maturin wheel-build dry-run (four wheel targets + no-Python-code + one-wheel-fail abort) |
 | REQ-REL-11 | committed-`Cargo.lock` + stale-lock check + `--locked` builds + cross/glibc-2.28 baseline |
-| REQ-REL-12 | crates.io grammar-version substitution + same-commit assertion + `[patch.crates-io]` local builds |
-| REQ-REL-13 | per-artifact attestation + signed `SHA256SUMS` + tampered-signature-fails |
-| REQ-REL-14 | staged binaries→wheels→publish + publish ordering + stage-abort |
+| REQ-REL-13 | per-artifact attestation + signed `SHA256SUMS` + tampered-signature-fails + verification-is-the-consumer's-step |
+| REQ-REL-14 | staged binaries→wheels→publish + GitHub→PyPI→AUR ordering + AUR-last rationale + PyPI-failure-doesn't-skip-AUR + stage-abort |
+
+**Retired requirements** ([ADR-011](../decisions/ADR-011-distribution-channels.md)) — numbers are retired, not reused: **REQ-REL-12** (crates.io publish vendors the git-pinned grammar dependency). The crates.io channel is dropped, so the vendoring machinery, the `[patch.crates-io]` divergence, and the pinned-revision-equals-published-version assertion all go with it.
 
 ## 12. End-to-End Test Plan
 
@@ -433,7 +437,7 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 | # | Journey | Path | Expected outcome |
 |---|---|---|---|
 | E2E-01 | PR with all five checks (lint + Rust×3 OS + e2e) green | happy | "All checks have passed", Merge enabled (§6.1 passing) |
-| E2E-02 | Push a matching tag with a CHANGELOG entry (full dry-run release) | happy | version + CHANGELOG gates pass; four binaries + four wheels build; crates.io, PyPI, marketplace, GitHub release all published from the one tag (§6.2 published) |
+| E2E-02 | Push a matching tag with a CHANGELOG entry (full dry-run release) | happy | version + CHANGELOG gates pass; four binaries + four wheels build; GitHub release, PyPI, and AUR all published from the one tag in that order (§6.2 published) |
 | E2E-03 | Dry-run cross-compile of all four targets + checksums | happy | four `.tar.gz`/`.zip` artifacts + `SHA256SUMS` produced |
 | E2E-04 | Dry-run maturin wheel build for all four targets | happy | four binary-bundling wheels built; no Python code/runtime dep |
 | E2E-05 | `pip install jinja-lsp` on a supported platform (**post-publish smoke** — against TestPyPI or a locally-built wheel via `--find-links`, not the pre-publish dry-run) | happy (post-publish) | resolves the right platform wheel; the binary lands on PATH |
@@ -442,8 +446,9 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 | E2E-08 | Push a tag with no CHANGELOG section | error | CHANGELOG gate fails; release aborts before any publish |
 | E2E-09 | One cross-compile target fails to build | error | whole release fails; no partial binary set published |
 | E2E-10 | One maturin wheel target fails to build | error | whole release fails; no partial wheel set published |
-| E2E-11 | crates.io publishes but the marketplace push fails | error | release marked incomplete; immutable channels, re-attempt bumps PATCH |
-| E2E-12 | PyPI publishes but another channel fails | error | release marked incomplete; immutable channels, re-attempt bumps PATCH |
+| E2E-11 | The GitHub release publishes but the PyPI step fails | error | release marked incomplete; the AUR step still runs (REQ-REL-14); PyPI is immutable so a re-attempt bumps PATCH |
+| E2E-12 | The AUR push fails after GitHub + PyPI succeeded | error | release marked incomplete; AUR is re-runnable at the same version via a `pkgrel` bump |
+| E2E-17 | The release workflow contains no crates.io publish and no VS Code marketplace publish; the packaged Zed extension carries no binary | happy | ADR-011 holds structurally, not just by convention (REQ-REL-06) |
 | E2E-13 | Stale golden fixture in a PR | error | Rust gate fails with a unified diff inline (§6.1 golden-diff failure); never auto-updated in CI |
 | E2E-14 | pytest-lsp fails twice (retry-once exhausted) | error | E2E gate stays red; merge blocked |
 | E2E-15 | Dry-run signed provenance: attestation per binary/wheel + signed `SHA256SUMS`; tampered signature rejected | happy | artifacts carry verifiable origin, not just a digest (REQ-REL-13) |
@@ -453,9 +458,9 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 
 ### 13.1 Security & Privacy
 
-- **Access & authorization** — PyPI publishes via OIDC trusted publishing (no stored token, REQ-REL-06). The marketplace publish uses a token held as a CI secret, scoped publish-only (least-privilege, not an account-wide PAT), rotated on a fixed schedule and immediately on any suspected exposure; it is never echoed to logs. crates.io currently uses a publish-only token under the same rotation policy; migrating crates.io to its OIDC trusted publishing (now supported) is a follow-up (OQ-REL-4) that would remove the last long-lived registry secret.
-- **Signing & provenance** — release signing (REQ-REL-13) uses **keyless signing** (Sigstore/cosign with the workflow's OIDC identity) so there is no long-lived private signing key to store or rotate; the trust root is the repo's GitHub OIDC identity, and verification checks the attestation was produced by this repo's release workflow. If a custom key is ever introduced, it lives in the CI secret store with the same rotation policy as the marketplace token, never in the repo.
-- **Input & validation** — released binaries ship with SHA-256 checksums (`SHA256SUMS`, itself signed — REQ-REL-13) so downloaders — including the Zed extension's auto-fetch ([F20](F20-editor-integrations.md)) — can verify both integrity (digest) and origin (attestation), not just integrity. The build runs from a tagged, immutable commit.
+- **Access & authorization** — PyPI publishes via OIDC trusted publishing (no stored token, REQ-REL-06). The AUR push uses an **ed25519 deploy key** (`AUR_SSH_PRIVATE_KEY`) held as a CI secret, scoped to the `jinja-lsp-plus-bin` package only and rotated on a fixed schedule and immediately on any suspected exposure; it is never echoed to logs, and the AUR commit identity is a fixed CI identity rather than a maintainer's. Dropping crates.io ([ADR-011](../decisions/ADR-011-distribution-channels.md)) removed the last long-lived *registry* token, so the deploy key is the only long-lived publish credential remaining.
+- **Signing & provenance** — release signing (REQ-REL-13) uses **keyless signing** (Sigstore/cosign with the workflow's OIDC identity) so there is no long-lived private signing key to store or rotate; the trust root is the repo's GitHub OIDC identity, and verification checks the attestation was produced by this repo's release workflow. If a custom key is ever introduced, it lives in the CI secret store with the same rotation policy as the AUR deploy key, never in the repo.
+- **Input & validation** — released binaries ship with SHA-256 checksums (`SHA256SUMS`, itself signed — REQ-REL-13) so downloaders can verify both integrity (digest) and origin (attestation), not just integrity. Verification happens at *install* time, by the user or by `makepkg` against the AUR `PKGBUILD`'s pinned sums — never at *launch* time by an editor extension, because no extension fetches anything ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) REQ-EDIT-13). The build runs from a tagged, immutable commit.
 - **Data sensitivity** — no user data is involved; CI handles only source and tokens. Tokens live in the CI secret store, not the repo.
 
 ### 13.4 Performance & Scale
@@ -465,11 +470,13 @@ The release pipeline is exercised end to end by a dry-run workflow that cross-co
 ### 13.5 Observability
 
 - **Logs / traces** — each job streams its log to the PR check; golden-diff failures print the unified diff inline so the cause is visible without downloading artifacts.
-- **Alerts & health** — healthy = `main` is green and the latest tag published to all four channels; a failed publish marks the release incomplete (§10).
+- **Alerts & health** — healthy = `main` is green and the latest tag published to all three tag-driven channels (GitHub, PyPI, AUR); a failed publish marks the release incomplete (§10). The Zed marketplace is versioned independently and is not part of the tag's health signal.
 
 ## 14. Rollout & Migration
 
-Releases are versioned and immutable; there is no flag/ramp surface. Rollout *is* the release: a tag publishes to all four channels (§5.3), and rollback is forward — bump PATCH, and yank the bad version where it is actively harmful (cargo yank / PyPI yank / marketplace deprecate / GitHub un-latest). Full detail is in §10 (yank/rollback edge); this section exists because the constitution (§4.6) names F21 the owner of the versioned-release story.
+Releases are versioned; there is no flag/ramp surface. Rollout *is* the release: a tag publishes to the three tag-driven channels (§5.3), and rollback is forward — bump PATCH, and yank the bad version where it is actively harmful (PyPI yank / AUR bump past it / GitHub un-latest). Full detail is in §10 (yank/rollback edge); this section exists because the constitution (§4.6) names F21 the owner of the versioned-release story.
+
+Because no editor extension auto-updates the binary ([ADR-011](../decisions/ADR-011-distribution-channels.md)), a release reaches users only when they update it through the channel they installed from. That makes rollout slower and more staggered than an auto-updating client would be — and it also means a bad release cannot push itself onto anyone's machine.
 
 ## 15. Open Questions & Decisions
 
@@ -477,19 +484,23 @@ Releases are versioned and immutable; there is no flag/ramp surface. Rollout *is
 - **Decided** — four cross-compile targets (REQ-REL-05); more can be added as MINOR releases.
 - **Decided** — jinja-lsp ships to PyPI as maturin wheels bundling the binary ([ADR-010](../decisions/ADR-010-pypi-distribution.md)); pip/uv is a delivery vehicle, not a runtime dependency.
 - **Decided** — releases are cut on demand at maintainer discretion; no fixed cadence (§1).
-- **Decided** — Intel (x86_64) macOS prebuilts are a Non-Goal; Intel users `cargo install` (§2).
-- **Decided** — crates.io publishes the grammar as a versioned dependency (git pin via `[patch.crates-io]` for local/CI builds), since `cargo publish` rejects git deps (REQ-REL-12, [ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)).
-- **OQ-REL-1** — whether to also publish prebuilt binaries to a Homebrew tap (currently: GitHub releases + `cargo install` only).
+- **Decided** — Intel (x86_64) macOS prebuilts are a Non-Goal; Intel users build from source (§2).
+- **Decided** — **no crates.io channel** ([ADR-011](../decisions/ADR-011-distribution-channels.md)): `cargo publish` rejects the git-pinned grammar ([ADR-002](../decisions/ADR-002-tree-sitter-grammar.md)), the vendoring workaround was permanent maintenance for the smallest audience, and the name belongs to an unrelated project. REQ-REL-12 is retired.
+- **Decided** — **no VS Code marketplace channel** ([ADR-011](../decisions/ADR-011-distribution-channels.md)): there is no VS Code extension to publish ([F20](F20-editor-integrations.md) §2).
+- **Decided** — **AUR** (`jinja-lsp-plus-bin`) and the **Zed marketplace** are the two channels that replaced them; the Zed one ships the extension only, never the binary (REQ-REL-06).
+- **Decided** — no channel installs the binary on the user's behalf; editor extensions never fetch it ([ADR-011](../decisions/ADR-011-distribution-channels.md), [F20](F20-editor-integrations.md) REQ-EDIT-13).
+- **OQ-REL-1** — whether to also publish prebuilt binaries to a Homebrew tap (currently: GitHub releases, PyPI, and AUR only). This is now the main gap for macOS users, who have no native package manager path.
 - **OQ-REL-2** — whether to add an enforceable SemVer check (e.g. a "breaking-change" PR-label gate); SemVer is review-only policy today (REQ-REL-07).
 - **OQ-REL-3** — whether to codesign + notarize the `aarch64-apple-darwin` binary (needs an Apple Developer ID); currently out of scope, users clear quarantine manually (§10).
-- **OQ-REL-4** — whether to migrate crates.io publishing to OIDC trusted publishing (now supported), removing the last long-lived registry token (§13.1).
+- **OQ-REL-5** — whether to automate the Zed marketplace publish (a PR against `zed-industries/extensions`) or keep it a manual step when `editors/zed/` changes (currently: manual).
 
 ## 16. Cross-References
 
-- **Depends on:** [constitution](../constitution.md) — the single-binary, one-engine principles; [E03-tech-stack](../foundations/E03-tech-stack.md) — toolchain and dep versions; [E17-testing](../foundations/E17-testing.md) — the golden fixtures the Rust gate diffs; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the two E2E branches CI runs; [ADR-010-pypi-distribution](../decisions/ADR-010-pypi-distribution.md) — PyPI distribution via maturin wheels; [ADR-002-tree-sitter-grammar](../decisions/ADR-002-tree-sitter-grammar.md) — the git-pinned grammar dependency the crates.io publish must vendor (REQ-REL-12).
-- **Related:** [F19-cli-linter](F19-cli-linter.md) — `check` is the gate the golden tests drive; [F20-editor-integrations](F20-editor-integrations.md) — the extensions and binaries this pipeline builds and ships.
+- **Depends on:** [constitution](../constitution.md) — the single-binary, one-engine principles; [E03-tech-stack](../foundations/E03-tech-stack.md) — toolchain and dep versions; [E17-testing](../foundations/E17-testing.md) — the golden fixtures the Rust gate diffs; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the two E2E branches CI runs; [ADR-010-pypi-distribution](../decisions/ADR-010-pypi-distribution.md) — PyPI distribution via maturin wheels; [ADR-011-distribution-channels](../decisions/ADR-011-distribution-channels.md) — the four channels, and why crates.io and the VS Code marketplace are not among them; [ADR-002-tree-sitter-grammar](../decisions/ADR-002-tree-sitter-grammar.md) — the git-pinned grammar dependency that made crates.io unpublishable.
+- **Related:** [F19-cli-linter](F19-cli-linter.md) — `check` is the gate the golden tests drive; [F20-editor-integrations](F20-editor-integrations.md) — the extension this pipeline publishes, and the preinstalled-binary contract that keeps the binary out of it.
 
 ## 17. Changelog
+- **2026-08-19** — **v0.3: crates.io and the VS Code marketplace dropped; AUR and the Zed marketplace added** ([ADR-011](../decisions/ADR-011-distribution-channels.md)). Retired **REQ-REL-12** (crates.io vendors the git-pinned grammar) — the number is retired, not reused — along with the `[patch.crates-io]` divergence and the pinned-revision-equals-published-version assertion. Rewrote **REQ-REL-06**'s channel table to GitHub releases · PyPI · AUR (`jinja-lsp-plus-bin`) · Zed marketplace (extension only, versioned independently of the release tag), and **REQ-REL-14**'s ordering to GitHub → PyPI → AUR, with AUR necessarily last because its `PKGBUILD` pins the release artifacts by URL and checksum, and a PyPI-side failure explicitly not aborting the AUR step. Narrowed **REQ-REL-13**: verification is the consumer's / `makepkg`'s step at install time, never an extension's at launch time. Updated §1, §2 (three new Non-Goals: crates.io, the VS Code publish, and shipping the binary inside any extension), §3, §6.2, §7, §9, §10 (AUR is re-runnable at the same version via `pkgrel`, unlike the immutable channels), §11.2/§11.4, §12.2 (new E2E-17 structural assertion), §13.1 (the AUR deploy key is now the only long-lived publish credential), §13.5, §14 (staggered rollout: no auto-update means a bad release cannot push itself onto a machine), and §15 (OQ-REL-4 closed by the drop; new OQ-REL-5 on automating the Zed publish; OQ-REL-1 reframed as the macOS gap).
 - **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-26** — Spec-review pass (beads jinja-lsp-68i, -2t4, -v4s, -ebz, -x7d, -9ne, -f4f, -si7, -cr7, -b40, -1y4, -ops, -rwf, -hfh, -bfl): added REQ-REL-11 (`--locked`/committed `Cargo.lock`, cross/glibc-2.28 baseline), REQ-REL-12 (crates.io vendors the git-pinned grammar — ADR-002), REQ-REL-13 (signed build-provenance attestations backing the "signed binaries" header claim), REQ-REL-14 (build→publish ordering); reclassified REQ-REL-07 SemVer as review-only policy and softened the coverage claim to "100% of automatable behavior"; marked E2E-05 as a post-publish smoke; added the yank/rollback path and §14 Rollout note, macOS Gatekeeper/notarization edge, and pre-release-tag clarification; recorded Intel-macOS as a §2 Non-Goal and the release-on-demand cadence; documented signing-key handling and marketplace token rotation/least-privilege in §13.1; new OQ-REL-2..4; coverage tables and cross-refs updated.

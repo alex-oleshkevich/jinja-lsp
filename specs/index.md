@@ -69,7 +69,7 @@ Numbered in build order: the meaning layer (diagnostics, registry, packs, hints)
 | [F17-code-actions](features/F17-code-actions.md) | Quick-fixes (from F01) + refactors | Working on fixes/refactors | ✅ |
 | [F18-formatting](features/F18-formatting.md) | Jinja-only formatter (LSP + `format` CLI) | Working on formatting | ✅ |
 | [F19-cli-linter](features/F19-cli-linter.md) | `check` with rich/compact/json output | Working on the CLI | ✅ |
-| [F20-editor-integrations](features/F20-editor-integrations.md) | VS Code, Zed, Neovim, generic clients | Shipping an editor extension | ✅ |
+| [F20-editor-integrations](features/F20-editor-integrations.md) | Zed, Neovim, generic clients; the preinstalled-binary contract | Shipping an editor extension | ✅ |
 | [F21-release-ci](features/F21-release-ci.md) | CI, cross-compiled binaries, distribution | Working on releases | ✅ |
 
 ## Decisions
@@ -89,6 +89,7 @@ Append-only. Never edit or delete a past ADR; supersede it with a new one.
 | [ADR-008-code-action-strategy](decisions/ADR-008-code-action-strategy.md) | Code actions derived from diagnostics | 2026-06-24 | ✅ Accepted |
 | [ADR-009-stdio-only-transport](decisions/ADR-009-stdio-only-transport.md) | stdio is the only transport | 2026-06-24 | ✅ Accepted |
 | [ADR-010-pypi-distribution](decisions/ADR-010-pypi-distribution.md) | Ship to PyPI as maturin wheels | 2026-06-25 | ✅ Accepted |
+| [ADR-011-distribution-channels](decisions/ADR-011-distribution-channels.md) | No crates.io, no VS Code, no extension-side binary download | 2026-08-19 | ✅ Accepted |
 
 ## Deprecated
 

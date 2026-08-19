@@ -61,7 +61,7 @@ Changing templates safely.
 
 ## M5 — Delivery
 
-- [ ] [F20-editor-integrations](features/F20-editor-integrations.md) — VS Code, Zed, Neovim, generic.
+- [ ] [F20-editor-integrations](features/F20-editor-integrations.md) — Zed, Neovim, generic clients (no VS Code extension — [ADR-011](decisions/ADR-011-distribution-channels.md)).
 - [ ] [F21-release-ci](features/F21-release-ci.md) — CI, cross-compiled binaries, distribution.
 
 ## Cross-References
