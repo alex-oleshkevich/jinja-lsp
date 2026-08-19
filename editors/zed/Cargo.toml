@@ -1,6 +1,6 @@
 [package]
 name = "jinja-lsp-zed"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -8,4 +8,4 @@ name = "jinja_lsp_zed"
 crate-type = ["cdylib"]
 
 [dependencies]
-zed_extension_api = "0.2"
+zed_extension_api = "0.7"

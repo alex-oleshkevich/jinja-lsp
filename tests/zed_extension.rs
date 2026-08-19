@@ -582,3 +582,90 @@ fn zed_manifest_declares_repository_and_authors() {
     let authors = m["authors"].as_array().expect("authors must be an array");
     assert!(!authors.is_empty(), "extension.toml must declare authors");
 }
+
+// ─── Zed extension docs compliance ──────────────────────────────────────────
+
+#[test]
+fn zed_manifest_has_every_documented_required_field() {
+    // zed.dev/docs/extensions/developing-extensions lists these as required.
+    let m = manifest();
+    for field in [
+        "id",
+        "name",
+        "version",
+        "schema_version",
+        "authors",
+        "description",
+        "repository",
+    ] {
+        assert!(
+            m.get(field).is_some(),
+            "extension.toml is missing the required field {field:?}"
+        );
+    }
+    assert_eq!(
+        m["schema_version"].as_integer(),
+        Some(1),
+        "schema_version must be 1"
+    );
+}
+
+#[test]
+fn every_language_declares_a_name_and_grammar() {
+    // Both are required by Zed; a config missing either makes the language
+    // silently unavailable rather than erroring at load.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path();
+        if !path.is_dir() {
+            continue;
+        }
+        let cfg: toml::Value = toml::from_str(
+            &std::fs::read_to_string(path.join("config.toml")).expect("config.toml"),
+        )
+        .expect("valid TOML");
+        assert!(
+            cfg.get("name").and_then(|v| v.as_str()).is_some(),
+            "{}: config.toml must declare name",
+            path.display()
+        );
+        assert_eq!(
+            cfg.get("grammar").and_then(|v| v.as_str()),
+            Some("jinja"),
+            "{}: config.toml must declare grammar = \"jinja\"",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn every_language_auto_closes_the_jinja_delimiters() {
+    // The base Jinja2 and Jinja2 (HTML) languages shipped without a `brackets`
+    // table while the other 22 had one, so typing `{%` auto-closed in a
+    // .py.jinja file and did not in a .jinja file. Every variant owns the same
+    // Jinja delimiters, so every variant must close them.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path();
+        if !path.is_dir() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(path.join("config.toml")).expect("config.toml");
+        let cfg: toml::Value = toml::from_str(&raw).expect("valid TOML");
+        let brackets = cfg
+            .get("brackets")
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("{}: config.toml must declare brackets", path.display()));
+        let starts: Vec<&str> = brackets
+            .iter()
+            .filter_map(|b| b.get("start").and_then(|s| s.as_str()))
+            .collect();
+        for delim in ["{%", "{{", "{#"] {
+            assert!(
+                starts.contains(&delim),
+                "{}: brackets must auto-close {delim:?}; got {starts:?}",
+                path.display()
+            );
+        }
+    }
+}

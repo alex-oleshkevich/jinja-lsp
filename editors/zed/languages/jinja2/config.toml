@@ -2,3 +2,10 @@ name = "Jinja2"
 grammar = "jinja"
 path_suffixes = ["jinja", "jinja2", "j2"]
 block_comment = ["{# ", " #}"]
+brackets = [
+  { start = "{%", end = "%}", close = true, newline = false },
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "{#", end = "#}", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+]
