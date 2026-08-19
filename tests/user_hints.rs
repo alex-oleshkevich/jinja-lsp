@@ -2,6 +2,7 @@
 
 use jinja_lsp::builtins::registry::{Category, Registry, Source};
 use jinja_lsp::diagnostics::DiagCode;
+use jinja_lsp::server::state::ServerState;
 use std::path::Path;
 
 fn fixtures_dir() -> std::path::PathBuf {
@@ -199,7 +200,6 @@ fn post_attributes_in_registry_after_hint() {
 #[test]
 fn server_state_sidecar_cached_on_update_file() {
     use jinja_lsp::builtins::registry::{Category, Source};
-    use jinja_lsp::server::state::ServerState;
 
     let template_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/user-hints/templates/detail.html");
@@ -226,8 +226,6 @@ fn server_state_sidecar_cached_on_update_file() {
 
 #[test]
 fn server_state_no_sidecar_entry_for_template_without_sidecar() {
-    use jinja_lsp::server::state::ServerState;
-
     let template_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/user-hints/templates/base.html");
     let key = template_path.to_str().unwrap();
@@ -244,7 +242,6 @@ fn server_state_no_sidecar_entry_for_template_without_sidecar() {
 #[test]
 fn server_state_refresh_sidecar_evicts_stale_entry() {
     use jinja_lsp::builtins::registry::Registry;
-    use jinja_lsp::server::state::ServerState;
 
     let mut state = ServerState::with_config(Default::default());
     // Manually insert a fake sidecar entry.
@@ -267,7 +264,6 @@ fn server_state_refresh_sidecar_evicts_stale_entry() {
 #[test]
 fn sidecar_live_reload_updates_registry() {
     use jinja_lsp::builtins::registry::Category;
-    use jinja_lsp::server::state::ServerState;
     use std::fs;
     use tempfile::TempDir;
 
@@ -351,5 +347,36 @@ fn malformed_hint_skipped_siblings_load() {
     assert!(
         reg.get(Category::ContextVariable, "good_var").is_some(),
         "good hint must load even if sibling is malformed"
+    );
+}
+
+// ---------- REQ-HINT-02: relative hint dirs resolve against the config file ----
+
+#[test]
+fn hints_dir_resolves_against_the_workspace_root_not_the_process_cwd() {
+    // `hints = ["hints"]` in a jinja.toml means "next to that jinja.toml", which
+    // is how the `check` front-end reads it. The server resolved it against its
+    // own process CWD — whatever directory the editor happened to launch it
+    // from — so the same config loaded hints in the CLI and silently loaded
+    // nothing in the editor.
+    use jinja_lsp::config::JinjaConfig;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let root = TempDir::new().unwrap();
+    fs::create_dir(root.path().join("hints")).unwrap();
+    fs::write(
+        root.path().join("hints/money.hints.md"),
+        "---\nname: money\ncategory: filter\n---\nProject money filter.",
+    )
+    .unwrap();
+    fs::write(root.path().join("jinja.toml"), "hints = [\"hints\"]\n").unwrap();
+
+    let config = JinjaConfig::from_file(&root.path().join("jinja.toml")).unwrap();
+    let registry = Registry::from_config(&config, root.path());
+
+    assert!(
+        registry.get(Category::Filter, "money").is_some(),
+        "a hints dir relative to jinja.toml must load regardless of the CWD"
     );
 }

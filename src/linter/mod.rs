@@ -1,6 +1,18 @@
 //! REQ-FOLD-01 / F19: the `check` front-end — CLI orchestration and output
 //! formatters. `main.rs` only routes; the work lives here.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use crate::builtins::hints::{find_sidecar, load_sidecar};
+use crate::builtins::registry::Registry;
+use crate::config::JinjaConfig;
+use crate::diagnostic::Diagnostic;
+use crate::diagnostics::checks::run_checks;
+use crate::diagnostics::{filter_by_config, suppress_by_noqa};
+use crate::workspace::build_workspace;
+use crate::workspace::index::WorkspaceIndex;
+
 /// REQ-LINT-01..11: check command implementation.
 /// Returns exit code: 0 = no findings, 1 = findings found, 2 = config/usage error.
 pub fn run_check(
@@ -11,12 +23,6 @@ pub fn run_check(
     select: &[String],
     ignore: &[String],
 ) -> i32 {
-    use crate::config::JinjaConfig;
-    use crate::diagnostic::Diagnostic;
-    use crate::diagnostics::filter_by_config;
-    use crate::workspace::build_workspace;
-    use std::path::Path;
-
     // REQ-LINT-03: reject slugs in --select/--ignore (must be codes or class prefixes)
     for f in select.iter().chain(ignore.iter()) {
         if !f.starts_with("JINJA-") {
@@ -35,78 +41,28 @@ pub fn run_check(
         }
     }
 
+    // REQ-LINT-04/05/06: reject unknown --format values, before scanning anything.
+    if !matches!(format, "rich" | "compact" | "json") {
+        eprintln!("error: invalid --format value {format:?}: expected one of rich, compact, json");
+        return 2;
+    }
+
     let cwd = std::env::current_dir().unwrap_or_default();
-    // cfg_root is the directory that relative config paths (hints, templates) are resolved from.
-    let (cfg, cfg_root) = match config_path {
-        Some(p) => {
-            let file = Path::new(p);
-            let root = file
-                .parent()
-                .map(|d| d.to_owned())
-                .unwrap_or_else(|| cwd.clone());
-            match JinjaConfig::from_file(file) {
-                Ok(c) => (c, root),
-                Err(e) => {
-                    eprintln!("error: config: {e}");
-                    return 2;
-                }
-            }
-        }
-        None => {
-            // Try CWD first; if no config found, also search the passed paths so
-            // per-fixture jinja.toml files are respected when running `check <dir>`.
-            let (cfg, found_at) = match JinjaConfig::discover_with_path(&cwd) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    eprintln!("error: config: {e}");
-                    return 2;
-                }
-            };
-            if let Some(ref conf_path) = found_at {
-                let root = conf_path
-                    .parent()
-                    .map(|d| d.to_owned())
-                    .unwrap_or_else(|| cwd.clone());
-                (cfg, root)
-            } else if paths.is_empty() {
-                (cfg, cwd.clone())
-            } else {
-                // CWD had no config; search each provided path.
-                let mut result = (cfg, cwd.clone());
-                for path_str in &paths {
-                    let search = Path::new(path_str);
-                    let search = if search.is_dir() {
-                        search.to_owned()
-                    } else {
-                        search
-                            .parent()
-                            .map(|p| p.to_owned())
-                            .unwrap_or_else(|| cwd.clone())
-                    };
-                    if let Ok((c, Some(conf_path))) = JinjaConfig::discover_with_path(&search) {
-                        let root = conf_path
-                            .parent()
-                            .map(|d| d.to_owned())
-                            .unwrap_or_else(|| cwd.clone());
-                        result = (c, root);
-                        break;
-                    }
-                }
-                result
-            }
-        }
+    let (cfg, cfg_root) = match resolve_config(config_path, &paths, &cwd) {
+        Ok(pair) => pair,
+        Err(code) => return code,
     };
     let ext_strs: Vec<&str> = cfg.extensions.iter().map(|s| s.as_str()).collect();
 
     // REQ-LINT-01: collect template dirs/files from paths
-    let dirs: Vec<std::path::PathBuf> = if paths.is_empty() {
+    let dirs: Vec<PathBuf> = if paths.is_empty() {
         cfg.resolved_template_dirs(&cwd)
     } else {
         paths.iter().map(|p| Path::new(p).to_path_buf()).collect()
     };
 
     // REQ-LINT-10: pre-canonicalize roots for path normalization
-    let roots_canon: Vec<std::path::PathBuf> = dirs
+    let roots_canon: Vec<PathBuf> = dirs
         .iter()
         .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
         .collect();
@@ -124,51 +80,12 @@ pub fn run_check(
         );
     }
 
-    // REQ-LINT-09: run all per-file checks across every indexed template.
-    use crate::builtins::hints::load_sidecar;
-    use crate::builtins::registry::Registry;
-    use crate::diagnostics::checks::run_checks;
-    use crate::diagnostics::suppress_by_noqa;
-    // Build registry the same way the LSP server does — core + extras + custom_builtins + hints.
-    // Relative paths are resolved against cfg_root (the directory containing jinja.toml).
-    let mut base_registry = Registry::load_core();
-    let extras: Vec<&str> = cfg.extras.iter().map(|s| s.as_str()).collect();
-    base_registry.load_packs(&extras);
-    for dir_str in &cfg.custom_builtins {
-        base_registry.load_custom_builtins(&cfg_root.join(dir_str));
-    }
-    for dir_str in &cfg.hints {
-        base_registry.load_hints_from_dir(&cfg_root.join(dir_str));
-    }
-
-    // jinja-lsp-54gh: read each template's source once and reuse it for checks,
-    // noqa scanning, and rich-formatter rendering — previously each was re-read
-    // from disk independently, and the rich formatter re-read once PER DIAGNOSTIC.
-    let mut source_cache: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    // REQ-LINT-09: same registry assembly the LSP server uses, so the two
+    // front-ends cannot resolve one config differently.
+    let base_registry = Registry::from_config(&cfg, &cfg_root);
 
     let t1 = std::time::Instant::now();
-    let mut all_diags: Vec<Diagnostic> = Vec::new();
-    for idx in workspace.templates.values() {
-        let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
-        // REQ-HINT-01: overlay per-template sidecar hints on top of the base registry.
-        // jinja-lsp-0zz7: only clone the base registry when a sidecar actually exists —
-        // most templates have none, and the clone dwarfs the per-file check cost.
-        let path = std::path::Path::new(&idx.path);
-        let overlay;
-        let effective_registry: &Registry = if crate::builtins::hints::find_sidecar(path).is_some()
-        {
-            let mut reg = base_registry.clone();
-            load_sidecar(path, &mut reg);
-            overlay = reg;
-            &overlay
-        } else {
-            &base_registry
-        };
-        let raw = run_checks(&source, &idx.path, idx, effective_registry, &workspace);
-        all_diags.extend(raw);
-        source_cache.insert(idx.path.clone(), source);
-    }
+    let (all_diags, source_cache) = collect_diagnostics(&workspace, &base_registry);
     if verbose {
         eprintln!(
             "info: checked {} template(s) in {:.2}s, {} raw finding(s)",
@@ -188,44 +105,16 @@ pub fn run_check(
     let filtered = filter_by_config(&all_diags, &sel, &ign);
 
     // REQ-DIAG-05: noqa suppression is applied AFTER select/ignore (same order as LSP server).
-    // Collect sources for noqa scanning (one source read per template).
-    let mut post_noqa: Vec<Diagnostic> = Vec::new();
-    let mut w107_diags: Vec<Diagnostic> = Vec::new();
-    {
-        let mut per_file: std::collections::HashMap<&str, Vec<&Diagnostic>> =
-            std::collections::HashMap::new();
-        for d in &filtered {
-            per_file.entry(d.file.as_str()).or_default().push(d);
-        }
-        // REQ-DIAG-06: scan every discovered template, not just files with existing
-        // findings — a file whose only problem is an invalid `noqa` directive must
-        // still surface its W107, even though it has no other diagnostics.
-        for idx in workspace.templates.values() {
-            let file_path = idx.path.as_str();
-            let file_diags = per_file.remove(file_path).unwrap_or_default();
-            let empty = String::new();
-            let source = source_cache.get(file_path).unwrap_or(&empty);
-            let file_vec: Vec<Diagnostic> = file_diags.iter().map(|d| (*d).clone()).collect();
-            let (kept, w107s) = suppress_by_noqa(&file_vec, source);
-            post_noqa.extend(kept);
-            w107_diags.extend(w107s.into_iter().map(|mut d| {
-                d.file = file_path.to_owned();
-                d
-            }));
-        }
-    }
+    let (mut sorted, w107_diags) = suppress(&filtered, &workspace, &source_cache);
     // REQ-DIAG-06/jinja-lsp-ibun: W107 (invalid-noqa) must respect the same
     // select/ignore filters as every other diagnostic code.
-    let w107_diags: Vec<Diagnostic> = filter_by_config(&w107_diags, &sel, &ign)
-        .into_iter()
-        .cloned()
-        .collect();
-    post_noqa.extend(w107_diags);
-    // Shadow `filtered` so the rest of the function uses the noqa-suppressed set.
-    let filtered = post_noqa;
+    sorted.extend(
+        filter_by_config(&w107_diags, &sel, &ign)
+            .into_iter()
+            .cloned(),
+    );
 
     // REQ-LINT-07: order by file, line, col (sort on absolute paths for stable order)
-    let mut sorted: Vec<Diagnostic> = filtered.into_iter().collect();
     sorted.sort_by(|a, b| {
         a.file
             .cmp(&b.file)
@@ -233,52 +122,25 @@ pub fn run_check(
             .then(a.col.cmp(&b.col))
     });
 
-    // REQ-LINT-10: normalize absolute file path to workspace-relative with forward slashes.
-    // For files outside all roots the absolute path is kept (as-is).
-    //
-    // Canonicalize the incoming path before comparing against roots_canon — on
-    // macOS, $TMPDIR resolves through a /var -> /private/var symlink, so an
-    // uncanonicalized `/var/folders/...` path from the workspace index would
-    // never strip_prefix-match a canonicalized `/private/var/folders/...` root,
-    // silently falling through to "keep the absolute path" for every finding.
-    let normalize_path = |abs: &str| -> String {
-        let p = Path::new(abs);
-        let p_canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-        for root in &roots_canon {
-            if let Ok(rel) = p_canon.strip_prefix(root) {
-                return rel.to_string_lossy().replace('\\', "/");
-            }
-        }
-        abs.replace('\\', "/")
-    };
-
-    // REQ-LINT-04/05/06: output format — reject unknown values (exit 2).
-    if !matches!(format, "rich" | "compact" | "json") {
-        eprintln!(
-            "error: invalid --format value {:?}: expected one of rich, compact, json",
-            format
-        );
-        return 2;
-    }
     match format {
+        // REQ-LINT-06/07: JSON array with 7-key shape, workspace-relative paths
         "json" => {
-            // REQ-LINT-06/07: JSON array with 7-key shape, workspace-relative paths
             let display: Vec<Diagnostic> = sorted
                 .iter()
                 .map(|d| Diagnostic {
-                    file: normalize_path(&d.file),
+                    file: normalize_path(&d.file, &roots_canon),
                     ..d.clone()
                 })
                 .collect();
             let json = serde_json::to_string_pretty(&display).expect("serialization must not fail");
             println!("{json}");
         }
+        // REQ-LINT-05: one line per finding, 1-based line:col
         "compact" => {
-            // REQ-LINT-05: one line per finding, 1-based line:col
             for d in &sorted {
                 println!(
                     "{}:{}:{}: {} {}: {}",
-                    normalize_path(&d.file),
+                    normalize_path(&d.file, &roots_canon),
                     d.line + 1,
                     d.col + 1,
                     d.code,
@@ -287,33 +149,176 @@ pub fn run_check(
                 );
             }
         }
-        _ => {
-            // REQ-LINT-04: rich rustc-style report
-            use std::io::IsTerminal;
-            let use_color =
-                std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-            let empty = String::new();
-            for d in &sorted {
-                let display_path = normalize_path(&d.file);
-                let source = source_cache.get(&d.file).unwrap_or(&empty);
-                let src_line = source.lines().nth(d.line as usize).unwrap_or("");
-                let display_d = Diagnostic {
-                    file: display_path,
-                    ..d.clone()
-                };
-                print!(
-                    "{}",
-                    format_rich_diagnostic_colored(&display_d, src_line, use_color)
-                );
-            }
-            if sorted.is_empty() {
-                println!("No problems found.");
-            }
-        }
+        // REQ-LINT-04: rustc-style report
+        _ => emit_rich(&sorted, &roots_canon, &source_cache),
     }
 
     // REQ-LINT-08: exit codes 0 (no findings) / 1 (findings) / 2 (error)
     if sorted.is_empty() { 0 } else { 1 }
+}
+
+/// Resolve the config and the directory its relative paths (hints, templates)
+/// are read from. `Err` carries the process exit code.
+fn resolve_config(
+    config_path: Option<&str>,
+    paths: &[String],
+    cwd: &Path,
+) -> Result<(JinjaConfig, PathBuf), i32> {
+    let parent_or = |p: &Path| {
+        p.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| cwd.to_path_buf())
+    };
+
+    if let Some(p) = config_path {
+        let file = Path::new(p);
+        return match JinjaConfig::from_file(file) {
+            Ok(cfg) => Ok((cfg, parent_or(file))),
+            Err(e) => {
+                eprintln!("error: config: {e}");
+                Err(2)
+            }
+        };
+    }
+
+    // Try CWD first; if no config is found there, also search the passed paths so
+    // per-fixture jinja.toml files are respected when running `check <dir>`.
+    let (cfg, found_at) = match JinjaConfig::discover_with_path(cwd) {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("error: config: {e}");
+            return Err(2);
+        }
+    };
+    if let Some(conf_path) = found_at {
+        return Ok((cfg, parent_or(&conf_path)));
+    }
+    for path_str in paths {
+        let search = Path::new(path_str);
+        let search = if search.is_dir() {
+            search.to_path_buf()
+        } else {
+            parent_or(search)
+        };
+        if let Ok((c, Some(conf_path))) = JinjaConfig::discover_with_path(&search) {
+            return Ok((c, parent_or(&conf_path)));
+        }
+    }
+    Ok((cfg, cwd.to_path_buf()))
+}
+
+/// Run every check over every indexed template, returning the raw findings and
+/// the sources they were read from.
+///
+/// jinja-lsp-54gh: each template is read once and the text reused for checks,
+/// noqa scanning, and rich rendering — all three used to re-read from disk, and
+/// the rich formatter re-read once PER DIAGNOSTIC.
+fn collect_diagnostics(
+    workspace: &WorkspaceIndex,
+    base_registry: &Registry,
+) -> (Vec<Diagnostic>, HashMap<String, String>) {
+    let mut all_diags = Vec::new();
+    let mut sources = HashMap::new();
+    for idx in workspace.templates.values() {
+        let source = std::fs::read_to_string(&idx.path).unwrap_or_default();
+        // REQ-HINT-01: overlay per-template sidecar hints on top of the base registry.
+        // jinja-lsp-0zz7: only clone the base registry when a sidecar actually exists —
+        // most templates have none, and the clone dwarfs the per-file check cost.
+        let path = Path::new(&idx.path);
+        let overlay;
+        let effective_registry: &Registry = if find_sidecar(path).is_some() {
+            let mut reg = base_registry.clone();
+            load_sidecar(path, &mut reg);
+            overlay = reg;
+            &overlay
+        } else {
+            base_registry
+        };
+        all_diags.extend(run_checks(
+            &source,
+            &idx.path,
+            idx,
+            effective_registry,
+            workspace,
+        ));
+        sources.insert(idx.path.clone(), source);
+    }
+    (all_diags, sources)
+}
+
+/// REQ-DIAG-05/06: apply `noqa` suppression per file, returning the surviving
+/// findings and the W107s raised by invalid directives.
+///
+/// Every discovered template is scanned, not just files that already have
+/// findings — a file whose only problem is a malformed `noqa` must still surface
+/// its W107.
+fn suppress(
+    filtered: &[&Diagnostic],
+    workspace: &WorkspaceIndex,
+    sources: &HashMap<String, String>,
+) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    let mut per_file: HashMap<&str, Vec<Diagnostic>> = HashMap::new();
+    for d in filtered {
+        per_file
+            .entry(d.file.as_str())
+            .or_default()
+            .push((*d).clone());
+    }
+    let mut kept_all = Vec::new();
+    let mut w107_all = Vec::new();
+    let empty = String::new();
+    for idx in workspace.templates.values() {
+        let file_path = idx.path.as_str();
+        let file_diags = per_file.remove(file_path).unwrap_or_default();
+        let source = sources.get(file_path).unwrap_or(&empty);
+        let (kept, w107s) = suppress_by_noqa(&file_diags, source);
+        kept_all.extend(kept);
+        w107_all.extend(w107s.into_iter().map(|mut d| {
+            d.file = file_path.to_owned();
+            d
+        }));
+    }
+    (kept_all, w107_all)
+}
+
+/// REQ-LINT-10: absolute path to workspace-relative with forward slashes. Paths
+/// outside every root are kept absolute.
+///
+/// The incoming path is canonicalized before comparing: on macOS `$TMPDIR`
+/// resolves through a `/var -> /private/var` symlink, so an uncanonicalized
+/// `/var/folders/...` path from the workspace index would never strip_prefix-match
+/// a canonicalized root, silently keeping the absolute path for every finding.
+fn normalize_path(abs: &str, roots: &[PathBuf]) -> String {
+    let p = Path::new(abs);
+    let p_canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    for root in roots {
+        if let Ok(rel) = p_canon.strip_prefix(root) {
+            return rel.to_string_lossy().replace('\\', "/");
+        }
+    }
+    abs.replace('\\', "/")
+}
+
+/// REQ-LINT-04: rustc-style report, one block per finding.
+fn emit_rich(sorted: &[Diagnostic], roots: &[PathBuf], sources: &HashMap<String, String>) {
+    use std::io::IsTerminal;
+    let use_color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    let empty = String::new();
+    for d in sorted {
+        let source = sources.get(&d.file).unwrap_or(&empty);
+        let src_line = source.lines().nth(d.line as usize).unwrap_or("");
+        let display = Diagnostic {
+            file: normalize_path(&d.file, roots),
+            ..d.clone()
+        };
+        print!(
+            "{}",
+            format_rich_diagnostic_colored(&display, src_line, use_color)
+        );
+    }
+    if sorted.is_empty() {
+        println!("No problems found.");
+    }
 }
 
 /// REQ-LINT-04: rustc-style multi-line diagnostic block, with optional ANSI color.
@@ -390,26 +395,6 @@ fn format_rich_diagnostic_colored(
 #[cfg(test)]
 fn format_rich_diagnostic_for_source(d: &crate::diagnostic::Diagnostic, src_line: &str) -> String {
     format_rich_diagnostic_colored(d, src_line, false)
-}
-
-pub(crate) fn collect_template_files(
-    dir: &std::path::Path,
-    exts: &[&str],
-    out: &mut Vec<std::path::PathBuf>,
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_template_files(&path, exts, out);
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if exts.contains(&ext) {
-                out.push(path);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 
 use std::fs;
 
+use jinja_lsp::builtins::registry::Registry;
 use jinja_lsp::server::state::{FolderState, ServerState, key_under_root};
 use jinja_lsp::workspace::build_workspace;
 
@@ -60,7 +61,7 @@ fn server_state_routes_update_to_correct_folder() {
         extras: vec!["starlette".to_owned()],
         ..Default::default()
     };
-    let registry_b = ServerState::build_registry(&cfg_b);
+    let registry_b = Registry::from_config(&cfg_b, &folder_b);
 
     let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
     state.workspace_root = Some(folder_a.to_string_lossy().into_owned());
@@ -117,7 +118,7 @@ fn server_state_workspace_for_routes_by_prefix() {
         root: folder_b.clone(),
         workspace: jinja_lsp::workspace::index::WorkspaceIndex::default(),
         config: jinja_lsp::config::JinjaConfig::default(),
-        registry: ServerState::build_registry(&jinja_lsp::config::JinjaConfig::default()),
+        registry: Registry::from_config(&jinja_lsp::config::JinjaConfig::default(), &folder_b),
         config_file_path: None,
         generation: 0,
     });
@@ -206,7 +207,7 @@ fn server_state_prefix_overlap_routes_correctly() {
     fs::create_dir_all(&project).unwrap();
 
     let cfg_extra = jinja_lsp::config::JinjaConfig::default();
-    let registry_extra = ServerState::build_registry(&cfg_extra);
+    let registry_extra = Registry::from_config(&cfg_extra, &project);
 
     let mut state = ServerState::with_config(jinja_lsp::config::JinjaConfig::default());
     state.workspace_root = Some(proj.to_string_lossy().into_owned());

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     builtins::{hints::load_sidecar, registry::Registry},
@@ -84,7 +87,7 @@ impl ServerState {
     /// Build initial state by discovering all templates in `templates_dirs`.
     pub fn from_dirs(templates_dirs: &[&Path], extensions: &[&str]) -> Self {
         let config = JinjaConfig::default();
-        let registry = Self::build_registry(&config);
+        let registry = Registry::from_config(&config, Path::new("."));
         Self {
             workspace: build_workspace(templates_dirs, extensions),
             base_config: config.clone(),
@@ -109,7 +112,7 @@ impl ServerState {
 
     /// Build initial state with an explicit config (for testing / initialize wiring).
     pub fn with_config(config: JinjaConfig) -> Self {
-        let registry = Self::build_registry(&config);
+        let registry = Registry::from_config(&config, Path::new("."));
         Self {
             workspace: WorkspaceIndex::default(),
             base_config: config.clone(),
@@ -154,7 +157,7 @@ impl ServerState {
         if result.is_ok() {
             self.init_overlay = Some(overlay);
             self.config = candidate;
-            self.registry = Self::build_registry(&self.config);
+            self.registry = Registry::from_config(&self.config, &self.config_root());
         }
         result
     }
@@ -162,7 +165,7 @@ impl ServerState {
     /// Replace the active config and rebuild the registry from it.
     /// Called during `initialize` when config is discovered before overlays are applied.
     pub fn reset_config(&mut self, config: JinjaConfig) {
-        self.registry = Self::build_registry(&config);
+        self.registry = Registry::from_config(&config, &self.config_root());
         self.base_config = config.clone();
         self.config = config;
     }
@@ -176,7 +179,7 @@ impl ServerState {
         if let Some(overlay) = self.init_overlay.clone() {
             self.config.apply_overlay(overlay);
         }
-        self.registry = Self::build_registry(&self.config);
+        self.registry = Registry::from_config(&self.config, &self.config_root());
     }
 
     /// ADR-005 / REQ-CFG-10: diff-aware config reload.
@@ -200,22 +203,12 @@ impl ServerState {
         (registry_changed, workspace_changed)
     }
 
-    /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: Build a registry from core +
-    /// extension packs + configured custom_builtins dirs + user hints dirs.
-    pub fn build_registry(config: &JinjaConfig) -> Registry {
-        let mut reg = Registry::load_core();
-        // REQ-EXT-02: load configured extension packs.
-        let extras: Vec<&str> = config.extras.iter().map(|s| s.as_str()).collect();
-        reg.load_packs(&extras);
-        // REQ-BLTN-07: load docs from custom_builtins dirs.
-        for dir_str in &config.custom_builtins {
-            reg.load_custom_builtins(Path::new(dir_str));
-        }
-        // REQ-HINT-02: load user hints from configured hints dirs.
-        for dir_str in &config.hints {
-            reg.load_hints_from_dir(Path::new(dir_str));
-        }
-        reg
+    /// The directory relative `custom_builtins` / `hints` paths resolve against:
+    /// the workspace root when the client sent one, else the process CWD.
+    fn config_root(&self) -> PathBuf {
+        self.workspace_root
+            .as_ref()
+            .map_or_else(|| PathBuf::from("."), PathBuf::from)
     }
 
     /// REQ-EXTR-08: Return the WorkspaceIndex for the folder that owns `key`.

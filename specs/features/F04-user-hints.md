@@ -56,7 +56,7 @@ When the LSP indexes a template `post.html`, it looks for `post.html.hints.md` i
 
 **REQ-HINT-02 — Configured `hints` directories are scanned globally.**
 
-Every directory in the `hints` config key ([E15](../foundations/E15-app-config.md)) is scanned at startup and on config reload. A hint file here is **global** (available in all templates) unless its frontmatter sets a `template` field (§5.2), which scopes it to that one template. The `hints` key is separate from `custom_builtins` ([F02](F02-builtin-registry.md)) on purpose: custom builtins are "third-party built-ins," hints are "this project's own symbols."
+Every directory in the `hints` config key ([E15](../foundations/E15-app-config.md)) is scanned at startup and on config reload. A relative entry resolves against the **workspace folder** it was configured in — never the server's working directory, which the editor chooses — so `check` and the LSP load the same files from the same config. A hint file here is **global** (available in all templates) unless its frontmatter sets a `template` field (§5.2), which scopes it to that one template. The `hints` key is separate from `custom_builtins` ([F02](F02-builtin-registry.md)) on purpose: custom builtins are "third-party built-ins," hints are "this project's own symbols."
 
 ### 5.2 The extended hint format
 

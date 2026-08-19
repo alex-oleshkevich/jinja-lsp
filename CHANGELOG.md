@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 ## [Unreleased]
 
+### Fixed
+- Relative `hints` and `custom_builtins` directories now resolve against the
+  workspace folder in the LSP server, not the server's process working
+  directory. `check` already read them that way, so the same `jinja.toml` loaded
+  your hints on the command line and silently loaded nothing in the editor —
+  and in a multi-root workspace, secondary folders looked under the wrong root.
+- `format <dir>` no longer walks into symlinked directories. A link pointing back
+  at its own parent made it collect the same template once per hop, up to the
+  kernel's symlink limit. It now shares the indexer's directory walk, which also
+  makes its extension match case-insensitive.
+
 <!-- Add entries above this line when cutting a release -->
 
 ## [0.4.0] - 2026-08-19

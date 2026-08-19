@@ -277,6 +277,25 @@ impl Registry {
         reg
     }
 
+    /// REQ-BLTN-07 / REQ-EXT-02 / REQ-HINT-02: the registry a config asks for —
+    /// core, then extension packs, then `custom_builtins`, then `hints`.
+    ///
+    /// `root` is the folder the config belongs to: relative entries mean "next to
+    /// the config file". Every front-end goes through here, which is what keeps
+    /// `check` and the LSP from resolving the same config differently.
+    pub fn from_config(config: &crate::config::JinjaConfig, root: &Path) -> Self {
+        let mut reg = Self::load_core();
+        let extras: Vec<&str> = config.extras.iter().map(|s| s.as_str()).collect();
+        reg.load_packs(&extras);
+        for dir in &config.custom_builtins {
+            reg.load_custom_builtins(&root.join(dir));
+        }
+        for dir in &config.hints {
+            reg.load_hints_from_dir(&root.join(dir));
+        }
+        reg
+    }
+
     /// REQ-BLTN-07: load custom builtins from a directory, non-fatally.
     pub fn load_custom_builtins(&mut self, dir: &Path) {
         let Ok(entries) = std::fs::read_dir(dir) else {

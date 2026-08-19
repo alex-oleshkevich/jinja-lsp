@@ -297,7 +297,7 @@ fn state_registry_rebuilt_on_apply_init_options() {
 
 #[test]
 fn with_config_extras_loads_pack_entries_into_registry() {
-    // config.extras = ["starlette"] → build_registry must call load_packs.
+    // config.extras = ["starlette"] → Registry::from_config must call load_packs.
     let cfg = JinjaConfig {
         extras: vec!["starlette".to_owned()],
         ..Default::default()
