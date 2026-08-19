@@ -196,6 +196,87 @@ fn reports_an_unknown_extras_pack() {
 }
 
 #[test]
+fn reports_a_hints_directory_and_what_it_contributed() {
+    // The count is the point: it says the files were parsed, not merely that
+    // the path was configured. `money` is deliberately not a core builtin — a
+    // hint that overrides an existing entry adds nothing to the total.
+    let dir = scratch("hints_dir");
+    fs::create_dir_all(dir.join("templates")).unwrap();
+    fs::create_dir_all(dir.join("hints")).unwrap();
+    fs::write(dir.join("templates/a.html"), "{{ x }}").unwrap();
+    fs::write(
+        dir.join("hints/money.hints.md"),
+        "---\nname: \"money\"\ncategory: \"filter\"\n---\n\nProject money filter.\n",
+    )
+    .unwrap();
+    fs::write(dir.join("jinja.toml"), "hints = [\"hints\"]\n").unwrap();
+
+    let (out, code) = doctor_in(&dir);
+    assert!(
+        out.contains("hints") && out.contains("+1 entry"),
+        "a loaded hints directory must be named with what it added:\n{out}"
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn reports_a_hints_directory_that_loaded_nothing() {
+    // Present but contributing nothing — a wrong directory, or files the parser
+    // rejected. Silent zero here is exactly the confusion doctor exists to end.
+    let dir = scratch("hints_empty");
+    fs::create_dir_all(dir.join("templates")).unwrap();
+    fs::create_dir_all(dir.join("hints")).unwrap();
+    fs::write(dir.join("templates/a.html"), "{{ x }}").unwrap();
+    fs::write(dir.join("hints/notes.txt"), "not a hint file").unwrap();
+    fs::write(dir.join("jinja.toml"), "hints = [\"hints\"]\n").unwrap();
+
+    let (out, code) = doctor_in(&dir);
+    assert!(
+        out.contains("no entries loaded"),
+        "a hints directory that parsed nothing must say so:\n{out}"
+    );
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn reports_a_hints_directory_that_does_not_exist() {
+    let dir = scratch("hints_missing");
+    fs::create_dir_all(dir.join("templates")).unwrap();
+    fs::write(dir.join("templates/a.html"), "{{ x }}").unwrap();
+    fs::write(dir.join("jinja.toml"), "hints = [\"typoed_hints\"]\n").unwrap();
+
+    let (out, code) = doctor_in(&dir);
+    assert!(
+        out.contains("typoed_hints") && out.contains("directory not found"),
+        "a configured-but-absent hints directory must be reported:\n{out}"
+    );
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn reports_a_custom_builtins_directory() {
+    // Same loader shape as hints but a separate config key and a separate call
+    // site, so it gets its own case rather than being assumed to follow.
+    let dir = scratch("custom_builtins");
+    fs::create_dir_all(dir.join("templates")).unwrap();
+    fs::create_dir_all(dir.join("builtins")).unwrap();
+    fs::write(dir.join("templates/a.html"), "{{ x }}").unwrap();
+    fs::write(
+        dir.join("builtins/site_url.md"),
+        "---\nname: \"site_url\"\ncategory: \"function\"\n---\n\nProject URL helper.\n",
+    )
+    .unwrap();
+    fs::write(dir.join("jinja.toml"), "custom_builtins = [\"builtins\"]\n").unwrap();
+
+    let (out, code) = doctor_in(&dir);
+    assert!(
+        out.contains("builtins") && out.contains("+1 entry"),
+        "a loaded custom-builtins directory must be named with what it added:\n{out}"
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
 fn stays_quiet_about_what_is_not_configured() {
     // "Don't add noise": a project with no extras, hints, custom builtins or
     // lint filters must not get empty sections announcing their absence.
