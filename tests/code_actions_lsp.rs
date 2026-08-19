@@ -106,13 +106,13 @@ fn act09_t03b_create_template_action_has_create_files() {
 
 #[test]
 fn act09_t03c_workspace_edit_create_before_text_edit_in_source() {
-    // Static source-check: verify the fix is in place by reading server/mod.rs.
-    let src = include_str!("../src/server/mod.rs");
+    // Static source-check: verify the fix is in place by reading the conversion layer.
+    let src = include_str!("../src/server/convert.rs");
     // After the fix, Create ops are pushed first; the changes loop comes after.
     // The "for (path, _content) in we.create_files" pattern (bug) must be gone.
     assert!(
         !src.contains("for (path, _content) in we.create_files"),
-        "dropped-content bug must be removed: 'for (path, _content)' found in server/mod.rs"
+        "dropped-content bug must be removed: 'for (path, _content)' found in server/convert.rs"
     );
     // The CreateFile block must appear before the changes iteration.
     let create_pos = src.find("ResourceOp::Create").unwrap_or(usize::MAX);

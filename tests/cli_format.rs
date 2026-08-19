@@ -331,3 +331,34 @@ fn jinja_lsp_w86m_directory_arg_escaping_templates_root_is_skipped() {
         "file outside every template root must not be rewritten"
     );
 }
+
+// ─── Directory walking is the indexer's walk ─────────────────────────────────
+
+#[test]
+#[cfg(unix)]
+fn format_does_not_follow_symlinked_directory_cycles() {
+    // `format <dir>` used its own walk, which recursed on `path.is_dir()` — true
+    // for a symlink pointing at a directory. A link back to its own parent made
+    // it descend until the kernel's symlink limit stopped it, collecting the same
+    // template 41 times along the way. It now shares `discover_templates`, which
+    // tests the directory entry's own file type and so never follows the link.
+    let dir = scratchpad().join("symlink_cycle");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("sub")).unwrap();
+    fs::write(dir.join("sub/tpl.html"), "{{x}}\n").unwrap();
+    std::os::unix::fs::symlink(&dir, dir.join("sub/loop")).unwrap();
+
+    let out = jinja_lsp_bin()
+        .arg("format")
+        .arg("--check")
+        .arg(&dir)
+        .output()
+        .expect("run format");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let reported = stdout.lines().filter(|l| l.contains("tpl.html")).count();
+    assert_eq!(
+        reported, 1,
+        "the one template must be reported once, not once per symlink hop:\n{stdout}"
+    );
+}

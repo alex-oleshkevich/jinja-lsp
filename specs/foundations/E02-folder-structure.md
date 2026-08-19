@@ -36,7 +36,7 @@ A specialist LSP grows by accretion: a new check here, a new handler there. With
 ## 4. Concepts & Definitions
 
 - **Layer** — a top-level directory under `src/` with a single responsibility.
-- **Front-end** — one of the three I/O shells, named by their subcommands `lsp`/`check`/`format` and implemented by `server.rs` / `linter/` / `format/` (routed from `main.rs`); see [E01](E01-architecture.md).
+- **Front-end** — one of the three I/O shells, named by their subcommands `lsp`/`check`/`format` and implemented by `server/` / `linter/` / `format/` (routed from `main.rs`); see [E01](E01-architecture.md).
 - **Handler** — one feature's pure-read function module under `src/features/`.
 
 ## 5. Detailed Specification
@@ -50,8 +50,11 @@ The tree below is the canonical layout. Read it top-down: entry and front-ends f
 ```
 src/
   main.rs              # binary entry + clap CLI dispatch (E01 REQ-ARCH-01)
-  server.rs            # tower-lsp backend; stdio transport (E01 REQ-ARCH-02)
-  state.rs             # shared workspace state held by the server
+  doctor.rs            # the `doctor` front-end: discovery report (F19)
+  server/
+    mod.rs             # tower-lsp backend; stdio transport (E01 REQ-ARCH-02)
+    state.rs           # shared workspace state held by the server
+    convert.rs         # internal types <-> lsp_types, position encoding
   config.rs            # config types + discovery (E15)
   parsing/             # tree-sitter wrapper + .scm queries (E30)
   workspace/           # TemplateIndex, WorkspaceIndex, symbols, discovery (E07, E30, E31)
@@ -66,7 +69,7 @@ src/
 
 **REQ-FOLD-01 — One crate, layered modules.**
 
-jinja-lsp is a single binary crate. The entry point is `src/main.rs`, which parses the CLI with `clap` and dispatches to one of the three front-ends. The `lsp` subcommand starts `server.rs`; `check` and `format` call into `linter/` and `format/cli.rs` respectively. No analysis logic lives in `main.rs` — it only routes.
+jinja-lsp is a single binary crate. The entry point is `src/main.rs`, which parses the CLI with `clap` and dispatches to one of the three front-ends. The `lsp` subcommand starts `server/`; `check` and `format` call into `linter/` and `format/cli.rs` respectively. No analysis logic lives in `main.rs` — it only routes.
 
 ### 5.2 The analysis layers
 
@@ -130,7 +133,7 @@ The whole layout exists to make one rule physically obvious: dependencies flow d
 
 **REQ-FOLD-08 — Dependencies flow downward only.**
 
-`features/` may import `workspace/`, `builtins/`, `edit/`, and `format/`. `diagnostics/` may import `workspace/` and `builtins/`. `workspace/` may import `parsing/`. **Nothing imports `features/`.** A foundation module that reaches up into a feature is a layering violation and is rejected in review. The three front-ends (`lsp` via `server.rs`, `check` via `linter/`, `format` via `format/`, all routed from `main.rs`) sit at the top and may call into any layer below.
+`features/` may import `workspace/`, `builtins/`, `edit/`, and `format/`. `diagnostics/` may import `workspace/` and `builtins/`. `workspace/` may import `parsing/`. **Nothing imports `features/`.** A foundation module that reaches up into a feature is a layering violation and is rejected in review. The three front-ends (`lsp` via `server/`, `check` via `linter/`, `format` via `format/`, all routed from `main.rs`) sit at the top and may call into any layer below.
 
 ## 7. Visualizations
 

@@ -2,7 +2,7 @@
 //! `--check` / `--diff` modes and unified-diff rendering. The engine itself is
 //! `super`; this module is only its command-line orchestration.
 
-use crate::linter::collect_template_files;
+use crate::parsing::discover_templates;
 
 /// REQ-FMT-08 / REQ-FMT-09: format command.
 /// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
@@ -80,7 +80,7 @@ pub fn run_format(
             if !paths.is_empty() && is_relative_escape(root) {
                 continue; // silently skip ../-escape paths
             }
-            collect_template_files(root, template_exts, &mut files);
+            files.extend(discover_templates(&[root], template_exts));
         }
     }
 

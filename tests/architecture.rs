@@ -258,14 +258,14 @@ fn jinja_lsp_5qqy_tokens_to_lsp_data_does_not_rescan_source_per_token() {
     // from byte 0 every time — O(lines * tokens) per semanticTokens/full request,
     // which fires on every edit. It must instead split the source into lines once
     // and index into that per token.
-    let src = include_str!("../src/server/mod.rs");
+    let src = include_str!("../src/server/convert.rs");
     let start = src
         .find("fn tokens_to_lsp_data(")
         .expect("tokens_to_lsp_data must exist");
     let end = start
         + src[start..]
-            .find("\n#[cfg(test)]")
-            .expect("test module must follow tokens_to_lsp_data");
+            .find("\n}")
+            .expect("tokens_to_lsp_data must end");
     let func = &src[start..end];
     assert!(
         !func.contains("source_line(source, tok.line)"),
@@ -311,16 +311,18 @@ fn jinja_lsp_0zz7_cli_lint_loop_does_not_clone_registry_when_no_sidecar() {
     // REQ-FOLD-01 (jinja-lsp-kap): the check front-end moved out of main.rs.
     let src = include_str!("../src/linter/mod.rs");
     let start = src
-        .find("for idx in workspace.templates.values()")
-        .expect("CLI lint loop must exist");
+        .find("fn collect_diagnostics(")
+        .expect("CLI lint loop must live in collect_diagnostics");
     let end = start
         + src[start..]
-            .find("all_diags.extend(raw);")
-            .expect("loop body must extend all_diags");
-    let loop_body = &src[start..end];
+            .find("\n}")
+            .expect("collect_diagnostics must end");
+    let body = &src[start..end];
+    let guard = body.find("find_sidecar");
+    let clone = body.find("base_registry.clone()");
     assert!(
-        loop_body.contains("find_sidecar"),
-        "CLI lint loop must check find_sidecar before cloning base_registry: {loop_body}"
+        matches!((guard, clone), (Some(g), Some(c)) if g < c),
+        "CLI lint loop must check find_sidecar before cloning base_registry: {body}"
     );
 }
 
@@ -390,20 +392,17 @@ fn jinja_lsp_54gh_rich_formatter_does_not_reread_source_per_diagnostic() {
     // REQ-FOLD-01 (jinja-lsp-kap): the check front-end moved out of main.rs.
     let src = include_str!("../src/linter/mod.rs");
     let start = src
-        .find("_ => {\n            // REQ-LINT-04: rich rustc-style report")
-        .expect("rich formatter branch must exist");
-    let end = start
-        + src[start..]
-            .find("if sorted.is_empty()")
-            .expect("rich branch must end before the empty-report check");
-    let rich_branch = &src[start..end];
+        .find("fn emit_rich(")
+        .expect("rich formatter must exist");
+    let end = start + src[start..].find("\n}").expect("rich formatter must end");
+    let rich = &src[start..end];
     assert!(
-        !rich_branch.contains("std::fs::read_to_string"),
-        "rich formatter must not re-read source from disk per diagnostic: {rich_branch}"
+        !rich.contains("read_to_string"),
+        "rich formatter must not re-read source from disk per diagnostic: {rich}"
     );
     assert!(
-        rich_branch.contains("source_cache"),
-        "rich formatter must reuse the cached source per file: {rich_branch}"
+        rich.contains("sources.get("),
+        "rich formatter must reuse the cached source per file: {rich}"
     );
 }
 
