@@ -15,7 +15,7 @@ from urllib.parse import unquote
 import pytest
 from lsprotocol import types as lsp
 
-from conftest import FIXTURES
+from conftest import FIXTURES, open_doc
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 POST = FIXTURES / "starlette-blog" / "templates" / "blog" / "post.html"
@@ -23,21 +23,6 @@ MACROS = FIXTURES / "starlette-blog" / "templates" / "blog" / "macros.html"
 BASE = FIXTURES / "starlette-blog" / "templates" / "base.html"
 
 _SEVERITY = {1: "error", 2: "warning", 3: "info", 4: "hint"}
-
-
-def _open(client, path, version=1):
-    uri = path.as_uri()
-    client.text_document_did_open(
-        lsp.DidOpenTextDocumentParams(
-            text_document=lsp.TextDocumentItem(
-                uri=uri,
-                language_id="jinja",
-                version=version,
-                text=path.read_text(),
-            )
-        )
-    )
-    return uri
 
 
 def _lsp_diags_for_fixture(client, fixture_dir: Path) -> list:
@@ -68,7 +53,7 @@ def _lsp_diags_for_fixture(client, fixture_dir: Path) -> list:
 @pytest.mark.asyncio
 async def test_did_open_publishes_diagnostics(client):
     """REQ-E2E-02/REQ-E2E-06: didOpen publishDiagnostics matches Branch A golden (starlette-blog)."""
-    uri = _open(client, BASE)
+    uri = open_doc(client, BASE)
     await client.wait_for_notification("textDocument/publishDiagnostics")
     # starlette-blog golden is [] — verify no diagnostics are published for base.html.
     assert uri in client.diagnostics
@@ -94,7 +79,7 @@ async def test_did_open_parity_with_branch_a(client):
     expected.sort(key=lambda d: (d["file"], d["line"], d["col"]))
 
     for tmpl in sorted((syntax_errors / "templates").glob("*.html")):
-        _open(client, tmpl)
+        open_doc(client, tmpl)
         await client.wait_for_notification("textDocument/publishDiagnostics")
 
     actual = _lsp_diags_for_fixture(client, syntax_errors / "templates")
@@ -108,7 +93,7 @@ async def test_did_open_parity_with_branch_a(client):
 @pytest.mark.asyncio
 async def test_completion_returns_items(client):
     """REQ-E2E-06: completion at a Jinja tag position returns a non-empty list."""
-    uri = _open(client, BASE)
+    uri = open_doc(client, BASE)
     # base.html line 2: "{% block head %}{% endblock %}"
     # char 3 = 'b' of 'block' — inside a tag keyword position
     result = await client.text_document_completion_async(
@@ -125,7 +110,7 @@ async def test_completion_returns_items(client):
 @pytest.mark.asyncio
 async def test_completion_item_resolve(client):
     """REQ-E2E-06: completionItem/resolve returns an enriched item."""
-    uri = _open(client, BASE)
+    uri = open_doc(client, BASE)
     result = await client.text_document_completion_async(
         lsp.CompletionParams(
             text_document=lsp.TextDocumentIdentifier(uri=uri),
@@ -174,8 +159,8 @@ async def test_hover_on_builtin_filter(client):
 @pytest.mark.asyncio
 async def test_signature_help_in_macro_call(client):
     """REQ-E2E-06: signatureHelp inside a macro call returns parameter hints."""
-    _open(client, MACROS)
-    uri = _open(client, POST)
+    open_doc(client, MACROS)
+    uri = open_doc(client, POST)
     # post.html line 5: "  {{ macros.comment_card(c, show_actions=true) }}"
     # position (5, 27) = inside the argument list after the first comma
     result = await client.text_document_signature_help_async(
@@ -193,8 +178,8 @@ async def test_signature_help_in_macro_call(client):
 @pytest.mark.asyncio
 async def test_definition_on_macro_call(client):
     """REQ-E2E-06: go-to-definition on a macro call navigates to the declaration."""
-    _open(client, MACROS)
-    uri = _open(client, POST)
+    open_doc(client, MACROS)
+    uri = open_doc(client, POST)
     # post.html line 5: "  {{ macros.comment_card(c, show_actions=true) }}"
     # 'comment_card' occupies chars 12-23; position (5, 15) is on it
     result = await client.text_document_definition_async(
@@ -214,7 +199,7 @@ async def test_definition_on_macro_call(client):
 @pytest.mark.asyncio
 async def test_code_action_at_diagnostic(client):
     """REQ-E2E-06: codeAction request completes the protocol round-trip."""
-    uri = _open(client, POST)
+    uri = open_doc(client, POST)
     await client.wait_for_notification("textDocument/publishDiagnostics")
     diags = client.diagnostics.get(uri, [])
     result = await client.text_document_code_action_async(

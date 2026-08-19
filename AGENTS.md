@@ -168,7 +168,7 @@ and match CI; add a recipe rather than documenting a bare command here.
 just              # list all recipes
 just build
 just test         # cargo nextest run — the runner CI uses (1145 tests, ~1s after build)
-just test-e2e     # Python LSP-protocol e2e (15 tests); builds the debug binary first
+just test-e2e     # Python LSP-protocol e2e (31 tests); builds the debug binary first
 just lint         # clippy --all-targets -D warnings
 just fmt
 just check        # the CI gate set: fmt --check + clippy + nextest
