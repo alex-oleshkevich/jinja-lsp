@@ -92,13 +92,17 @@ impl Backend {
             .unwrap_or_else(|_| uri.path().to_owned())
     }
 
-    /// Run checks on one file and push findings to the client (REQ-DIAG / F01).
-    async fn publish_file_diagnostics(&self, key: &str) {
+    /// Compute the final diagnostics for `key` — filtered, suppressed and sorted.
+    ///
+    /// The single compute path behind both delivery modes: `publish_file_diagnostics`
+    /// pushes the result, and `textDocument/diagnostic` reads the stored copy. Returns
+    /// `None` only when the file is not tracked (no source or no index).
+    async fn compute_file_diagnostics(&self, key: &str) -> Option<Vec<LspDiagnostic>> {
         let state = self.state.read().await;
         let workspace = state.workspace_for(key);
         let (Some(source), Some(index)) = (state.sources.get(key), workspace.templates.get(key))
         else {
-            return;
+            return None;
         };
         let registry = state.registry_for(key);
         let mut raw = run_checks(source, key, index, registry, workspace);
@@ -145,9 +149,162 @@ impl Backend {
             .map(|d| to_lsp_diagnostic(source, utf8, &d))
             .collect();
         lsp_diags.sort_by_key(|d| (d.range.start.line, d.range.start.character));
+        Some(lsp_diags)
+    }
+
+    /// REQ-DIAG-07: push the diagnostics for `key` and store the same vector for
+    /// pull-mode clients. A cleared finding is published as an explicit empty vector.
+    async fn publish_file_diagnostics(&self, key: &str) {
+        let Some(lsp_diags) = self.compute_file_diagnostics(key).await else {
+            return;
+        };
+        self.state
+            .write()
+            .await
+            .diagnostics
+            .insert(key.to_owned(), lsp_diags.clone());
         let uri = path_to_uri(key);
-        drop(state);
         self.client.publish_diagnostics(uri, lsp_diags, None).await;
+    }
+
+    /// REQ-ARCH-08: scan every workspace folder in the background, under a
+    /// `workDoneProgress` token so the editor can show and cancel it.
+    ///
+    /// Called from `initialized`, never from `initialize` — the scan reads every
+    /// template off disk, and a client that blocks on the `initialize` response
+    /// (most do) shows a frozen editor for the duration on a large workspace.
+    async fn scan_workspaces(&self) {
+        let token = ProgressToken::String("jinja-lsp/initial-scan".to_owned());
+
+        // Same rule as the refresh requests: only ask a client that declared support.
+        let report = self.state.read().await.work_done_progress_support
+            && self
+                .client
+                .send_request::<request::WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+                    token: token.clone(),
+                })
+                .await
+                .is_ok();
+
+        if report {
+            self.send_progress(
+                &token,
+                WorkDoneProgress::Begin(WorkDoneProgressBegin {
+                    title: "Indexing Jinja templates".to_owned(),
+                    cancellable: Some(false),
+                    ..Default::default()
+                }),
+            )
+            .await;
+        }
+
+        // Collect the scan inputs up front so the state lock is not held across the
+        // blocking disk walk.
+        let (primary, extras) = {
+            let state = self.state.read().await;
+            let primary = state.workspace_root.as_ref().map(|root| {
+                let root = std::path::PathBuf::from(root);
+                (
+                    state.config.resolved_template_dirs(&root),
+                    state.config.extensions.clone(),
+                )
+            });
+            let extras: Vec<_> = state
+                .extra_folders
+                .iter()
+                .map(|f| {
+                    (
+                        f.config.resolved_template_dirs(&f.root),
+                        f.config.extensions.clone(),
+                    )
+                })
+                .collect();
+            (primary, extras)
+        };
+
+        let started = std::time::Instant::now();
+        if let Some((dirs, exts)) = primary {
+            let workspace = Self::build_workspace_blocking(dirs, exts).await;
+            tracing::info!(
+                "jinja-lsp: indexed {} template(s) in {:?}",
+                workspace.templates.len(),
+                started.elapsed(),
+            );
+            self.state.write().await.workspace = workspace;
+        }
+        for (i, (dirs, exts)) in extras.into_iter().enumerate() {
+            let workspace = Self::build_workspace_blocking(dirs, exts).await;
+            let mut state = self.state.write().await;
+            if let Some(folder) = state.extra_folders.get_mut(i) {
+                folder.workspace = workspace;
+            }
+        }
+
+        if report {
+            self.send_progress(
+                &token,
+                WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: Some(format!("indexed in {:?}", started.elapsed())),
+                }),
+            )
+            .await;
+        }
+
+        // Anything opened while the scan was running was indexed against an empty
+        // workspace, so its cross-file findings are wrong until republished.
+        self.republish_all_diagnostics().await;
+    }
+
+    async fn build_workspace_blocking(
+        dirs: Vec<std::path::PathBuf>,
+        exts: Vec<String>,
+    ) -> crate::workspace::index::WorkspaceIndex {
+        tokio::task::spawn_blocking(move || {
+            let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
+            let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
+        })
+        .await
+        .unwrap_or_default()
+    }
+
+    async fn send_progress(&self, token: &ProgressToken, value: WorkDoneProgress) {
+        self.client
+            .send_notification::<notification::Progress>(ProgressParams {
+                token: token.clone(),
+                value: ProgressParamsValue::WorkDone(value),
+            })
+            .await;
+    }
+
+    /// E01 §5.6 / REQ-ARCH-10: tell the client to re-pull inlay hints and code lenses.
+    ///
+    /// Both are *derived* UI: their content depends on cross-file facts (a macro's
+    /// arity, a block override, a reference count) that Pass 2 can change without the
+    /// dependent file being edited. Without these the editor keeps rendering pre-relink
+    /// values until it re-pulls for its own reasons. This is the payoff of the two-pass
+    /// design — the client refreshes without the server reparsing anything.
+    async fn refresh_derived_ui(&self) {
+        // Only clients that declared refreshSupport have a handler registered for these;
+        // sending regardless makes the client answer MethodNotFound, which is our bug,
+        // not theirs. Read both flags under one lock, then release it before awaiting.
+        let (inlay, lens) = {
+            let state = self.state.read().await;
+            (
+                state.inlay_hint_refresh_support,
+                state.code_lens_refresh_support,
+            )
+        };
+        if inlay {
+            if let Err(e) = self.client.inlay_hint_refresh().await {
+                tracing::debug!("inlayHint/refresh failed: {e}");
+            }
+        }
+        if lens {
+            if let Err(e) = self.client.code_lens_refresh().await {
+                tracing::debug!("codeLens/refresh failed: {e}");
+            }
+        }
     }
 
     /// Re-publish diagnostics for every file currently tracked in `state.sources`.
@@ -228,6 +385,8 @@ impl Backend {
             tracing::info!("{msg}");
             self.client.log_message(MessageType::INFO, msg).await;
             self.republish_all_diagnostics().await;
+            // REQ-ARCH-10: a config reload relinks, so derived UI is stale too.
+            self.refresh_derived_ui().await;
             return;
         }
 
@@ -275,6 +434,8 @@ impl Backend {
         tracing::info!("{msg}");
         self.client.log_message(MessageType::INFO, msg).await;
         self.republish_all_diagnostics().await;
+        // REQ-ARCH-10: a config reload relinks, so derived UI is stale too.
+        self.refresh_derived_ui().await;
     }
 }
 
@@ -366,28 +527,10 @@ impl LanguageServer for Backend {
             config_file_path,
         );
 
-        // Build primary workspace index in a blocking thread — may read many files from disk.
-        let initial_workspace = if let Some(root) = root_path {
-            let dirs = discovered_config.resolved_template_dirs(root);
-            let exts: Vec<String> = discovered_config.extensions.clone();
-            tracing::info!("jinja-lsp: indexing template dirs {:?}", dirs);
-            let started = std::time::Instant::now();
-            let workspace = tokio::task::spawn_blocking(move || {
-                let dir_refs: Vec<&std::path::Path> = dirs.iter().map(|p| p.as_path()).collect();
-                let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
-                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
-            })
-            .await
-            .unwrap_or_default();
-            tracing::info!(
-                "jinja-lsp: indexed {} template(s) in {:?}",
-                workspace.templates.len(),
-                started.elapsed(),
-            );
-            workspace
-        } else {
-            crate::workspace::index::WorkspaceIndex::default()
-        };
+        // REQ-ARCH-08: `initialize` must return immediately. The workspace scan reads
+        // every template off disk, so it runs in the background from `initialized`
+        // under a workDoneProgress token — see `scan_workspaces`. Start empty here.
+        let initial_workspace = crate::workspace::index::WorkspaceIndex::default();
 
         // REQ-EXTR-08: build an isolated FolderState for each additional workspace folder.
         let mut extra_folders: Vec<state::FolderState> = Vec::new();
@@ -399,17 +542,11 @@ impl LanguageServer for Backend {
             let extra_registry = ServerState::build_registry(&extra_cfg);
             let extra_dirs = extra_cfg.resolved_template_dirs(extra_root);
             let extra_exts: Vec<String> = extra_cfg.extensions.clone();
-            let extra_workspace = tokio::task::spawn_blocking(move || {
-                let dir_refs: Vec<&std::path::Path> =
-                    extra_dirs.iter().map(|p| p.as_path()).collect();
-                let ext_refs: Vec<&str> = extra_exts.iter().map(|s| s.as_str()).collect();
-                crate::workspace::build_workspace_abs(&dir_refs, &ext_refs)
-            })
-            .await
-            .unwrap_or_default();
+            // REQ-ARCH-08: scanned in the background too (see `scan_workspaces`).
+            let _ = (&extra_dirs, &extra_exts);
             extra_folders.push(state::FolderState {
                 root: extra_root.clone(),
-                workspace: extra_workspace,
+                workspace: crate::workspace::index::WorkspaceIndex::default(),
                 config: extra_cfg,
                 registry: extra_registry,
                 config_file_path: extra_cfg_path.map(|p| p.to_string_lossy().into_owned()),
@@ -421,6 +558,26 @@ impl LanguageServer for Backend {
         {
             let mut state = self.state.write().await;
             state.definition_link_support = link_support;
+            state.inlay_hint_refresh_support = params
+                .capabilities
+                .workspace
+                .as_ref()
+                .and_then(|w| w.inlay_hint.as_ref())
+                .and_then(|i| i.refresh_support)
+                .unwrap_or(false);
+            state.code_lens_refresh_support = params
+                .capabilities
+                .workspace
+                .as_ref()
+                .and_then(|w| w.code_lens.as_ref())
+                .and_then(|c| c.refresh_support)
+                .unwrap_or(false);
+            state.work_done_progress_support = params
+                .capabilities
+                .window
+                .as_ref()
+                .and_then(|w| w.work_done_progress)
+                .unwrap_or(false);
             state.position_encoding_utf8 = utf8;
             state.workspace = initial_workspace;
             state.config_file_path = config_file_path.map(|p| p.to_string_lossy().into_owned());
@@ -507,6 +664,18 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
+                // E01 §5.6 / REQ-ARCH-09: push AND pull. Zed uses pull mode, so a
+                // server that only pushes gives it nothing.
+                diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
+                    DiagnosticOptions {
+                        identifier: Some("jinja-lsp".to_owned()),
+                        // Diagnostics are file-local; an edit in one template never
+                        // changes another's findings, so there is nothing to re-pull.
+                        inter_file_dependencies: false,
+                        workspace_diagnostics: false,
+                        ..Default::default()
+                    },
+                )),
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 code_lens_provider: Some(CodeLensOptions {
                     resolve_provider: Some(true),
@@ -545,6 +714,8 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "jinja-lsp initialized")
             .await;
+        // REQ-ARCH-08: the initial scan runs here, not in `initialize`.
+        self.scan_workspaces().await;
         // REQ-CFG-10 / REQ-ARCH-06: register config file watchers so the client
         // notifies us when jinja.toml or pyproject.toml changes on disk.
         // REQ-HINT-08: also watch *.hints.md so live-editing a sidecar rebuilds the registry.
@@ -601,6 +772,8 @@ impl LanguageServer for Backend {
             }
             // REQ-CFG-11: republish diagnostics so that lint-rule changes are immediately visible.
             self.republish_all_diagnostics().await;
+            // REQ-ARCH-10: a config reload relinks, so derived UI is stale too.
+            self.refresh_derived_ui().await;
         }
     }
 
@@ -657,6 +830,7 @@ impl LanguageServer for Backend {
                 return;
             }
             self.publish_file_diagnostics(&key).await;
+            self.refresh_derived_ui().await;
         }
     }
 
@@ -1024,6 +1198,40 @@ impl LanguageServer for Backend {
             .map(|s| ws_to_lsp_symbol(s, &state.sources, utf8))
             .collect();
         Ok(Some(result))
+    }
+
+    /// REQ-DIAG-07 / E01 §5.6: pull-mode diagnostics.
+    ///
+    /// A read of the store that `publish_file_diagnostics` filled, never a recompute —
+    /// so pull-mode and push-mode clients cannot disagree, and noqa-suppressed findings
+    /// are absent from both. A file the server has not indexed reports an empty set
+    /// rather than an error, which is what the protocol expects for an untracked doc.
+    async fn diagnostic(
+        &self,
+        params: DocumentDiagnosticParams,
+    ) -> Result<DocumentDiagnosticReportResult> {
+        let key = Self::uri_to_key(&params.text_document.uri);
+        let stored = self.state.read().await.diagnostics.get(&key).cloned();
+
+        // Not yet published (a pull can arrive before the first Pass 1 completes):
+        // compute once so the client is not told "no findings" prematurely.
+        let items = match stored {
+            Some(d) => d,
+            None => self
+                .compute_file_diagnostics(&key)
+                .await
+                .unwrap_or_default(),
+        };
+
+        Ok(DocumentDiagnosticReportResult::Report(
+            DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+                related_documents: None,
+                full_document_diagnostic_report: FullDocumentDiagnosticReport {
+                    result_id: None,
+                    items,
+                },
+            }),
+        ))
     }
 
     async fn document_highlight(

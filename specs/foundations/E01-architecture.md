@@ -118,12 +118,39 @@ The `initialize` response declares exactly the providers backed by a feature spe
 
 ### 5.6 Protocol conduct
 
-These are cheap to build in and expensive to retrofit:
+These are cheap to build in and expensive to retrofit. They were written as unnumbered
+prose until 2026-08-19; because they carried no `REQ-` tag, no bead tracked them and the
+first two below were never built while the traceability matrix still read as complete
+(jinja-lsp-dpdb.3). Anything binding in this spec gets a number.
 
-- **Push *and* pull diagnostics** — publish after every relink, including an explicit *empty* publish when a finding clears, and always on open. Pull-mode (`textDocument/diagnostic`) reads the same stored, already-filtered results.
-- **Serialize notifications per URI** so out-of-order `didChange` can't corrupt the buffer.
-- **No stale data** — every edit atomically replaces that file's facts and re-resolves dependent cross-file references.
-- **Fire `inlayHint/refresh` and `codeLens/refresh`** after a relink so editors re-pull derived UI.
+**REQ-ARCH-09 — Deliver diagnostics by push *and* pull.**
+
+Publish after every relink, including an explicit *empty* publish when a finding clears,
+and always on open. Pull-mode (`textDocument/diagnostic`) reads the same **stored,
+already-filtered** results rather than recomputing, so the two modes cannot disagree.
+Suppression and select/ignore filtering are applied **before** the result is stored
+([F01](../features/F01-diagnostics.md) §101) — filtering only on the way out to
+`publish_diagnostics` would let a pull-mode client see findings a push-mode client never
+gets. Zed is a pull-mode client, so a push-only server gives it nothing.
+
+**REQ-ARCH-10 — Refresh derived UI after a relink.**
+
+Fire `inlayHint/refresh` and `codeLens/refresh` once Pass 2 completes, and after a config
+reload forces a relink. Inlay hints and code lenses are derived from cross-file facts (a
+macro's arity, a block override, a reference count) that Pass 2 can change without the
+dependent file being edited; without the refresh the editor renders pre-relink values
+until it re-pulls for reasons of its own. A client that does not support the capability
+answers with an error, which is not a server fault and must not be treated as one.
+
+**REQ-ARCH-11 — Serialize notifications per URI.**
+
+Out-of-order `didChange` must not corrupt the buffer. CPU-bound parsing runs under
+`spawn_blocking`, but the per-URI ordering of document notifications is preserved.
+
+**REQ-ARCH-12 — No stale data.**
+
+Every edit atomically replaces that file's facts and re-resolves dependent cross-file
+references.
 
 ## 7. Visualizations
 
@@ -180,6 +207,10 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-ARCH-NN` maps to
 | REQ-ARCH-06 | watched-files dispatch e2e |
 | REQ-ARCH-07 | covered transitively by every feature's pure-read tests |
 | REQ-ARCH-08 | capability-declaration e2e |
+| REQ-ARCH-09 | push/pull parity test + pull-mode e2e journey |
+| REQ-ARCH-10 | refresh-after-relink test |
+| REQ-ARCH-11 | ordered-didChange e2e |
+| REQ-ARCH-12 | single-file re-extraction test (shared with REQ-ARCH-03) |
 
 ## 12. End-to-End Test Plan
 

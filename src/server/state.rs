@@ -41,6 +41,13 @@ pub struct ServerState {
     pub registry: Registry,
     /// REQ-DEF-07: client declared textDocument/definition linkSupport in InitializeParams.
     pub definition_link_support: bool,
+    /// REQ-ARCH-10: client declared `workspace.inlayHint.refreshSupport` /
+    /// `workspace.codeLens.refreshSupport`. Sending a refresh to a client that
+    /// declared neither is a protocol error on our side, not a client fault.
+    pub inlay_hint_refresh_support: bool,
+    pub code_lens_refresh_support: bool,
+    /// REQ-ARCH-08: client declared `window.workDoneProgress`.
+    pub work_done_progress_support: bool,
     /// True when the client advertised UTF-8 position encoding and we negotiated it;
     /// false when falling back to UTF-16 (LSP default).
     pub position_encoding_utf8: bool,
@@ -63,6 +70,14 @@ pub struct ServerState {
     /// by `did_change` to detect and skip a stale `publish_file_diagnostics` call when
     /// a newer edit's own pass1+publish already landed while this one was still running.
     pub doc_versions: HashMap<String, i32>,
+    /// E01 §5.6 / REQ-ARCH-09: the published diagnostics per file key, already
+    /// filtered by select/ignore and noqa-suppressed.
+    ///
+    /// Pull-mode clients (`textDocument/diagnostic` — the mode Zed uses) read this
+    /// directly, so the store must hold the *final* result. Filtering only on the
+    /// way out to `publish_diagnostics` would let pull-mode clients see findings
+    /// push-mode clients never get, which is the drift F01 §101 exists to prevent.
+    pub diagnostics: HashMap<String, Vec<tower_lsp::lsp_types::Diagnostic>>,
 }
 
 impl ServerState {
@@ -78,6 +93,9 @@ impl ServerState {
             generation: 0,
             registry,
             definition_link_support: false,
+            inlay_hint_refresh_support: false,
+            code_lens_refresh_support: false,
+            work_done_progress_support: false,
             position_encoding_utf8: false,
             config_file_path: None,
             workspace_root: None,
@@ -85,6 +103,7 @@ impl ServerState {
             init_overlay: None,
             sidecar_registries: HashMap::new(),
             doc_versions: HashMap::new(),
+            diagnostics: HashMap::new(),
         }
     }
 
@@ -99,6 +118,9 @@ impl ServerState {
             generation: 0,
             registry,
             definition_link_support: false,
+            inlay_hint_refresh_support: false,
+            code_lens_refresh_support: false,
+            work_done_progress_support: false,
             position_encoding_utf8: false,
             config_file_path: None,
             workspace_root: None,
@@ -106,6 +128,7 @@ impl ServerState {
             init_overlay: None,
             sidecar_registries: HashMap::new(),
             doc_versions: HashMap::new(),
+            diagnostics: HashMap::new(),
         }
     }
 

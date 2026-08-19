@@ -827,3 +827,107 @@ fn jinja_lsp_bv6m_stale_inline_entries_removed_when_host_status_changes() {
         "templates must not retain stale inline entries once the file is no longer a host file"
     );
 }
+
+// ─── REQ-ARCH-08: initialize returns without scanning (jinja-lsp-m83) ────────
+
+#[test]
+fn initialize_does_not_scan_the_workspace() {
+    // The scan reads every template off disk. Clients block on the initialize
+    // response, so scanning inline freezes the editor for the duration on a large
+    // workspace. It belongs in `initialized`, under a workDoneProgress token.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src
+        .find("async fn initialize(")
+        .expect("initialize must exist");
+    let end = src[start..]
+        .find("\n    async fn initialized(")
+        .map(|i| start + i)
+        .expect("initialized must follow initialize");
+    let body = &src[start..end];
+    assert!(
+        !body.contains("build_workspace_abs"),
+        "REQ-ARCH-08: initialize must not scan the workspace; defer it to initialized"
+    );
+    let after = &src[end..];
+    assert!(
+        after.contains("self.scan_workspaces().await"),
+        "REQ-ARCH-08: initialized must kick off the deferred scan"
+    );
+}
+
+#[test]
+fn scan_reports_progress_under_a_work_done_token() {
+    let src = include_str!("../src/server/mod.rs");
+    let start = src
+        .find("async fn scan_workspaces(")
+        .expect("scan_workspaces must exist");
+    let body = &src[start..start + 3000];
+    assert!(
+        body.contains("WorkDoneProgressCreate"),
+        "REQ-ARCH-08: the background scan must create a progress token"
+    );
+    assert!(
+        body.contains("WorkDoneProgress::Begin") && body.contains("WorkDoneProgress::End"),
+        "REQ-ARCH-08: progress must be both begun and ended, or the editor shows a stuck spinner"
+    );
+}
+
+// ─── REQ-ARCH-09/10: one compute path, capability-gated client requests ──────
+
+#[test]
+fn diagnostics_have_a_single_compute_path() {
+    // Push and pull must not be able to disagree, so `run_checks` is reachable from
+    // exactly one place in the server: compute_file_diagnostics.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src
+        .find("async fn compute_file_diagnostics(")
+        .expect("compute_file_diagnostics must exist");
+    let end = src[start..]
+        .find("\n    /// REQ-DIAG-07")
+        .map(|i| start + i)
+        .expect("publish_file_diagnostics must follow the compute fn");
+    let occurrences = src.matches("run_checks(").count();
+    let inside = src[start..end].matches("run_checks(").count();
+    assert_eq!(
+        occurrences, inside,
+        "REQ-ARCH-09: run_checks must only be called from compute_file_diagnostics, \
+         or the pull path can drift from the push path"
+    );
+}
+
+#[test]
+fn pull_handler_reads_the_store_rather_than_recomputing() {
+    let src = include_str!("../src/server/mod.rs");
+    let start = src
+        .find("async fn diagnostic(")
+        .expect("the textDocument/diagnostic handler must exist");
+    let body = &src[start..start + 1400];
+    assert!(
+        body.contains("state.read().await.diagnostics"),
+        "REQ-ARCH-09: pull mode must read the stored, already-filtered diagnostics"
+    );
+}
+
+#[test]
+fn client_requests_are_gated_on_declared_capabilities() {
+    // Sending inlayHint/refresh, codeLens/refresh or workDoneProgress/create to a
+    // client that never declared support makes it answer MethodNotFound — our bug,
+    // not theirs, and on a strict client it fails the request outright.
+    let src = include_str!("../src/server/mod.rs");
+    let start = src
+        .find("async fn refresh_derived_ui(")
+        .expect("refresh_derived_ui must exist");
+    let body = &src[start..start + 1200];
+    assert!(
+        body.contains("inlay_hint_refresh_support") && body.contains("code_lens_refresh_support"),
+        "REQ-ARCH-10: each refresh must be gated on the client's declared refreshSupport"
+    );
+
+    let scan = src
+        .find("async fn scan_workspaces(")
+        .expect("scan_workspaces must exist");
+    assert!(
+        src[scan..scan + 1200].contains("work_done_progress_support"),
+        "REQ-ARCH-08: progress creation must be gated on window.workDoneProgress"
+    );
+}

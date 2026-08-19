@@ -9,7 +9,9 @@ import pytest
 import pytest_lsp
 from lsprotocol import types as lsp
 
-from conftest import FIXTURES, client  # noqa: F401
+from conftest import FIXTURES, open_doc, open_source
+
+SYNTAX_ERR = sorted((FIXTURES / "syntax-errors" / "templates").glob("*.html"))[0]
 
 
 @pytest.mark.asyncio
@@ -106,3 +108,85 @@ async def test_did_close_does_not_crash(client):
         )
     )
     # No exception; file is still in index (verified by server state, not inspectable here)
+
+
+# ── REQ-ARCH-08: initialize returns immediately, scan runs in the background ──
+
+
+@pytest.mark.asyncio
+async def test_initialize_declares_diagnostic_provider(blog_client):
+    """REQ-ARCH-09: the server must advertise pull mode, not only push.
+
+    Zed is a pull-mode client: without `diagnosticProvider` it never issues
+    textDocument/diagnostic and shows no findings at all.
+    """
+    caps = blog_client.server_capabilities
+    assert caps.diagnostic_provider is not None, (
+        "REQ-ARCH-09: diagnosticProvider must be declared"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pull_diagnostics_match_the_push_payload(blog_client):
+    """REQ-ARCH-09: push and pull deliver the identical, already-filtered result."""
+    uri = open_doc(blog_client, SYNTAX_ERR)
+    await blog_client.wait_for_notification("textDocument/publishDiagnostics")
+    pushed = list(blog_client.diagnostics[uri])
+    assert pushed, "the fixture must produce findings, or this proves nothing"
+
+    report = await blog_client.text_document_diagnostic_async(
+        lsp.DocumentDiagnosticParams(text_document=lsp.TextDocumentIdentifier(uri=uri))
+    )
+    pulled = report.items if hasattr(report, "items") else report.full_document_diagnostic_report.items
+
+    key = lambda d: (d.range.start.line, d.range.start.character, str(d.code))
+    assert sorted(map(key, pulled)) == sorted(map(key, pushed)), (
+        f"push and pull must agree.\npush: {sorted(map(key, pushed))}\n"
+        f"pull: {sorted(map(key, pulled))}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_noqa_suppressed_findings_are_absent_from_pull_mode(client):
+    """REQ-ARCH-09 / F01 §101: suppression is applied before storing, not on publish.
+
+    Filtering only on the way out to publish_diagnostics would let a pull-mode
+    client see a finding a push-mode client never gets.
+    """
+    source = '{% import "nope.html" as m %}{# noqa #}\n'
+    uri = open_source(client, "file:///tmp/jinja_lsp_e2e_noqa_pull.html", source)
+    await client.wait_for_notification("textDocument/publishDiagnostics")
+    assert not list(client.diagnostics.get(uri, [])), "push must honour the noqa"
+
+    report = await client.text_document_diagnostic_async(
+        lsp.DocumentDiagnosticParams(text_document=lsp.TextDocumentIdentifier(uri=uri))
+    )
+    pulled = report.items if hasattr(report, "items") else report.full_document_diagnostic_report.items
+    assert not pulled, f"pull must honour the same noqa; got {pulled}"
+
+
+@pytest.mark.asyncio
+async def test_two_rapid_did_changes_apply_in_order(client):
+    """REQ-ARCH-11: the newest edit wins; an out-of-order apply would corrupt state."""
+    uri = open_source(client, "file:///tmp/jinja_lsp_e2e_order.html", "{{ a }}\n")
+    await client.wait_for_notification("textDocument/publishDiagnostics")
+
+    for version, text in ((2, "{% for x in y %}\n"), (3, "{{ final }}\n")):
+        client.text_document_did_change(
+            lsp.DidChangeTextDocumentParams(
+                text_document=lsp.VersionedTextDocumentIdentifier(uri=uri, version=version),
+                content_changes=[lsp.TextDocumentContentChangeWholeDocument(text=text)],
+            )
+        )
+    await client.wait_for_notification("textDocument/publishDiagnostics")
+
+    # v2 is an unclosed {% for %} and would report JINJA-E001; v3 is clean. If the
+    # edits landed out of order the stale syntax error would still be showing.
+    report = await client.text_document_diagnostic_async(
+        lsp.DocumentDiagnosticParams(text_document=lsp.TextDocumentIdentifier(uri=uri))
+    )
+    pulled = report.items if hasattr(report, "items") else report.full_document_diagnostic_report.items
+    codes = {str(d.code) for d in pulled}
+    assert "JINJA-E001" not in codes, (
+        f"the superseded v2 edit is still reflected in the index; got {codes}"
+    )
