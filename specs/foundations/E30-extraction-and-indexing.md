@@ -110,9 +110,11 @@ After extraction, the relink resolves each `TemplateReference` (`extends`/`inclu
 
 A template path in `extends`/`include`/`import` resolves relative to a configured templates directory, and may not escape it.
 
-**REQ-EXTR-07 — Resolve relative to templates dirs; reject `../` escapes.**
+**REQ-EXTR-07 — Resolution is a lookup in the indexed set; nothing outside it can load.**
 
-A template reference path resolves relative to the nearest configured templates directory. A path that escapes a templates directory with `..` is **rejected** — it is not resolved and does not load anything outside the configured tree. This is the path-traversal defense from the constitution's §4.6 security posture.
+A template reference resolves by looking its path up among the templates already indexed from the configured directories. Nothing outside that set is reachable, so `{% extends "../secret.html" %}` and `{% extends "/etc/passwd" %}` both resolve to nothing and report `JINJA-E601` — this is the path-traversal defense from the constitution's §4.6 security posture.
+
+**Why a lookup rather than a path resolver** (jinja-lsp-hw71.1). This requirement was once implemented as `resolve_path()` in `src/parsing/path_resolver.rs`, which joined the reference onto the templates directory and rejected the result if it escaped. It was deleted for two reasons: it had zero production callers — resolution already went through the index map — and it failed its own contract, because `dir.join("/etc/passwd")` is `/etc/passwd`, so an absolute path escaped the very check meant to stop it. The lookup has no such hole: a path is reachable only by being in the indexed set, and normalisation bugs cannot widen that set. `jinja_lsp_gz5q_dead_path_resolver_removed` in `tests/architecture.rs` keeps the resolver deleted; `REQ-EXTR-07`'s own tests assert the traversal cases report E601.
 
 ### 5.6 Multi-folder workspaces
 
@@ -157,7 +159,7 @@ Indexing `starlette-blog`: discovery finds `base.html`, `blog/post.html`, `blog/
 ## 10. Edge Cases & Failure Modes
 
 - **A query node-type drifted from the upstream grammar** → empty captures, no error; the per-query fixture test (REQ-EXTR-02) catches it.
-- **`{% extends "../secret.html" %}`** → rejected by path resolution (REQ-EXTR-07); not loaded.
+- **`{% extends "../secret.html" %}` or `{% extends "/etc/passwd" %}`** → absent from the indexed set, so unresolved and reported `JINJA-E601` (REQ-EXTR-07); never loaded.
 - **`{% include "x" ignore missing %}` where `x` is absent** → resolved as missing but silent (`ignore_missing`, [E07](E07-data-model.md)); no `JINJA-E601`.
 - **Cross-folder `extends`** → unresolved (REQ-EXTR-08); the reference stays dangling, the chain stops.
 - **A 500-template workspace** → rebuild stays under 2 s (REQ-EXTR-09); over budget is a perf regression, caught by the `large-workspace` timing test.

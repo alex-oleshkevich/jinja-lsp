@@ -20,7 +20,7 @@ This spec covers:
 
 - Partial-parse recovery.
 - The never-panic discipline.
-- The error-type taxonomy (`ParseError`, `ExtractionError`, `ConfigError`, `DiagnosticError`).
+- The error-type taxonomy (`ConfigError`, `PackError`, `SyntaxError`).
 - `tracing` spans on slow paths.
 
 ## 2. Non-Goals / Out of Scope
@@ -61,18 +61,19 @@ Every extraction step returns a `Result` and is allowed to fail for one node wit
 
 ### 5.3 The error-type taxonomy
 
-Errors are typed by where they come from, so callers can decide what's fatal and what's a log line. There are four error types.
+Errors are typed by where they come from, so callers can decide what's fatal and what's a log line. **Nothing here aborts the server** — that invariant is the point of this section, not the specific type count.
 
-**REQ-CONV-03 — Four error types, only one ever fatal-ish.**
+**REQ-CONV-03 — Three error types, none fatal.**
 
-| Type | Raised by | Severity |
-|---|---|---|
-| `ParseError` | the tree-sitter wrapper, when a tree can't be obtained at all (rare) | recoverable — record `JINJA-E001`, continue |
-| `ExtractionError` | a query/symbol-extraction step | recoverable — log, skip the node |
-| `ConfigError` | config parsing/validation ([E15](E15-app-config.md)) | reported to the user; previous valid config retained |
-| `DiagnosticError` | a check that can't complete | **non-fatal** — the check is skipped, others run |
+| Type | Defined in | Raised by | Severity |
+|---|---|---|---|
+| `ConfigError` | `src/config.rs` | config parsing/validation ([E15](E15-app-config.md)) | reported to the user; previous valid config retained |
+| `PackError` | `src/builtins/packs.rs` | loading a framework extension pack | logged; the pack is skipped, the rest of the registry loads |
+| `SyntaxError` | `src/workspace/symbols.rs` | the parser, per unparseable region | recorded as `JINJA-E001`; extraction continues past it |
 
-None of these aborts the server. `ConfigError` is the most visible (it surfaces as a workspace diagnostic), but even it degrades — the session keeps its last good config ([E15](E15-app-config.md#56-live-config-reload)). `DiagnosticError` is explicitly non-fatal: one misbehaving check never suppresses the others.
+`ConfigError` is the most visible (it surfaces as a workspace diagnostic), but even it degrades — the session keeps its last good config ([E15](E15-app-config.md#56-live-config-reload)).
+
+**Why not the four types this spec used to name** (jinja-lsp-pvq3). `ParseError`, `ExtractionError`, `ConfigError` and `DiagnosticError` were once written as `src/error.rs`, then deleted as dead code: nothing outside that module ever referenced them, they implemented neither `Display` nor `std::error::Error`, and `ConfigError` duplicated the real one in `config.rs`. Two of the four could not exist as written — tree-sitter always returns a tree, so there is no "no tree at all" failure for `ParseError` to describe, and the checks are pure functions over an index that return `Vec<Diagnostic>` and have no failure mode for `DiagnosticError` to carry. The recovery *behaviour* those types were meant to guarantee is still required and still tested: a bad node is skipped rather than propagated (REQ-CONV-02), and a syntax error suppresses only the other checks for that file (F01 §10), by construction rather than by error type.
 
 ### 5.4 Observability
 
@@ -84,23 +85,21 @@ The expensive operations carry a `tracing` span: the workspace index rebuild (Pa
 
 ## 8. Data Shapes
 
-The error taxonomy as a Rust enum sketch — the analysis pipeline returns these, and the server logs rather than propagates the recoverable variants:
+There is deliberately **no** unifying `JinjaError` enum and no `src/error.rs`. Each error type lives beside the code that raises it, because nothing ever needs to handle two of them at one call site:
 
 ```rust
-// src/error.rs
-pub enum JinjaError {
-    Parse(ParseError),            // tree unobtainable → record E001
-    Extraction(ExtractionError),  // one node failed → log, skip
-    Config(ConfigError),          // bad config → workspace diagnostic, retain prior
-    Diagnostic(DiagnosticError),  // a check failed → skip it, run the rest
-}
+crate::config::ConfigError            // bad config     -> workspace diagnostic, retain prior
+crate::builtins::packs::PackError     // bad pack       -> log, skip that pack
+crate::workspace::symbols::SyntaxError // unparseable region -> record JINJA-E001, keep extracting
 ```
+
+A wrapper enum would exist only to be immediately matched back apart. Recovery for everything else is structural rather than typed — an extraction step that cannot make sense of a node skips it and returns the symbols it did find.
 
 ## 10. Edge Cases & Failure Modes
 
 - **Unclosed tag mid-file** → `JINJA-E001` recorded; symbols before it still extract (REQ-CONV-01).
-- **A query matches an unexpected node shape** → `ExtractionError`, logged at `warn`, that node skipped (REQ-CONV-02).
-- **One check throws** → `DiagnosticError`; that code is absent from the results, every other code still publishes (REQ-CONV-03).
+- **A query matches an unexpected node shape** → the node is skipped and extraction continues; no error value propagates (REQ-CONV-02).
+- **A pack fails to load** → `PackError`, logged; that pack's builtins are absent, every other registry entry still loads (REQ-CONV-03).
 - **`tracing` misconfigured to stdout** → forbidden; it would corrupt the JSON-RPC stream (REQ-CONV-04).
 
 ## 11. Testing

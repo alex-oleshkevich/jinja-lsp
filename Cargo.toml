@@ -27,5 +27,4 @@ similar = "2"
 owo-colors = "4"
 
 [dev-dependencies]
-insta = "1"
 tempfile = "3"

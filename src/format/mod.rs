@@ -1,3 +1,5 @@
+pub mod cli;
+
 // Jinja-only formatter engine — called by both the LSP formatting handler
 // and the `jinja-lsp format` CLI front-end (F18).
 //

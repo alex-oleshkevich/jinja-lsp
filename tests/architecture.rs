@@ -202,19 +202,21 @@ fn textedit_and_workspaceedit_defined_in_edit_module() {
 }
 
 #[test]
-fn jinja_lsp_gqdd_empty_linter_module_removed() {
-    // The linter module was a stale placeholder: a comment claiming it held CLI
-    // orchestration for `jinja-lsp check` and rich/compact/json formatters, but
-    // all of that logic actually lives in src/main.rs — the module itself was
-    // completely empty. Neither the module nor its declaration should exist.
+fn jinja_lsp_gqdd_linter_module_is_not_an_empty_placeholder() {
+    // jinja-lsp-gqdd deleted src/linter/ because it was a stale placeholder: a
+    // comment claiming it held the check front-end while all of it actually lived
+    // in main.rs. REQ-FOLD-01 (jinja-lsp-kap) restores the module with the real
+    // implementation moved into it. The rule was never "no linter module" — it was
+    // "no module that lies about what it contains", so assert content, not absence.
+    let linter = include_str!("../src/linter/mod.rs");
     assert!(
-        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/linter")).exists(),
-        "src/linter/ must be removed, not left as an empty placeholder"
+        linter.contains("pub fn run_check("),
+        "src/linter/ must hold the check front-end, not a comment describing it"
     );
-    let lib_src = include_str!("../src/lib.rs");
     assert!(
-        !lib_src.contains("mod linter"),
-        "lib.rs must not declare a linter module that no longer exists"
+        linter.lines().count() > 100,
+        "src/linter/ looks like a placeholder again ({} lines)",
+        linter.lines().count()
     );
 }
 
@@ -306,7 +308,8 @@ fn jinja_lsp_0zz7_update_file_does_not_clone_registry_when_no_sidecar() {
 fn jinja_lsp_0zz7_cli_lint_loop_does_not_clone_registry_when_no_sidecar() {
     // jinja-lsp-0zz7: the CLI check loop cloned base_registry for every template
     // unconditionally. It must only clone when a sidecar file actually exists.
-    let src = include_str!("../src/main.rs");
+    // REQ-FOLD-01 (jinja-lsp-kap): the check front-end moved out of main.rs.
+    let src = include_str!("../src/linter/mod.rs");
     let start = src
         .find("for idx in workspace.templates.values()")
         .expect("CLI lint loop must exist");
@@ -384,7 +387,8 @@ fn jinja_lsp_54gh_rich_formatter_does_not_reread_source_per_diagnostic() {
     // once PER DIAGNOSTIC — a file with 50 findings was read 50 times, on top of
     // already being read once for checks and once for noqa. Sources must be cached
     // per file and reused for rendering instead.
-    let src = include_str!("../src/main.rs");
+    // REQ-FOLD-01 (jinja-lsp-kap): the check front-end moved out of main.rs.
+    let src = include_str!("../src/linter/mod.rs");
     let start = src
         .find("_ => {\n            // REQ-LINT-04: rich rustc-style report")
         .expect("rich formatter branch must exist");
@@ -925,4 +929,49 @@ fn client_requests_are_gated_on_declared_capabilities() {
         src[scan..scan + 1200].contains("work_done_progress_support"),
         "REQ-ARCH-08: progress creation must be gated on window.workDoneProgress"
     );
+}
+
+// ─── REQ-EXTR-07: nothing outside the indexed set can load (jinja-lsp-hw71.1) ─
+
+#[test]
+fn req_extr_07_traversal_paths_resolve_to_nothing() {
+    // The defence is structural: resolution is a lookup in the set of templates
+    // indexed from the configured dirs, so a reference can only reach what is
+    // already in that set. The deleted resolve_path() tried to enforce this by
+    // joining and comparing prefixes, and let absolute paths straight through
+    // (dir.join("/etc/passwd") == "/etc/passwd").
+    use jinja_lsp::server::state::ServerState;
+
+    let tmp = std::env::temp_dir().join("jinja_lsp_extr07");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("templates")).unwrap();
+    fs::write(tmp.join("secret.html"), "SECRET").unwrap();
+    fs::write(
+        tmp.join("templates/evil.html"),
+        r#"{% extends "../secret.html" %}"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("templates/abs.html"),
+        r#"{% extends "/etc/passwd" %}"#,
+    )
+    .unwrap();
+
+    let state = ServerState::from_dirs(&[tmp.join("templates").as_path()], &["html"]);
+    let indexed: Vec<&String> = state.workspace.templates.keys().collect();
+    assert_eq!(
+        indexed.len(),
+        2,
+        "only the two files under templates/ may be indexed; got {indexed:?}"
+    );
+    assert!(
+        !state.workspace.templates.contains_key("../secret.html"),
+        "a traversal path must never become an index key"
+    );
+    assert!(
+        !state.workspace.templates.contains_key("/etc/passwd"),
+        "an absolute path must never become an index key"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
 }

@@ -90,7 +90,9 @@ Tests split along a language line: everything except the LSP-protocol e2e is Rus
 
 **REQ-STACK-05 — Rust test tooling.**
 
-The Rust test toolchain is `cargo nextest` as the runner and `insta` for snapshot tests (the formatter golden tests and the rich/compact report snapshots). See [E17-testing](E17-testing.md).
+The Rust test runner is `cargo nextest`. Golden comparisons use **checked-in fixture files**, not a snapshot library: the formatter diffs `tests/fixtures/formatter/*.input` against `*.expected`, and the diagnostic corpus diffs `check --format json` against each fixture's `expected-diagnostics.json`, both regenerated with `UPDATE_FIXTURES=1`. See [E17-testing](E17-testing.md).
+
+`insta` was specified here and carried as a dev-dependency but was never used in a single test (jinja-lsp-6il); it is dropped. Committed fixture files review as ordinary diffs and are readable in a CI log without the tool that produced them, which is what a golden comparison is for. Report rendering (`rich`/`compact`) is asserted explicitly rather than snapshotted, so a change to one line of output names the property that broke instead of showing a wall of diff.
 
 **REQ-STACK-06 — Python e2e tooling is confined to `tests/e2e/`.**
 
@@ -127,7 +129,6 @@ clap = { version = "4", features = ["derive"] }
 tree-sitter-jinja = { git = "https://github.com/alex-oleshkevich/tree-sitter-jinja", rev = "<pinned-rev>" }  # upstream: block + inline (ADR-002)
 
 [dev-dependencies]
-insta = "1"                # snapshot tests (E17)
 # cargo nextest is a runner, installed separately, not a dependency
 ```
 
@@ -173,7 +174,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-STACK-NN` maps t
 | REQ-STACK-02 | build resolves the pinned versions |
 | REQ-STACK-03 | per-query extraction test on the upstream grammar |
 | REQ-STACK-04 | per-query extraction test (drift detection) |
-| REQ-STACK-05 | nextest runs the suite |
+| REQ-STACK-05 | nextest runs the suite; no-unused-dev-dependency lint |
 | REQ-STACK-06 | crate-manifest Python-leak lint |
 | REQ-STACK-07 | license lint |
 

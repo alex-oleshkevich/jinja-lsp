@@ -66,7 +66,7 @@ src/
 
 **REQ-FOLD-01 — One crate, layered modules.**
 
-jinja-lsp is a single binary crate. The entry point is `src/main.rs`, which parses the CLI with `clap` and dispatches to one of the three front-ends. The `lsp` subcommand starts `server.rs`; `check` and `format` call into `linter/` and `format/` respectively. No analysis logic lives in `main.rs` — it only routes.
+jinja-lsp is a single binary crate. The entry point is `src/main.rs`, which parses the CLI with `clap` and dispatches to one of the three front-ends. The `lsp` subcommand starts `server.rs`; `check` and `format` call into `linter/` and `format/cli.rs` respectively. No analysis logic lives in `main.rs` — it only routes.
 
 ### 5.2 The analysis layers
 
@@ -82,7 +82,7 @@ The analysis layers are where facts are produced and read. They stack from raw p
 
 **REQ-FOLD-04 — `diagnostics/checks/` is one module per check.**
 
-`src/diagnostics/checks/` holds one module per check — 20 modules, mapping to the 20 non-syntax codes — plus syntax-error handling in the diagnostics engine itself. Each module is a pure read of a `TemplateIndex` or `WorkspaceIndex`. The catalog of checks lives in [F01](../features/F01-diagnostics.md).
+`src/diagnostics/checks/` holds one module per check, named for the code(s) it emits (a few checks emit a related pair, e.g. `w402_e401`), plus syntax-error handling in the diagnostics engine itself. `checks/mod.rs` is the dispatcher only. Each module is a pure read of a `TemplateIndex` or `WorkspaceIndex`. The catalog of checks lives in [F01](../features/F01-diagnostics.md).
 
 **REQ-FOLD-05 — `builtins/` is the registry and its loaders.**
 

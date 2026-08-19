@@ -210,3 +210,35 @@ fn checks_mod_is_a_dispatcher_not_an_implementation() {
         "REQ-FOLD-04: checks/mod.rs must not define a check; move it to its own module"
     );
 }
+
+// ─── REQ-FOLD-01: main.rs only routes (jinja-lsp-kap) ───────────────────────
+
+#[test]
+fn main_only_parses_the_cli_and_dispatches() {
+    // main.rs was 936 lines: the whole check front-end — orchestration plus the
+    // rich/compact/json formatters — lived there, so "main.rs only routes" was
+    // true of one of the three subcommands.
+    let src = include_str!("../src/main.rs");
+    assert!(
+        src.lines().count() < 150,
+        "REQ-FOLD-01: main.rs must only parse the CLI and dispatch; it is {} lines",
+        src.lines().count()
+    );
+    for leaked in [
+        "run_checks(",
+        "build_workspace(",
+        "JinjaConfig::discover",
+        "filter_by_config",
+        "suppress_by_noqa",
+    ] {
+        assert!(
+            !src.contains(leaked),
+            "REQ-FOLD-01: {leaked:?} is analysis logic; it belongs in linter/ or format/"
+        );
+    }
+    assert!(
+        src.contains("use jinja_lsp::linter::run_check")
+            && src.contains("use jinja_lsp::format::cli::run_format"),
+        "REQ-FOLD-01: main.rs must dispatch into linter/ and format/"
+    );
+}

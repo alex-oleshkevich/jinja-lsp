@@ -150,10 +150,13 @@ jinja-lsp format PATH [--check]
 
 ## Development
 
+Every routine task has a `just` recipe — run `just` to list them.
+
 ```bash
-cargo build
-cargo nextest run
-uv run --group dev pytest tests/e2e/ -v
+just build
+just test        # cargo nextest run
+just test-e2e    # Python LSP-protocol suite against the real binary
+just check-all   # everything CI gates on
 ```
 
 ## License

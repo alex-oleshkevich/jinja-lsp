@@ -167,8 +167,8 @@ and match CI; add a recipe rather than documenting a bare command here.
 ```bash
 just              # list all recipes
 just build
-just test         # cargo nextest run — the runner CI uses (1145 tests, ~1s after build)
-just test-e2e     # Python LSP-protocol e2e (31 tests); builds the debug binary first
+just test         # cargo nextest run — the runner CI uses (1169 tests, ~1s after build)
+just test-e2e     # Python LSP-protocol e2e (35 tests); builds the debug binary first
 just lint         # clippy --all-targets -D warnings
 just fmt
 just check        # the CI gate set: fmt --check + clippy + nextest
@@ -199,15 +199,16 @@ version **and** a dated `CHANGELOG.md` section for that version.
 
 ### Layout
 ```
-src/main.rs           clap CLI dispatch + the check/format front-ends (no analysis logic)
+src/main.rs           clap CLI dispatch only — routes to linter/, format/cli.rs, server/
+src/linter/           the `check` front-end: orchestration + rich/compact/json output
 src/server/           tower-lsp backend (mod.rs) + ServerState (state.rs)
 src/config.rs         jinja.toml / [tool.jinja] discovery, zero-config, InitializationOptions overlay
 src/parsing/          tree-sitter wrapper, extractor, inline-template detection, queries/*.scm (17)
 src/workspace/        TemplateIndex, WorkspaceIndex, symbols, builder (Pass 2)
-src/diagnostics/      DiagCode enum, checks/, noqa suppression, select/ignore filter
+src/diagnostics/      DiagCode enum, checks/ (one module per code), noqa, select/ignore filter
 src/builtins/         doc registry, docs/ (113 embedded .md), framework packs, user hints
 src/features/         one pure-function module per LSP capability (top layer)
-src/format/           the Jinja-only formatter engine
+src/format/           the Jinja-only formatter engine (+ cli.rs, the `format` front-end)
 src/edit/             shared TextEdit/WorkspaceEdit builders
 tests/*.rs            55 integration crates; tests/fixtures/ golden corpora; tests/e2e/ pytest-lsp
 specs/                the source of truth — index.md, foundations E##, features F##, decisions ADR-###
@@ -266,7 +267,7 @@ setting correctly falls back instead of leaving a stale value. Keys: `templates`
   binary path (CI points it at the release build).
 - Tests reference requirement tags (`REQ-ARCH-03`, `REQ-DIAG-04`, …) and bead ids in comments — keep
   that habit so a failing test names the spec clause it defends.
-- `insta` is a declared dev-dependency but currently unused; prefer explicit assertions or golden files.
+- Golden comparisons use checked-in fixture files, never a snapshot library (REQ-STACK-05); `insta` was dropped as unused.
 
 ### Conventions specific to this repo
 - Errors: `ConfigError` (`src/config.rs`), `PackError` (`src/builtins/packs.rs`), `SyntaxError`
