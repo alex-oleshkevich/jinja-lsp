@@ -139,7 +139,7 @@
 
 (raw_end) @keyword
 
-(raw_body) @markup.raw.block
+(raw_body) @text.literal
 
 (builtin_test
   [

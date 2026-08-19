@@ -739,3 +739,47 @@ fn highlights_use_no_neovim_only_captures() {
         }
     }
 }
+
+#[test]
+fn every_highlight_capture_resolves_to_a_theme_key() {
+    // Zed's SyntaxTheme::highlight_id does a longest-prefix match: a capture
+    // resolves if some theme key is a prefix of it and the remainder is empty or
+    // starts with '.'. So `keyword.directive` styles as `keyword`, but a capture
+    // whose *root* segment is unknown (`markup.raw.block`) matches nothing and
+    // renders unstyled — silently, since there is no error for it anywhere.
+    //
+    // Root keys from Zed's One theme (assets/themes/one/one.json).
+    const THEME_ROOTS: &[&str] = &[
+        "attribute", "boolean", "comment", "constant", "constructor", "diff", "embedded",
+        "emphasis", "enum", "function", "hint", "keyword", "label", "link_text", "link_uri",
+        "namespace", "number", "operator", "predictive", "preproc", "primary", "property",
+        "punctuation", "selector", "string", "tag", "text", "title", "type", "variable",
+        "variant",
+    ];
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path().join("highlights.scm");
+        if !path.is_file() {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("readable");
+        for cap in src.split('@').skip(1) {
+            let name: String = cap
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '.' || *c == '_')
+                .collect();
+            let name = name.trim_end_matches('.');
+            if name.is_empty() {
+                continue;
+            }
+            let root = name.split('.').next().unwrap_or(name);
+            assert!(
+                THEME_ROOTS.contains(&root),
+                "{}: capture @{name} has root {root:?}, which no Zed theme key matches — \
+                 it will render unstyled",
+                path.display()
+            );
+        }
+    }
+}
