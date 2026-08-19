@@ -24,22 +24,36 @@ It runs *alongside* your Python and HTML language servers, owning the Jinja laye
 ## Installation
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/alex-oleshkevich/jinja-lsp/master/install.sh | bash
+```
+
+This picks the right build for your machine, checks it against the published SHA-256, and puts the binary in `~/.local/bin`. It never asks for sudo and writes nothing outside that directory. If `~/.local/bin` is not on your `PATH`, the script says so and prints the line to add.
+
+Two environment variables change what it does. Note that they go on `bash`, not on `curl`, because the two are separate processes and only `bash` runs the script:
+
+```bash
+# pin a version instead of taking the latest
+curl -fsSL https://raw.githubusercontent.com/alex-oleshkevich/jinja-lsp/master/install.sh \
+  | JINJA_LSP_VERSION=0.2.0 bash
+
+# install somewhere other than ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/alex-oleshkevich/jinja-lsp/master/install.sh \
+  | JINJA_LSP_INSTALL_DIR=~/bin bash
+```
+
+Intel Macs have no published build. Apple Silicon, Linux (x86_64 and ARM64), and Windows do.
+
+If you would rather use a package manager:
+
+```bash
 uv tool install jinja-lsp
-```
-
-Or with pip:
-
-```bash
 pip install jinja-lsp
+yay -S jinja-lsp-plus-bin          # Arch Linux
 ```
 
-Both install a self-contained Rust binary — no Rust toolchain, no Python runtime dependency. Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases).
+The Python packages ship the same self-contained Rust binary, so neither needs a Rust toolchain, and nothing imports Python at runtime. On the AUR the package is `jinja-lsp-plus-bin`. The similarly named `jinja-lsp-bin` belongs to an unrelated project.
 
-Arch Linux ([AUR](https://aur.archlinux.org/packages/jinja-lsp-plus-bin)) — named `jinja-lsp-plus-bin`, not `jinja-lsp-bin`, which belongs to an unrelated project:
-
-```bash
-yay -S jinja-lsp-plus-bin
-```
+You can also grab an archive from the [releases page](https://github.com/alex-oleshkevich/jinja-lsp/releases) and put the binary wherever you like.
 
 ## Editor setup
 

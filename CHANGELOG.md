@@ -7,6 +7,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 <!-- Add entries above this line when cutting a release -->
 
+## [0.3.0] - 2026-08-19
+
+### Added
+- `install.sh`, a `curl | bash` installer. It detects the platform, verifies the
+  published SHA-256 before installing, and writes to `~/.local/bin` (honouring
+  `XDG_BIN_HOME`, overridable with `JINJA_LSP_INSTALL_DIR`). Never uses sudo.
+  `JINJA_LSP_VERSION` pins a tag.
+- Pull diagnostics (`textDocument/diagnostic`), reading the same stored, already
+  filtered results the push path publishes. Zed is a pull-mode client, so it
+  previously received no diagnostics at all.
+- `inlayHint/refresh` and `codeLens/refresh` after a relink, so derived UI stops
+  showing pre-relink values.
+- CI now builds against the declared MSRV (1.85) and compiles the Zed extension
+  for `wasm32-wasip2`. Neither had ever been built by CI.
+
+### Fixed
+- Filter pipes are padded per REQ-FMT-04 (`x|e` becomes `x | e`). The formatter
+  did the opposite, and the golden fixture had been regenerated to match, so it
+  defended the behaviour instead of the requirement. `[format] space_around_pipe
+  = false` restores the compact form.
+- Macro parameters now highlight: the parameter declaration as a write, each
+  in-body use as a read.
+- The Zed extension passes your shell environment to the server instead of an
+  empty one. Launched from a desktop icon rather than a terminal, `PATH`, an
+  activated virtualenv, and toolchain variables were all missing.
+- `initialize` returns immediately; the workspace scan runs in the background
+  under a progress token instead of blocking the response.
+- `editors/zed/LICENSE` is committed, which the Zed marketplace validator
+  requires (it reads the extension directory, not the repo root).
+
+### Changed
+- `src/diagnostics/checks/` is one module per check, and the `check` front-end
+  moved out of `main.rs` into `src/linter/`.
+- Dropped the unused `insta` dev-dependency; golden comparisons use checked-in
+  fixture files.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
