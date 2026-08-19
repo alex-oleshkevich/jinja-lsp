@@ -25,7 +25,7 @@
 
 "defined" @constant
 
-(comment) @comment @spell
+(comment) @comment
 
 [
   ","
@@ -139,7 +139,7 @@
 
 (raw_end) @keyword
 
-(raw_body) @markup.raw.block @nospell
+(raw_body) @markup.raw.block
 
 (builtin_test
   [

@@ -1,11 +1,12 @@
 name = "Jinja2 (HTML)"
 grammar = "jinja"
 path_suffixes = ["html.j2", "html.jinja", "html.jinja2"]
-block_comment = ["{# ", " #}"]
+autoclose_before = "<>})],;:"
+block_comment = { start = "{# ", prefix = "", end = " #}", tab_size = 0 }
 brackets = [
   { start = "{%", end = "%}", close = true, newline = false },
   { start = "{{", end = "}}", close = true, newline = false },
   { start = "{#", end = "#}", close = true, newline = false },
-  { start = "(", end = ")", close = true, newline = false },
-  { start = "[", end = "]", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false, not_in = ["comment", "string"] },
+  { start = "[", end = "]", close = true, newline = false, not_in = ["comment", "string"] },
 ]

@@ -1,12 +1,13 @@
 name = "Jinja2 (Shell)"
 grammar = "jinja"
 path_suffixes = ["sh.jinja", "sh.jinja2", "sh.j2", "bash.jinja", "bash.jinja2", "bash.j2"]
-block_comment = ["{# ", " #}"]
+autoclose_before = "<>})],;:"
+block_comment = { start = "{# ", prefix = "", end = " #}", tab_size = 0 }
 brackets = [
   { start = "{%", end = "%}", close = true, newline = false },
   { start = "{{", end = "}}", close = true, newline = false },
   { start = "{#", end = "#}", close = true, newline = false },
-  { start = "(", end = ")", close = true, newline = false },
-  { start = "[", end = "]", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false, not_in = ["comment", "string"] },
+  { start = "[", end = "]", close = true, newline = false, not_in = ["comment", "string"] },
   { start = "{", end = "}", close = true, newline = true },
 ]

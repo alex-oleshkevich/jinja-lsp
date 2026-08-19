@@ -231,30 +231,38 @@ fn assert_block_comment_not_line_comments(cfg_raw: &str, label: &str) {
         "line_comments must not be set for Jinja ({label}) — {{# #}} is a block comment, not a line prefix"
     );
 
-    let block_comment = cfg["block_comment"]
-        .as_array()
-        .unwrap_or_else(|| panic!("block_comment must be set as a [start, end] pair ({label})"));
-    let pair: Vec<&str> = block_comment
-        .iter()
-        .map(|v| v.as_str().unwrap_or(""))
-        .collect();
+    // The structured form Zed's own builtins use. The legacy ["start", "end"]
+    // array still deserializes, but fills in prefix="" tab_size=0 implicitly;
+    // spelling them out is the current shape and keeps the delimiters explicit.
+    let bc = cfg["block_comment"]
+        .as_table()
+        .unwrap_or_else(|| panic!("block_comment must be a table ({label})"));
     assert_eq!(
-        pair,
-        vec!["{# ", " #}"],
-        "block_comment must be [\"{{# \", \" #}}\"] ({label})"
+        bc.get("start").and_then(|v| v.as_str()),
+        Some("{# "),
+        "block_comment.start keeps its trailing space so toggling yields `{{# text #}}` ({label})"
+    );
+    assert_eq!(
+        bc.get("end").and_then(|v| v.as_str()),
+        Some(" #}"),
+        "block_comment.end keeps its leading space ({label})"
     );
 }
 
 #[test]
 fn zed_language_config_uses_block_comment_not_line_comments() {
-    assert_block_comment_not_line_comments(
-        include_str!("../editors/zed/languages/jinja2/config.toml"),
-        "jinja2",
-    );
-    assert_block_comment_not_line_comments(
-        include_str!("../editors/zed/languages/jinja2-html/config.toml"),
-        "jinja2-html",
-    );
+    // Every language, not the two that happened to be named here: enumerating
+    // specific cases is what let the missing `brackets` sit in two configs.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path();
+        if !path.is_dir() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(path.join("config.toml")).expect("config.toml");
+        let label = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert_block_comment_not_line_comments(&raw, &label);
+    }
 }
 
 // ─── T-14: REQ-EDIT-07 — language_server_command returns jinja-lsp lsp ───────
@@ -664,6 +672,68 @@ fn every_language_auto_closes_the_jinja_delimiters() {
             assert!(
                 starts.contains(&delim),
                 "{}: brackets must auto-close {delim:?}; got {starts:?}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn zed_authors_use_the_documented_name_and_email_form() {
+    let m = manifest();
+    let authors = m["authors"].as_array().expect("authors array");
+    for a in authors {
+        let a = a.as_str().unwrap_or("");
+        assert!(
+            a.contains('<') && a.contains('@') && a.ends_with('>'),
+            "extension.toml authors use the documented \"Name <email>\" form; got {a:?}"
+        );
+    }
+}
+
+#[test]
+fn every_language_sets_autoclose_before() {
+    // Without it a bracket auto-closes only before whitespace or end of line, so
+    // typing `{{` in `{{ x }}<br>` (immediately before `<`) does nothing. That is
+    // the most common position in a template. Zed's own HTML sets ">})".
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path();
+        if !path.is_dir() {
+            continue;
+        }
+        let cfg: toml::Value = toml::from_str(
+            &std::fs::read_to_string(path.join("config.toml")).expect("config.toml"),
+        )
+        .expect("valid TOML");
+        let ac = cfg
+            .get("autoclose_before")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("{}: must set autoclose_before", path.display()));
+        assert!(
+            ac.contains('<'),
+            "{}: autoclose_before must include '<' or `{{{{` will not close before a tag; got {ac:?}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn highlights_use_no_neovim_only_captures() {
+    // Zed resolves multiple captures right-to-left and has no notion of spell
+    // regions, so `@spell`/`@nospell` were inert and only obscured which capture
+    // was actually doing the work.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editors/zed/languages");
+    for entry in std::fs::read_dir(&dir).expect("languages dir") {
+        let path = entry.expect("entry").path().join("highlights.scm");
+        if !path.is_file() {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("readable");
+        for cap in ["@spell", "@nospell"] {
+            assert!(
+                !src.contains(cap),
+                "{}: {cap} is a Neovim convention with no effect in Zed",
                 path.display()
             );
         }
