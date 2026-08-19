@@ -135,33 +135,159 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 
 ## 10. Project context
 
+### What this is
+`jinja-lsp` — a **specialist** language server for Jinja2 templates. One Rust binary, three front-ends
+(`lsp`, `check`, `format`) over one shared analysis pipeline. Static analysis only: it never imports,
+renders, or executes templates or host Python.
+
+**Companion principle (non-negotiable):** it runs *alongside* the host Python/HTML LSPs and owns only
+the Jinja layer. Features fire inside Jinja constructs and stay silent everywhere else — no generic
+completions, no hover on unknown symbols, never diagnose what can't be positively resolved.
+
 ### Stack
-- Language and version: Rust (edition 2024, rust-version 1.85)
-- Framework(s): tower-lsp, tree-sitter 0.26
-- Package manager: cargo
-- Runtime / deployment target: native binary (LSP server + CLI)
+| | |
+|---|---|
+| Language | Rust, edition 2024, MSRV 1.85 (`rust-version` in Cargo.toml) |
+| Protocol | `tower-lsp` 0.20 — stdio transport only (ADR-009), no TCP/socket |
+| Parsing | `tree-sitter` 0.26 + `tree-sitter-jinja` / `tree-sitter-jinja-inline` (git dep, pinned rev) |
+| Async | `tokio` (full); CPU-bound indexing under `spawn_blocking` |
+| State | `Arc<RwLock<ServerState>>` (tokio RwLock) — **not** DashMap |
+| CLI | `clap` 4 derive; `owo-colors` + `similar` for rich/diff output |
+| Config | `toml` + `serde`; `serde_yaml` for hint files |
+| Logging | `tracing` → **stderr only** (stdout carries JSON-RPC) |
+| Tests | `cargo nextest`, `tempfile`, `pytest-lsp`/`lsprotocol` (Python e2e) |
+| Distribution | GitHub Releases, PyPI wheels (maturin), AUR (`jinja-lsp-plus-bin`), Zed ext (`jinja-plus`) |
 
 ### Commands
-- Build: `cargo build`
-- Test (all): `cargo test` or `~/.cargo/bin/cargo-nextest nextest run`
-- Test (single file): `cargo test --test <name>`
-- Lint: `RUSTFLAGS="-D warnings" cargo build`
+
+**Use the `Justfile` — it is the entry point for every routine task.** `just --list` shows
+the full set. Prefer a recipe over a raw `cargo` invocation so the flags stay in one place
+and match CI; add a recipe rather than documenting a bare command here.
+
+```bash
+just              # list all recipes
+just build
+just test         # cargo nextest run — the runner CI uses (1145 tests, ~1s after build)
+just test-e2e     # Python LSP-protocol e2e (15 tests); builds the debug binary first
+just lint         # clippy --all-targets -D warnings
+just fmt
+just check        # the CI gate set: fmt --check + clippy + nextest
+just check-all    # check + the Python e2e gate
+just notes        # release notes for commits since the last tag (read-only)
+just release X.Y.Z # verify gates, then tag locally; pushing the tag is left to you
+just install-zed  # build server + Zed extension, install both locally
+```
+
+Not worth a recipe (one-offs):
+
+```bash
+cargo nextest run -E 'test(NAME)'    # single test;  cargo test --test <file> also works
+UPDATE_FIXTURES=1 cargo nextest run  # regenerate golden expected-diagnostics/formatter fixtures
+cargo run -- check tests/fixtures/starlette-blog/templates --format json
+```
+
+### Verification gates (all must pass before a task is done)
+1. `cargo fmt --check`
+2. `cargo clippy --all-targets -- -D warnings`
+3. `cargo nextest run` — includes the golden-diagnostics and structural gates below
+4. `cd tests/e2e && uv run pytest -q` — protocol behavior against the real stdio binary
+5. `cargo update --locked --workspace` must not change `Cargo.lock` (CI gate REQ-REL-11)
+
+CI (`.github/workflows/ci.yml`) runs 1–3 on Linux/macOS/Windows and 4 on Linux.
+Release (`.github/workflows/release.yml`) is tag-triggered and gates on tag == `Cargo.toml`
+version **and** a dated `CHANGELOG.md` section for that version.
 
 ### Layout
-- Source lives in: `src/`
-- Tests live in: `tests/`
-- Do not modify: `.cargo/` (git-fetched grammar sources)
+```
+src/main.rs           clap CLI dispatch + the check/format front-ends (no analysis logic)
+src/server/           tower-lsp backend (mod.rs) + ServerState (state.rs)
+src/config.rs         jinja.toml / [tool.jinja] discovery, zero-config, InitializationOptions overlay
+src/parsing/          tree-sitter wrapper, extractor, inline-template detection, queries/*.scm (17)
+src/workspace/        TemplateIndex, WorkspaceIndex, symbols, builder (Pass 2)
+src/diagnostics/      DiagCode enum, checks/, noqa suppression, select/ignore filter
+src/builtins/         doc registry, docs/ (113 embedded .md), framework packs, user hints
+src/features/         one pure-function module per LSP capability (top layer)
+src/format/           the Jinja-only formatter engine
+src/edit/             shared TextEdit/WorkspaceEdit builders
+tests/*.rs            55 integration crates; tests/fixtures/ golden corpora; tests/e2e/ pytest-lsp
+specs/                the source of truth — index.md, foundations E##, features F##, decisions ADR-###
+editors/zed/          Zed WASM extension (id jinja-plus, 24 Jinja2 language variants)
+aur/ scripts/         PKGBUILD; Zed install/package helpers
+```
+Do not edit: `editors/zed/grammars/` (vendored upstream grammar clone), `target/`.
+
+### Architecture
+- **Two-pass pipeline.** Pass 1 (`ServerState::update_file`) reparses **one** file and atomically
+  replaces its `TemplateIndex`; it bumps a `generation` counter. Pass 2 (`workspace::build_workspace`)
+  relinks the workspace for cross-file facts; it is guarded by the generation counter so a stale
+  relink never overwrites a newer one. Both run under `spawn_blocking`.
+- **Feature handlers are pure reads** — `(index snapshot, params) → response`. They never parse,
+  never mutate shared state, never block on Pass 2. Parsing happens in Pass 1 only.
+- **One engine, three front-ends.** `check` and the LSP publish path share `run_checks` +
+  `suppress_by_noqa` + `filter_by_config`, so CLI and editor can never disagree.
+- **Position encoding** is negotiated at `initialize` (UTF-8 preferred, UTF-16 fallback) and stored
+  as `state.position_encoding_utf8`; all offset conversion goes through that flag.
+- **Watched files**: config and hint files are detected *before* the template branch in
+  `did_change_watched_files` and never fed to Pass 1.
+
+### Diagnostics
+21 codes, `JINJA-<SEV><CLASS><NN>` (ADR-003): `E`=error `W`=warning `I`=info `H`=hint. Severity is
+derived from the code string. The `DiagCode` enum in `src/diagnostics/mod.rs` (with `DiagCode::ALL`)
+is the single source of truth — noqa's known-code list derives from it. Every diagnostic carries a
+stable kebab-case `slug`.
+- When a template has syntax errors, **only `E001` fires** — all other checks are suppressed to avoid
+  a false-positive cascade.
+- Suppression forms: `{# noqa #}`, `{# noqa: CODE, CLASS #}`, `{# noqa-file #}`, `{# noqa-file: CODE #}`.
+  An unknown id emits `W107`. Suppression and select/ignore filtering happen inside the shared compute
+  path (`publish_file_diagnostics` / the `check` runner), never as a publish-time-only filter.
+- Diagnostics are **push-only** (`textDocument/publishDiagnostics`); there is no pull-mode
+  `diagnosticProvider`. A cleared finding must be published as an explicit empty vector.
+- Adding a code: add the `DiagCode` variant + `ALL` entry, write the check, add
+  `tests/fixtures/corpus/<code>/` with `expected-diagnostics.json`, update `specs/features/F01`.
+
+### Configuration
+Discovery walks up for `jinja.toml`, then `pyproject.toml` `[tool.jinja]`. Zero-config falls back to
+`templates/`, `<project-name>/templates/`, `jinja/`, `j2/`. The editor's `InitializationOptions`
+overlay is applied on top of `base_config` (the pre-overlay file config) so clearing an editor
+setting correctly falls back instead of leaving a stale value. Keys: `templates`, `extensions`,
+`extras` (flask, starlette, starlette-babel, starlette-flash), `hints`, `custom_builtins`,
+`inline_patterns`, `[lint] select/ignore`, `[format]`.
+
+### Testing conventions
+- **Golden diagnostics** (`tests/e2e_branch_a.rs`): each `tests/fixtures/corpus/<code>/` and scenario
+  fixture carries `expected-diagnostics.json`, diffed against `check --format json`. Every new
+  diagnostic needs one. Golden formatter fixtures live in `tests/fixtures/formatter/*.input/.expected`.
+- **Structural gates**: `tests/architecture.rs` (Pass 1 isolation, generation counter, stale-publish
+  guard), `tests/conventions.rs` (no bare `.unwrap()` in named modules, parse recovery, no panics on
+  adversarial input), `tests/zed_extension.rs` and `tests/release_ci.rs` (extension/workflow
+  invariants), `tests/performance.rs` (500-template rebuild under 2s).
+- **Python e2e** (`tests/e2e/tests/`): drives the real stdio binary via `pytest-lsp` — protocol
+  conformance and user journeys. Never hand-roll a JSON-RPC client. `JINJA_LSP_BINARY` overrides the
+  binary path (CI points it at the release build).
+- Tests reference requirement tags (`REQ-ARCH-03`, `REQ-DIAG-04`, …) and bead ids in comments — keep
+  that habit so a failing test names the spec clause it defends.
+- `insta` is a declared dev-dependency but currently unused; prefer explicit assertions or golden files.
 
 ### Conventions specific to this repo
-- Error types: `ParseError`, `ExtractionError`, `ConfigError`, `DiagnosticError` in `src/error.rs`
-- Span type: `src/workspace/symbols.rs` — byte range + line/col
-- Query files: `src/parsing/queries/*.scm` — one file per construct
-- Downward-dependency rule: `features/` is the top layer; `workspace/`, `parsing/`, `diagnostics/` must never import from `features/`
-- StreamingIterator: tree-sitter 0.26 `QueryMatches` uses `StreamingIterator`; always `use tree_sitter::StreamingIterator` and `while let Some(m) = matches.next()`
+- Errors: `ConfigError` (`src/config.rs`), `PackError` (`src/builtins/packs.rs`), `SyntaxError`
+  (`src/workspace/symbols.rs`). There is no `src/error.rs`.
+- `Span` (`src/workspace/symbols.rs`) is byte range + line/col; diagnostics report 1-based line, col.
+- Query files: `src/parsing/queries/*.scm`, one per construct, loaded via `include_str!`.
+- Downward-dependency rule (REQ-FOLD-08): `features/` is the top layer; `parsing/`, `workspace/`,
+  `diagnostics/` must never import from it.
+- tree-sitter 0.26 `QueryMatches` is a `StreamingIterator` — `use tree_sitter::StreamingIterator` and
+  `while let Some(m) = matches.next()`.
+- Spec-first: behavior changes update the owning `F##`/`E##` spec in the same change; decisions get an
+  ADR (append-only — supersede, never edit).
 
 ### Forbidden
-- Importing `crate::features` from `parsing/`, `workspace/`, or `diagnostics/` (REQ-FOLD-08)
-- Using `cat`, `head`, `tail`, `sed`, `awk`, or heredocs instead of the Read/Edit/Write tools
+- `println!` / anything on stdout outside JSON-RPC — it breaks the protocol. Log via `tracing`.
+- Importing `crate::features` from `parsing/`, `workspace/`, or `diagnostics/` (REQ-FOLD-08).
+- Re-parsing inside a feature handler, or mutating shared state from one.
+- Emitting a diagnostic for anything not *positively* resolvable — silence beats a false positive.
+- Auto-downloading the server binary from the Zed extension, or `std::env::var` inside the WASM
+  extension (use `worktree.shell_env()` / `worktree.which()`).
+- Using `cat`, `head`, `tail`, `sed`, `awk`, or heredocs instead of the Read/Edit/Write tools.
 
 ---
 
