@@ -7,6 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — SemVer per 
 
 <!-- Add entries above this line when cutting a release -->
 
+## [0.4.2] - 2026-09-13
+
+### Fixed
+- Formatting in explicit non-HTML Jinja modes now changes only recognized Jinja
+  spans, so valid Python and other host-language indentation remains untouched.
+- `jinja-lsp format` now infers registered host languages through built-in and
+  configured template suffixes while preserving HTML and generic-template
+  formatting behavior.
+
 ## [0.4.1] - 2026-08-19
 
 ### Fixed
