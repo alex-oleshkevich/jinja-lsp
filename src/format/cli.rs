@@ -4,6 +4,67 @@
 
 use crate::parsing::discover_templates;
 
+fn has_explicit_non_html_host(path: &std::path::Path) -> bool {
+    const TEMPLATE_SUFFIXES: [&str; 3] = ["jinja", "jinja2", "j2"];
+    const NON_HTML_HOST_MARKERS: [&str; 30] = [
+        "bash",
+        "cfg",
+        "css",
+        "dockerfile",
+        "env",
+        "go",
+        "gql",
+        "graphql",
+        "hcl",
+        "ini",
+        "js",
+        "json",
+        "lua",
+        "makefile",
+        "md",
+        "mk",
+        "py",
+        "rs",
+        "service",
+        "sh",
+        "socket",
+        "sql",
+        "tf",
+        "timer",
+        "toml",
+        "ts",
+        "txt",
+        "xml",
+        "yaml",
+        "yml",
+    ];
+
+    let outer_extension = path.extension().and_then(|extension| extension.to_str());
+    let marker = if outer_extension.is_some_and(|extension| {
+        TEMPLATE_SUFFIXES
+            .iter()
+            .any(|suffix| extension.eq_ignore_ascii_case(suffix))
+    }) {
+        let Some(stem) = path.file_stem() else {
+            return false;
+        };
+        std::path::Path::new(stem)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .or_else(|| stem.to_str())
+    } else {
+        outer_extension.or_else(|| path.file_name().and_then(|name| name.to_str()))
+    };
+    let Some(marker) = marker else {
+        return false;
+    };
+
+    let marker = marker.trim_start_matches('.');
+    NON_HTML_HOST_MARKERS
+        .iter()
+        .any(|host| marker.eq_ignore_ascii_case(host))
+}
+
 /// REQ-FMT-08 / REQ-FMT-09: format command.
 /// Returns exit code: 0 = nothing changed, 1 = changed (or would), 2 = I/O error.
 pub fn run_format(
@@ -104,7 +165,11 @@ pub fn run_format(
             }
         };
 
-        let formatted = crate::format::format_with_config(&source, &cfg.format);
+        let formatted = if has_explicit_non_html_host(path) {
+            crate::format::format_jinja_with_config(&source, &cfg.format)
+        } else {
+            crate::format::format_with_config(&source, &cfg.format)
+        };
 
         // --output mode: write to stdout or a named file, then stop (no in-place, no check/diff).
         if let Some(out) = output {
@@ -211,6 +276,68 @@ fn print_unified_diff(path: &std::path::Path, original: &str, formatted: &str) {
 mod cli_tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn bx6o_detects_every_registered_non_html_host_suffix() {
+        for path in [
+            "yaml.jinja",
+            "yml.jinja",
+            "json.jinja",
+            "md.jinja",
+            "css.jinja",
+            "py.jinja",
+            "js.jinja",
+            "ts.jinja",
+            "sh.jinja",
+            "bash.jinja",
+            "sql.jinja",
+            "toml.jinja",
+            "xml.jinja",
+            "go.jinja",
+            "rs.jinja",
+            "lua.jinja",
+            "ini.jinja",
+            "cfg.jinja",
+            "env.jinja",
+            "Dockerfile.jinja",
+            "Makefile.jinja",
+            "mk.jinja",
+            "service.jinja",
+            "timer.jinja",
+            "socket.jinja",
+            "tf.jinja",
+            "hcl.jinja",
+            "graphql.jinja",
+            "gql.jinja",
+            "txt.jinja",
+        ] {
+            assert!(
+                has_explicit_non_html_host(Path::new(path)),
+                "expected {path} to use host-preserving formatting"
+            );
+        }
+    }
+
+    #[test]
+    fn bx6o_keeps_html_and_generic_templates_on_combined_formatting() {
+        for path in [
+            "page.html",
+            "page.html.jinja",
+            "page.html.jinja2",
+            "page.html.j2",
+            "page.jinja",
+            "page.jinja2",
+            "page.j2",
+            "page.mobile.jinja",
+            ".partial.jinja",
+        ] {
+            assert!(
+                !has_explicit_non_html_host(Path::new(path)),
+                "expected {path} to keep combined formatting"
+            );
+        }
+    }
+
     #[test]
     fn vn6f_insertion_shows_correct_hunk() {
         // A real unified diff should show the inserted line with + prefix and

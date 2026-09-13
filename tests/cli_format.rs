@@ -51,6 +51,52 @@ fn fmt08_t02_inplace_noop_exits_zero() {
     assert_eq!(status.code().unwrap(), 0);
 }
 
+#[test]
+fn jinja_lsp_bx6o_cli_preserves_python_host_indentation() {
+    let dir = scratchpad().join("bx6o_python");
+    fs::create_dir_all(&dir).ok();
+    let path = dir.join("route.py.jinja");
+    let source = "async def index_view():\n    return \"{{name}}\"\n";
+    fs::write(&path, source).unwrap();
+
+    let status = jinja_lsp_bin()
+        .arg("format")
+        .arg(&path)
+        .status()
+        .expect("run format");
+
+    assert_eq!(status.code().unwrap(), 1);
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "async def index_view():\n    return \"{{ name }}\"\n"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn jinja_lsp_pjhq_cli_preserves_host_with_non_utf8_filename() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let dir = scratchpad().join("pjhq_non_utf8");
+    fs::remove_dir_all(&dir).ok();
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(OsString::from_vec(b"route-\xff.py.jinja".to_vec()));
+    fs::write(&path, "async def index_view():\n    return \"{{name}}\"\n").unwrap();
+
+    let status = jinja_lsp_bin()
+        .arg("format")
+        .arg(&dir)
+        .status()
+        .expect("run format");
+
+    assert_eq!(status.code().unwrap(), 1);
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "async def index_view():\n    return \"{{ name }}\"\n"
+    );
+}
+
 // ─── T-03: --check exits 1 but does not rewrite ──────────────────────────────
 
 #[test]
