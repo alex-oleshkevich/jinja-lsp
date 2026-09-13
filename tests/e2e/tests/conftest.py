@@ -29,12 +29,14 @@ def open_doc(client, path: Path, version: int = 1) -> str:
     return uri
 
 
-def open_source(client, uri: str, source: str, version: int = 1) -> str:
+def open_source(
+    client, uri: str, source: str, version: int = 1, language_id: str = "jinja"
+) -> str:
     """didOpen an in-memory document and return its URI."""
     client.text_document_did_open(
         lsp.DidOpenTextDocumentParams(
             text_document=lsp.TextDocumentItem(
-                uri=uri, language_id="jinja", version=version, text=source
+                uri=uri, language_id=language_id, version=version, text=source
             )
         )
     )

@@ -204,6 +204,19 @@ pub fn format_with_options(source: &str, opts: FormatOptions) -> String {
 
 /// Format `source` with a full `FormatterConfig`.
 pub fn format_with_config(source: &str, config: &FormatterConfig) -> String {
+    format_with_config_inner(source, config, true)
+}
+
+/// Format recognized Jinja spans without changing surrounding host-language bytes.
+pub(crate) fn format_jinja_with_config(source: &str, config: &FormatterConfig) -> String {
+    format_with_config_inner(source, config, false)
+}
+
+fn format_with_config_inner(
+    source: &str,
+    config: &FormatterConfig,
+    format_host_indentation: bool,
+) -> String {
     let lang = tree_sitter_jinja::language();
     let mut parser = Parser::new();
     if parser.set_language(&lang).is_err() {
@@ -236,6 +249,10 @@ pub fn format_with_config(source: &str, config: &FormatterConfig) -> String {
         }
         result
     };
+
+    if !format_host_indentation {
+        return after_delimiters;
+    }
 
     // REQ-FMT-02 / REQ-FMT-07: re-indent Jinja-tag lines with the configured indent unit.
     let indent_unit: String = if config.use_tabs {

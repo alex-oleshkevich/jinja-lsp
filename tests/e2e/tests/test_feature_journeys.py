@@ -323,6 +323,39 @@ async def test_formatting_returns_edits_for_unformatted_source(client):
 
 
 @pytest.mark.asyncio
+async def test_python_host_formatting_preserves_indentation(client):
+    """jinja-lsp-bkaj / REQ-FMT-05/07: Python host bytes remain untouched."""
+    source = '''import kupala
+
+routes = kupala.Routes()
+
+
+@routes.get("/")
+async def index_view(request: kupala.Request) -> kupala.Response:
+    return kupala.response(request).text("Hello from Kupala!")
+
+
+app = kupala.Kupala(__name__, routes=routes)
+'''
+    uri = open_source(
+        client,
+        "file:///tmp/jinja_lsp_e2e_format.py.jinja",
+        source,
+        language_id="jinja-python",
+    )
+    await client.wait_for_notification("textDocument/publishDiagnostics")
+
+    result = await client.text_document_formatting_async(
+        lsp.DocumentFormattingParams(
+            text_document=_doc(uri),
+            options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+        )
+    )
+
+    assert not result, f"formatting changed Python host indentation: {result}"
+
+
+@pytest.mark.asyncio
 async def test_formatting_pads_filter_pipes(client):
     """REQ-FMT-04: a filter pipe gets one space on each side."""
     uri = open_source(

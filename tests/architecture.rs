@@ -171,6 +171,10 @@ fn jinja_lsp_wgi7_did_open_and_did_close_clear_doc_versions() {
         src[close_start..close_end].contains("doc_versions.remove"),
         "did_close must clear this document's doc_versions entry"
     );
+    assert!(
+        src[close_start..close_end].contains("document_language_ids.remove"),
+        "did_close must clear this document's language ID"
+    );
 
     let deleted_start = src
         .find("FileChangeType::DELETED =>")
@@ -451,6 +455,10 @@ fn jinja_lsp_7f0o_deleted_file_clears_all_per_file_state() {
     assert!(
         arm.contains("state.sources.remove"),
         "DELETED must remove the file's source: {arm}"
+    );
+    assert!(
+        arm.contains("state.document_language_ids.remove"),
+        "DELETED must remove the file's language ID: {arm}"
     );
     assert!(
         arm.contains("state.sidecar_registries.remove"),

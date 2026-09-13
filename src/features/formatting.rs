@@ -4,7 +4,9 @@
 // between LSP TextEdit types and line/col coordinates.
 
 use crate::edit::TextEdit;
-use crate::format::{FormatterConfig, format_with_config, format_with_options};
+use crate::format::{
+    FormatterConfig, format_jinja_with_config, format_with_config, format_with_options,
+};
 
 pub use crate::format::FormatOptions;
 
@@ -25,6 +27,18 @@ pub fn format_document(source: &str, opts: FormatOptions) -> Vec<TextEdit> {
 /// can't express.
 pub fn format_document_with_config(source: &str, config: &FormatterConfig) -> Vec<TextEdit> {
     let formatted = format_with_config(source, config);
+    if formatted == source {
+        return vec![];
+    }
+    line_edits(source, &formatted, 0, u32::MAX)
+}
+
+pub fn format_document_with_config_for_language(
+    source: &str,
+    config: &FormatterConfig,
+    language_id: &str,
+) -> Vec<TextEdit> {
+    let formatted = format_for_language(source, config, language_id);
     if formatted == source {
         return vec![];
     }
@@ -57,6 +71,26 @@ pub fn format_range_with_config(
     let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
     let formatted = format_with_config(source, config);
     range_edits(source, &formatted, snapped_start, snapped_end)
+}
+
+pub fn format_range_with_config_for_language(
+    source: &str,
+    start_line: u32,
+    end_line: u32,
+    config: &FormatterConfig,
+    language_id: &str,
+) -> Vec<TextEdit> {
+    let (snapped_start, snapped_end) = snap_range_to_constructs(source, start_line, end_line);
+    let formatted = format_for_language(source, config, language_id);
+    range_edits(source, &formatted, snapped_start, snapped_end)
+}
+
+fn format_for_language(source: &str, config: &FormatterConfig, language_id: &str) -> String {
+    if matches!(language_id, "jinja" | "jinja-html") {
+        format_with_config(source, config)
+    } else {
+        format_jinja_with_config(source, config)
+    }
 }
 
 /// Compute range-formatting edits from an already-formatted document.

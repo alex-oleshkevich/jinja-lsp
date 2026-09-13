@@ -1,6 +1,9 @@
 // REQ-FMT-07: formatting / rangeFormatting feature unit tests.
 
-use jinja_lsp::features::formatting::{FormatOptions, format_document, format_range};
+use jinja_lsp::features::formatting::{
+    FormatOptions, format_document, format_document_with_config_for_language, format_range,
+    format_range_with_config_for_language,
+};
 
 fn default_opts() -> FormatOptions {
     FormatOptions::default() // 4 spaces (default indent_size)
@@ -25,6 +28,65 @@ fn fmt07_t02_format_document_returns_empty_when_unchanged() {
     let source = "{{ x }}";
     let edits = format_document(source, default_opts());
     assert!(edits.is_empty());
+}
+
+#[test]
+fn jinja_lsp_bkaj_python_host_indentation_is_preserved() {
+    let source = r#"import kupala
+
+routes = kupala.Routes()
+
+
+@routes.get("/")
+async def index_view(request: kupala.Request) -> kupala.Response:
+    return kupala.response(request).text("Hello from Kupala!")
+
+
+app = kupala.Kupala(__name__, routes=routes)
+"#;
+
+    let edits = format_document_with_config_for_language(
+        source,
+        &default_opts().into_config(),
+        "jinja-python",
+    );
+
+    assert!(
+        edits.is_empty(),
+        "Python host code must stay unchanged: {edits:?}"
+    );
+}
+
+#[test]
+fn jinja_lsp_bkaj_python_host_only_formats_jinja_spans() {
+    let source = "async def index_view():\n    greeting = \"{{name}}\"\n";
+
+    let edits = format_document_with_config_for_language(
+        source,
+        &default_opts().into_config(),
+        "jinja-python",
+    );
+
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, "    greeting = \"{{ name }}\"");
+}
+
+#[test]
+fn jinja_lsp_bkaj_python_range_formatting_preserves_indentation() {
+    let source = "async def index_view():\n    return response()\n";
+
+    let edits = format_range_with_config_for_language(
+        source,
+        1,
+        1,
+        &default_opts().into_config(),
+        "jinja-python",
+    );
+
+    assert!(
+        edits.is_empty(),
+        "Python host code must stay unchanged: {edits:?}"
+    );
 }
 
 // ─── T-03: range format returns only edits within the range ──────────────────

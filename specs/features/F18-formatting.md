@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.3   ·   **Last updated:** 2026-06-26
+> **Version:** 0.4   ·   **Last updated:** 2026-09-13
 >
 > **Purpose:** The Jinja-only formatter — one engine behind two front-ends (the LSP `formatting`/`rangeFormatting` requests and the `jinja-lsp format` CLI) that normalizes delimiter spacing, whitespace-control markers, and filter pipes — always on — and optionally re-indents stand-alone Jinja-tag lines, all while never touching a host-language byte.
 
@@ -114,6 +114,8 @@ The server formats a whole document or a selected range.
 **REQ-FMT-07 — `formatting` and `rangeFormatting` over the same engine.**
 
 `textDocument/formatting` runs the engine over the whole document and returns a minimal `TextEdit[]`. `textDocument/rangeFormatting` runs it over the requested range only, snapped outward to whole Jinja constructs so it never produces a partial-tag edit (P3). Both honor the client's `FormattingOptions` (`tabSize`, `insertSpaces`) for the indent unit, falling back to the configured default.
+
+For explicit non-HTML host language IDs such as `jinja-python`, both requests normalize only recognized Jinja spans. They do not run whole-document indentation or whitespace passes, because those passes cannot reconstruct host-language nesting and would corrupt valid host indentation (REQ-FMT-05).
 
 ### 5.8 CLI front-end
 
@@ -325,6 +327,7 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | T-21 | Attribute values inside host tags never trimmed/rewritten (`<a href="  x  ">` preserved) | unit-snapshot | format-goldens | REQ-FMT-05 |
 | T-22 | Blank line of host text inside a block preserved exactly; host whitespace not collapsed (§10) | unit-snapshot | format-goldens | REQ-FMT-05 |
 | T-23 | Inline template region (E31): only the Jinja span formatted, edits mapped back to host coords, surrounding host code untouched (§10) | integration | call-and-paths (inline) | REQ-FMT-05, REQ-FMT-07 |
+| T-45 | `jinja-python` document preserves Python indentation while still normalizing recognized Jinja spans; whole-document and range formatting return no host-only edits | integration | reported Kupala route source | REQ-FMT-05, REQ-FMT-07 |
 
 **Round-trip safety (§5.6, REQ-FMT-06, §10)**
 
@@ -378,9 +381,9 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | REQ-FMT-02 | T-06–T-10, T-43 (block-body indentation + interleaved fixed-point) |
 | REQ-FMT-03 | T-11–T-14 (whitespace-control markers) |
 | REQ-FMT-04 | T-12, T-15–T-19, T-44 (filter-pipe / test / call-arg spacing + non-filter-comma negative) |
-| REQ-FMT-05 | T-09, T-20–T-23 (host untouchability) |
+| REQ-FMT-05 | T-09, T-20–T-23, T-45 (host untouchability) |
 | REQ-FMT-06 | T-14, T-24–T-27, T-42, T-43 (idempotence + tree-equivalence + skip-on-error + interleaved fixed-point); E2E-03, E2E-05 |
-| REQ-FMT-07 | T-08, T-23, T-28–T-31 (LSP formatting/rangeFormatting + range snap + options); E2E-01, E2E-02 |
+| REQ-FMT-07 | T-08, T-23, T-28–T-31, T-45 (LSP formatting/rangeFormatting + range snap + options + host mode); E2E-01, E2E-02, E2E-11 |
 | REQ-FMT-08 | T-32–T-38 (CLI in-place / PATH / config / --check / --diff / combined); E2E-03, E2E-04 |
 | REQ-FMT-09 | T-27, T-38, T-39–T-42 (exit codes 0/1/2 + skip-doesn't-force-2); E2E-03, E2E-04, E2E-05 |
 
@@ -406,6 +409,7 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 | E2E-08 | CLI `jinja-lsp format --check` over an already-formatted corpus | happy | nothing listed, nothing written, exits 0 | REQ-FMT-06, -09 |
 | E2E-09 | CLI `jinja-lsp format` with an unreadable/invalid config | error | reports config/IO error, writes nothing, exits 2 | REQ-FMT-09 |
 | E2E-10 | LSP `textDocument/formatting` on an inline template region (E31) | happy | only the Jinja span reformatted; edits mapped to host coords; surrounding host code untouched (P5) | REQ-FMT-05, -07 |
+| E2E-11 | LSP `textDocument/formatting` on the reported Kupala source opened as `jinja-python` | negative | returns no edits; the function body's `return` statement remains indented | REQ-FMT-05, -07 |
 
 ## 13. Non-Functional Requirements
 
@@ -441,6 +445,8 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 - **Related:** [ADR-007-formatting-strategy](../decisions/ADR-007-formatting-strategy.md) — the Jinja-only decision; [F19-cli-linter](F19-cli-linter.md) — the sibling CLI with the same exit-code scheme and discovery; [F17-code-actions](F17-code-actions.md) — shares the indentation model for its wrap refactors.
 
 ## 17. Changelog
+- **2026-09-13** — Version 0.4: specified host-preserving formatting for explicit non-HTML language IDs and added T-45/E2E-11 coverage for `jinja-python` indentation (jinja-lsp-bkaj).
+
 - **2026-06-26** — Status: Draft → Approved.
 
 - **2026-06-24** — Initial draft.

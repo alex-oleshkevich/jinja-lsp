@@ -38,6 +38,8 @@ pub struct ServerState {
     pub base_config: JinjaConfig,
     /// Raw source text per file key — used by formatting handlers.
     pub sources: HashMap<String, String>,
+    /// Language ID supplied by didOpen, retained for host-aware formatting.
+    pub document_language_ids: HashMap<String, String>,
     /// Incremented by every Pass 1 on the primary folder; Pass 2 checks it to discard stale relinks.
     pub generation: u64,
     /// REQ-BLTN-07: unified doc registry — core + custom_builtins from config.
@@ -93,6 +95,7 @@ impl ServerState {
             base_config: config.clone(),
             config,
             sources: HashMap::new(),
+            document_language_ids: HashMap::new(),
             generation: 0,
             registry,
             definition_link_support: false,
@@ -118,6 +121,7 @@ impl ServerState {
             base_config: config.clone(),
             config,
             sources: HashMap::new(),
+            document_language_ids: HashMap::new(),
             generation: 0,
             registry,
             definition_link_support: false,

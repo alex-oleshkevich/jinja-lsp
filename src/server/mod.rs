@@ -794,7 +794,13 @@ impl LanguageServer for Backend {
         // restart it (often back to 1). Clear any stale high-water mark left by
         // jinja-lsp-q0aw's monotonic-max guard, or every did_change after reopen
         // would see a lower version than the stale mark and skip its publish forever.
-        self.state.write().await.doc_versions.remove(&key);
+        {
+            let mut state = self.state.write().await;
+            state.doc_versions.remove(&key);
+            state
+                .document_language_ids
+                .insert(key.clone(), params.text_document.language_id.clone());
+        }
         self.pass1(&key, &params.text_document.text).await;
         self.publish_file_diagnostics(&key).await;
     }
@@ -851,7 +857,9 @@ impl LanguageServer for Backend {
         // open/close cycles over a long-running server session.
         let key = Self::uri_to_key(&params.text_document.uri);
         tracing::debug!("jinja-lsp: did_close {key}");
-        self.state.write().await.doc_versions.remove(&key);
+        let mut state = self.state.write().await;
+        state.doc_versions.remove(&key);
+        state.document_language_ids.remove(&key);
     }
 
     /// REQ-ARCH-06: watched-files dispatch — config and template file changes.
@@ -917,6 +925,7 @@ impl LanguageServer for Backend {
                         workspace.templates.remove(&key);
                         workspace.clear_inline_entries_for(&key);
                         state.sources.remove(&key);
+                        state.document_language_ids.remove(&key);
                         state.sidecar_registries.remove(&key);
                         // jinja-lsp-wgi7: also drop the version high-water mark so a
                         // future recreate+reopen of this path doesn't inherit a stale one.
@@ -1862,7 +1871,16 @@ impl LanguageServer for Backend {
         // preferred_quote, …), overriding only tab_size/insert_spaces from the LSP request.
         let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
-        let edits = crate::features::formatting::format_document_with_config(source, &config);
+        let language_id = state
+            .document_language_ids
+            .get(&key)
+            .map(String::as_str)
+            .unwrap_or("jinja");
+        let edits = crate::features::formatting::format_document_with_config_for_language(
+            source,
+            &config,
+            language_id,
+        );
         if edits.is_empty() {
             return Ok(None);
         }
@@ -1890,11 +1908,17 @@ impl LanguageServer for Backend {
         };
         let config = opts.merge_into(&state.config_for(&key).format);
         let utf8 = state.position_encoding_utf8;
-        let edits = crate::features::formatting::format_range_with_config(
+        let language_id = state
+            .document_language_ids
+            .get(&key)
+            .map(String::as_str)
+            .unwrap_or("jinja");
+        let edits = crate::features::formatting::format_range_with_config_for_language(
             source,
             range.start.line,
             range.end.line,
             &config,
+            language_id,
         );
         if edits.is_empty() {
             return Ok(None);
