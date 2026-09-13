@@ -73,7 +73,7 @@ fn jinja_lsp_bx6o_cli_preserves_python_host_indentation() {
 }
 
 #[test]
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn jinja_lsp_pjhq_cli_preserves_host_with_non_utf8_filename() {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;

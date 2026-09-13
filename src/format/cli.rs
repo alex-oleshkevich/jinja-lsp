@@ -339,6 +339,16 @@ mod cli_tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn pjhq_detects_host_suffix_after_non_utf8_basename_bytes() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = std::path::PathBuf::from(OsString::from_vec(b"route-\xff.py.jinja".to_vec()));
+        assert!(has_explicit_non_html_host(&path));
+    }
+
+    #[test]
     fn vn6f_insertion_shows_correct_hunk() {
         // A real unified diff should show the inserted line with + prefix and
         // proper @@ hunk coordinates — NOT cascade every subsequent line as changed.
