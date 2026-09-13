@@ -73,6 +73,30 @@ fn jinja_lsp_bx6o_cli_preserves_python_host_indentation() {
 }
 
 #[test]
+fn jinja_lsp_w6j8_cli_preserves_host_with_configured_template_suffix() {
+    let dir = scratchpad().join("w6j8_custom_suffix");
+    fs::create_dir_all(&dir).ok();
+    let config = dir.join("jinja.toml");
+    let path = dir.join("route.py.tpl");
+    fs::write(&config, "extensions = [\"tpl\"]\n").unwrap();
+    fs::write(&path, "async def index_view():\n    return \"{{name}}\"\n").unwrap();
+
+    let status = jinja_lsp_bin()
+        .arg("format")
+        .arg("--config")
+        .arg(&config)
+        .arg(&dir)
+        .status()
+        .expect("run format");
+
+    assert_eq!(status.code().unwrap(), 1);
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "async def index_view():\n    return \"{{ name }}\"\n"
+    );
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn jinja_lsp_pjhq_cli_preserves_host_with_non_utf8_filename() {
     use std::ffi::OsString;

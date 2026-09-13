@@ -4,7 +4,16 @@
 
 use crate::parsing::discover_templates;
 
-fn has_explicit_non_html_host(path: &std::path::Path) -> bool {
+fn matches_marker(value: &str, markers: &[&str]) -> bool {
+    markers
+        .iter()
+        .any(|marker| value.eq_ignore_ascii_case(marker))
+}
+
+fn has_explicit_non_html_host(
+    path: &std::path::Path,
+    configured_template_suffixes: &[&str],
+) -> bool {
     const TEMPLATE_SUFFIXES: [&str; 3] = ["jinja", "jinja2", "j2"];
     const NON_HTML_HOST_MARKERS: [&str; 30] = [
         "bash",
@@ -40,11 +49,18 @@ fn has_explicit_non_html_host(path: &std::path::Path) -> bool {
     ];
 
     let outer_extension = path.extension().and_then(|extension| extension.to_str());
-    let marker = if outer_extension.is_some_and(|extension| {
-        TEMPLATE_SUFFIXES
-            .iter()
-            .any(|suffix| extension.eq_ignore_ascii_case(suffix))
-    }) {
+    if outer_extension.is_some_and(|extension| matches_marker(extension, &NON_HTML_HOST_MARKERS)) {
+        return true;
+    }
+    if outer_extension.is_some_and(|extension| extension.eq_ignore_ascii_case("html")) {
+        return false;
+    }
+
+    let is_template_suffix = outer_extension.is_some_and(|extension| {
+        matches_marker(extension, &TEMPLATE_SUFFIXES)
+            || matches_marker(extension, configured_template_suffixes)
+    });
+    let marker = if is_template_suffix {
         let Some(stem) = path.file_stem() else {
             return false;
         };
@@ -60,9 +76,7 @@ fn has_explicit_non_html_host(path: &std::path::Path) -> bool {
     };
 
     let marker = marker.trim_start_matches('.');
-    NON_HTML_HOST_MARKERS
-        .iter()
-        .any(|host| marker.eq_ignore_ascii_case(host))
+    matches_marker(marker, &NON_HTML_HOST_MARKERS)
 }
 
 /// REQ-FMT-08 / REQ-FMT-09: format command.
@@ -165,7 +179,7 @@ pub fn run_format(
             }
         };
 
-        let formatted = if has_explicit_non_html_host(path) {
+        let formatted = if has_explicit_non_html_host(path, template_exts) {
             crate::format::format_jinja_with_config(&source, &cfg.format)
         } else {
             crate::format::format_with_config(&source, &cfg.format)
@@ -312,7 +326,7 @@ mod cli_tests {
             "txt.jinja",
         ] {
             assert!(
-                has_explicit_non_html_host(Path::new(path)),
+                has_explicit_non_html_host(Path::new(path), &[]),
                 "expected {path} to use host-preserving formatting"
             );
         }
@@ -325,6 +339,7 @@ mod cli_tests {
             "page.html.jinja",
             "page.html.jinja2",
             "page.html.j2",
+            "route.py.html",
             "page.jinja",
             "page.jinja2",
             "page.j2",
@@ -332,10 +347,19 @@ mod cli_tests {
             ".partial.jinja",
         ] {
             assert!(
-                !has_explicit_non_html_host(Path::new(path)),
+                !has_explicit_non_html_host(Path::new(path), &[]),
                 "expected {path} to keep combined formatting"
             );
         }
+    }
+
+    #[test]
+    fn w6j8_direct_host_and_html_extensions_override_configured_template_suffixes() {
+        assert!(has_explicit_non_html_host(Path::new("route.py"), &["py"]));
+        assert!(!has_explicit_non_html_host(
+            Path::new("route.py.html"),
+            &["html"]
+        ));
     }
 
     #[test]
@@ -345,7 +369,7 @@ mod cli_tests {
         use std::os::unix::ffi::OsStringExt;
 
         let path = std::path::PathBuf::from(OsString::from_vec(b"route-\xff.py.jinja".to_vec()));
-        assert!(has_explicit_non_html_host(&path));
+        assert!(has_explicit_non_html_host(&path, &[]));
     }
 
     #[test]

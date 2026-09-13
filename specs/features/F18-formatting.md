@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.5   ·   **Last updated:** 2026-09-13
+> **Version:** 0.6   ·   **Last updated:** 2026-09-13
 >
 > **Purpose:** The Jinja-only formatter — one engine behind two front-ends (the LSP `formatting`/`rangeFormatting` requests and the `jinja-lsp format` CLI) that normalizes delimiter spacing, whitespace-control markers, and filter pipes — always on — and optionally re-indents stand-alone Jinja-tag lines, all while never touching a host-language byte.
 
@@ -136,7 +136,7 @@ jinja-lsp format [PATH] [-c|--config FILE] [--check] [--diff]
 - `--diff` writes nothing; it prints a unified diff per file to stdout.
 - `--check` and `--diff` are read-only and may be combined (diff to stdout, non-zero exit); combining either with the default in-place behavior is what their presence overrides.
 
-When a path identifies a registered non-HTML host, such as `route.py.jinja`, `config.yaml.j2`, or `Dockerfile.jinja`, the CLI uses the same Jinja-span-only formatting as the corresponding LSP language mode. Plain `.jinja`/`.jinja2`/`.j2` names, including dotted generic names, and HTML template names retain combined formatting. Host detection depends only on the recognized suffix, so unrelated non-UTF-8 filename bytes do not disable this protection.
+When a path identifies a registered non-HTML host, such as `route.py.jinja`, `config.yaml.j2`, or `Dockerfile.jinja`, the CLI uses the same Jinja-span-only formatting as the corresponding LSP language mode. This also applies when the outer template suffix comes from the resolved `extensions` configuration, such as `route.py.tpl` with `extensions = ["tpl"]`. Plain `.jinja`/`.jinja2`/`.j2` names, including dotted generic names, and HTML template names retain combined formatting. Host detection depends only on the recognized suffix, so unrelated non-UTF-8 filename bytes do not disable this protection.
 
 **REQ-FMT-09 — Exit codes mirror `check`.**
 
@@ -330,7 +330,7 @@ Each row is one concrete `input → expected output` rule. Type is `unit-snapsho
 | T-22 | Blank line of host text inside a block preserved exactly; host whitespace not collapsed (§10) | unit-snapshot | format-goldens | REQ-FMT-05 |
 | T-23 | Inline template region (E31): only the Jinja span formatted, edits mapped back to host coords, surrounding host code untouched (§10) | integration | call-and-paths (inline) | REQ-FMT-05, REQ-FMT-07 |
 | T-45 | `jinja-python` document preserves Python indentation while still normalizing recognized Jinja spans; whole-document and range formatting return no host-only edits | integration | reported Kupala route source | REQ-FMT-05, REQ-FMT-07 |
-| T-46 | CLI infers every registered non-HTML host family from its path and preserves host indentation while normalizing Jinja spans, including with non-UTF-8 basename bytes; dotted generic names retain combined formatting | integration | `route.py.jinja`, Unix non-UTF-8 filename, and suffix routing tables | REQ-FMT-05, REQ-FMT-08 |
+| T-46 | CLI infers every registered non-HTML host family from its path and preserves host indentation while normalizing Jinja spans, including with configured template suffixes and non-UTF-8 basename bytes; dotted generic and HTML names retain combined formatting | integration | `route.py.jinja`, `route.py.tpl` with `extensions = ["tpl"]`, Unix non-UTF-8 filename, and suffix routing tables | REQ-FMT-05, REQ-FMT-08 |
 
 **Round-trip safety (§5.6, REQ-FMT-06, §10)**
 
@@ -448,6 +448,8 @@ Both front-ends (LSP via `pytest-lsp`, CLI driving the real binary) are exercise
 - **Related:** [ADR-007-formatting-strategy](../decisions/ADR-007-formatting-strategy.md) — the Jinja-only decision; [F19-cli-linter](F19-cli-linter.md) — the sibling CLI with the same exit-code scheme and discovery; [F17-code-actions](F17-code-actions.md) — shares the indentation model for its wrap refactors.
 
 ## 17. Changelog
+- **2026-09-13** — Version 0.6: extended CLI host detection through configured template suffixes while keeping direct host and HTML extensions authoritative (jinja-lsp-w6j8.1).
+
 - **2026-09-13** — Version 0.5: made the CLI infer registered non-HTML host templates from their paths and use Jinja-span-only formatting, without misclassifying dotted generic names or depending on unrelated filename bytes (jinja-lsp-bx6o, jinja-lsp-9bej, jinja-lsp-pjhq).
 
 - **2026-09-13** — Version 0.4: specified host-preserving formatting for explicit non-HTML language IDs and added T-45/E2E-11 coverage for `jinja-python` indentation (jinja-lsp-bkaj).
